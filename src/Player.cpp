@@ -451,7 +451,6 @@ namespace ALYSLC
 		if ((!isPlayer1) && (selfWasInvalid || !selfValid))
 		{
 			em->ReEquipHandForms();
-			//em->ReEquipAll(false);
 			selfWasInvalid = false;
 		}
 
@@ -1216,7 +1215,9 @@ namespace ALYSLC
 			}
 		}
 
+		// Might have caused a crash previously. Commented out for now.
 		// Re-equip all items to add their active effects to the mix.
+		/*
 		em->ReEquipAll(false);
 
 		effectList = coopActor->GetActiveEffectList();
@@ -1260,6 +1261,7 @@ namespace ALYSLC
 				);
 			}
 		}
+		*/
 
 		// Restore the original values when done.
 		const float healthAfter = coopActor->GetActorValue(RE::ActorValue::kHealth);
@@ -1303,6 +1305,7 @@ namespace ALYSLC
 		// and apply the changes after we've properly restored P1's HMS.
 		// Since this smells like script lag, we'll wait until P1's managers resume + 1 second 
 		// before restoring the correct HMS values once again.
+		/*
 		taskRunner->AddTask
 		(
 			coopActor->GetName(),
@@ -1376,6 +1379,7 @@ namespace ALYSLC
 				);
 			}
 		);
+		*/
 
 		// Re-attach havok.
 		coopActor->DetachHavok(coopActor->GetCurrent3D());
@@ -2415,10 +2419,8 @@ namespace ALYSLC
 					{
 						// Curtail momentum to stop the player while they get up.
 						mm->shouldCurtailMomentum = true;
-						if (!mm->dontMoveSet)
-						{
-							mm->SetDontMove(true);
-						}
+						mm->ClearKeepOffsetFromActor();
+						mm->SetForceDontMove(true);
 
 						// Force the player to getup if not started already.
 						if (knockState != RE::KNOCK_STATE_ENUM::kGetUp)
@@ -2435,11 +2437,7 @@ namespace ALYSLC
 					else
 					{
 						// Make sure the player can move before resuming managers.
-						if (mm->dontMoveSet)
-						{
-							mm->SetDontMove(false);
-						}
-
+						mm->SetForceDontMove(false);
 						// Reset downed time and health.
 						revivedHealth = secsDowned = 0.0f;
 						// No longer downed once the player has gotten up.
@@ -2684,7 +2682,7 @@ namespace ALYSLC
 					// Get XInput and game mask for the 'Cancel' bind.
 					// Default to the 'B' button.
 					auto escapeXIMask = XINPUT_GAMEPAD_B;
-					uint32_t idCode = GAMEPAD_MASK_B;
+					uint32_t idCode = GAME_INPUT_CODE_B;
 					RE::BSFixedString eventName = "Cancel"sv;
 					if (auto userEvents = RE::UserEvents::GetSingleton(); userEvents) 
 					{

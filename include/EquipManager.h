@@ -673,20 +673,27 @@ namespace ALYSLC
 			RE::TESForm* a_form, const EquipIndex& a_index
 		) const;
 		
-		// Get the next favorited item extra data list for the given item.
-		// Skip unfavorited lists.
-		// Skip lists with the ExtraWorn/ExtraWornLeft extra data types and return the next
-		// unequipped list following the equipped one, if it exists.
-		// Set the outparam flag if the returned list is the last one in the entry's list of lists,
-		// is currently equipped, and should be unequipped.
-		// Return nullptr if there is no favorited item extra data list.
-		// Signal to unequip if no form is given.
-		// Used to cycle/hotkey equip favorited items that have multiple favorited extra data lists.
+		// Used to cycle-equip favorited items that have multiple favorited extra data lists.
+		// LISTS LISTS LISTS, I LOVE LISTS.
+		// 
+		// Check if the given form has a favorited extra data list in the given hand,
+		// and if one exists, look for and return the next favorited extra data list 
+		// further along in the list of extra data lists that can be equipped.
+		// 
+		// If the currently equipped favorited extra data list in the given hand
+		// is the last equipable one in the lists of extra data lists,
+		// return it and set the unequip outparam to true
+		// because we need the extra data list to unequip the item before equipping something else.
+		// 
+		// Otherwise, return the next favorited extra data list that can be equipped
+		// in the given hand, and return nullptr if the given form is not favorited,
+		// or if there are no additional favorited extra data lists 
+		// in the item's list of extra data lists.
 		RE::ExtraDataList* GetNextFavoritedExDataList
 		(
 			RE::TESForm* a_form, 
 			bool a_checkWornLeft, 
-			bool& a_shouldUnequip
+			bool& a_nothingToEquip
 		);
 		
 		// Setup equip request by adding the item from the companion player's chest
@@ -746,7 +753,7 @@ namespace ALYSLC
 			const EquipIndex& a_index, 
 			bool a_placeholderMagicChanged
 		);
-		
+
 		// Checks if the player has a favorited spell in the given category.
 		bool HasCyclableSpellInCategory(const FavMagicCyclingCategory& a_category);
 		

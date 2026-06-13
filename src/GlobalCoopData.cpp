@@ -5123,86 +5123,86 @@ namespace ALYSLC
 				continue;
 			}
 
-			// Obtain lock for node rotation data.
+			// Continue early if the fixed strings are not available.
+			const auto strings = RE::FixedStrings::GetSingleton();
+			if (!strings)
 			{
-				std::unique_lock<std::mutex> lock(p->mm->nom->rotationDataMutex);
-				// Continue early if the fixed strings are not available.
-				const auto strings = RE::FixedStrings::GetSingleton();
-				if (!strings)
+				continue;
+			}
+
+			// Continue early if the player's loaded 3D data is invalid.
+			auto loadedData = p->coopActor->loadedData;
+			if (!loadedData)
+			{
+				continue;
+			}
+
+			// Continue early if the player's 3D is invalid.
+			auto data3DPtr = loadedData->data3D;
+			if (!data3DPtr || !data3DPtr->parent)
+			{
+				continue;
+			}
+
+			if (Settings::bEnableArmsRotation)
+			{
+				// Get all arm nodes.
+				auto leftShoulderNodePtr = 
+				(
+					RE::NiPointer<RE::NiAVObject>
+					(
+						data3DPtr->GetObjectByName(strings->npcLUpperArm)
+					)
+				);
+				auto rightShoulderNodePtr =
+				(
+					RE::NiPointer<RE::NiAVObject>
+					(
+						data3DPtr->GetObjectByName(strings->npcRUpperArm)
+					)
+				);
+				auto leftForearmNodePtr = 
+				(
+					RE::NiPointer<RE::NiAVObject>
+					(
+						data3DPtr->GetObjectByName(strings->npcLForearm)
+					)
+				);
+				auto rightForearmNodePtr =
+				(
+					RE::NiPointer<RE::NiAVObject>
+					(
+						data3DPtr->GetObjectByName("NPC R Forearm [RLar]")
+					)
+				);
+				auto leftHandNodePtr =
+				(
+					RE::NiPointer<RE::NiAVObject>
+					(
+						data3DPtr->GetObjectByName("NPC L Hand [LHnd]")
+					)
+				);
+				auto rightHandNodePtr =
+				(
+					RE::NiPointer<RE::NiAVObject>
+					(
+						data3DPtr->GetObjectByName("NPC R Hand [RHnd]")
+					)
+				);
+				// Continue early if any node is invalid.
+				if (!leftShoulderNodePtr			||
+					!rightShoulderNodePtr			||
+					!leftForearmNodePtr				||
+					!leftHandNodePtr				||
+					!rightForearmNodePtr			||
+					!rightHandNodePtr)
 				{
 					continue;
 				}
-
-				// Continue early if the player's loaded 3D data is invalid.
-				auto loadedData = p->coopActor->loadedData;
-				if (!loadedData)
+				
+				// Obtain lock for node rotation data.
 				{
-					continue;
-				}
-
-				// Continue early if the player's 3D is invalid.
-				auto data3DPtr = loadedData->data3D;
-				if (!data3DPtr || !data3DPtr->parent)
-				{
-					continue;
-				}
-
-				if (Settings::bEnableArmsRotation)
-				{
-					// Get all arm nodes.
-					auto leftShoulderNodePtr = 
-					(
-						RE::NiPointer<RE::NiAVObject>
-						(
-							data3DPtr->GetObjectByName(strings->npcLUpperArm)
-						)
-					);
-					auto rightShoulderNodePtr =
-					(
-						RE::NiPointer<RE::NiAVObject>
-						(
-							data3DPtr->GetObjectByName(strings->npcRUpperArm)
-						)
-					);
-					auto leftForearmNodePtr = 
-					(
-						RE::NiPointer<RE::NiAVObject>
-						(
-							data3DPtr->GetObjectByName(strings->npcLForearm)
-						)
-					);
-					auto rightForearmNodePtr =
-					(
-						RE::NiPointer<RE::NiAVObject>
-						(
-							data3DPtr->GetObjectByName("NPC R Forearm [RLar]")
-						)
-					);
-					auto leftHandNodePtr =
-					(
-						RE::NiPointer<RE::NiAVObject>
-						(
-							data3DPtr->GetObjectByName("NPC L Hand [LHnd]")
-						)
-					);
-					auto rightHandNodePtr =
-					(
-						RE::NiPointer<RE::NiAVObject>
-						(
-							data3DPtr->GetObjectByName("NPC R Hand [RHnd]")
-						)
-					);
-					// Continue early if any node is invalid.
-					if (!leftShoulderNodePtr			||
-						!rightShoulderNodePtr			||
-						!leftForearmNodePtr				||
-						!leftHandNodePtr				||
-						!rightForearmNodePtr			||
-						!rightHandNodePtr)
-					{
-						continue;
-					}
-
+					std::unique_lock<std::mutex> lock(p->mm->nom->orientationDataMutex);
 					p->mm->nom->UpdateShoulderNodeRotationData(p, leftShoulderNodePtr, false);
 					p->mm->nom->UpdateShoulderNodeRotationData(p, rightShoulderNodePtr, true);
 					p->mm->nom->UpdateArmNodeRotationData
@@ -5214,45 +5214,49 @@ namespace ALYSLC
 						p, rightForearmNodePtr, rightHandNodePtr, true
 					);
 				}
+			}
 
-				if (Settings::bEnableSpinalRotation)
+			if (Settings::bEnableSpinalRotation)
+			{
+				auto spineNodePtr = 
+				(
+					RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->npcSpine))
+				);
+				auto spineNode1Ptr = 
+				(
+					RE::NiPointer<RE::NiAVObject>
+					(
+						data3DPtr->GetObjectByName(strings->npcSpine1)
+					)
+				);
+				auto spineNode2Ptr =
+				(
+					RE::NiPointer<RE::NiAVObject>
+					(
+						data3DPtr->GetObjectByName(strings->npcSpine2)
+					)
+				);
+				auto neckNodePtr =
+				(
+					RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->npcNeck))
+				);
+				auto headNodePtr =	
+				(
+					RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->npcHead))
+				);
+				// Continue early if any node is invalid.
+				if (!spineNodePtr			||
+					!spineNode1Ptr			||
+					!spineNode2Ptr			||
+					!neckNodePtr			||
+					!headNodePtr)
 				{
-					auto spineNodePtr = 
-					(
-						RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->npcSpine))
-					);
-					auto spineNode1Ptr = 
-					(
-						RE::NiPointer<RE::NiAVObject>
-						(
-							data3DPtr->GetObjectByName(strings->npcSpine1)
-						)
-					);
-					auto spineNode2Ptr =
-					(
-						RE::NiPointer<RE::NiAVObject>
-						(
-							data3DPtr->GetObjectByName(strings->npcSpine2)
-						)
-					);
-					auto neckNodePtr =
-					(
-						RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->npcNeck))
-					);
-					auto headNodePtr =	
-					(
-						RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->npcHead))
-					);
-					// Continue early if any node is invalid.
-					if (!spineNodePtr			||
-						!spineNode1Ptr			||
-						!spineNode2Ptr			||
-						!neckNodePtr			||
-						!headNodePtr)
-					{
-						continue;
-					}	
+					continue;
+				}	
 				
+				// Obtain lock for node rotation data.
+				{
+					std::unique_lock<std::mutex> lock(p->mm->nom->orientationDataMutex);
 					// Adjust torso nodes' rotations after updating blending state.
 					p->mm->nom->UpdateTorsoNodeRotationData(p);
 				}
@@ -6420,11 +6424,7 @@ namespace ALYSLC
 										interpInterval = min
 										(
 											interpInterval,
-											min
-											(
-												Settings::fSecsBetweenActivationChecks,
-												Settings::fSecsBeforeActivationCycling
-											) / 3.0f
+											Settings::fSecsBetweenActivationChecks / 3.0f
 										);
 									}
 
@@ -11813,7 +11813,7 @@ namespace ALYSLC
 				messageBoxOpen = true;
 				auto userEvents = RE::UserEvents::GetSingleton();
 				auto controlMap = RE::ControlMap::GetSingleton();
-				uint32_t pauseMask = GAMEPAD_MASK_START;
+				uint32_t pauseMask = GAME_INPUT_CODE_START;
 				if (userEvents && controlMap) 
 				{
 					pauseMask = controlMap->GetMappedKey
@@ -12063,7 +12063,7 @@ namespace ALYSLC
 				// Using a controller.
 				if (usingController)
 				{
-					uint32_t pauseMask = GAMEPAD_MASK_START;
+					uint32_t pauseMask = GAME_INPUT_CODE_START;
 					if (userEvents && controlMap) 
 					{
 						pauseMask = controlMap->GetMappedKey

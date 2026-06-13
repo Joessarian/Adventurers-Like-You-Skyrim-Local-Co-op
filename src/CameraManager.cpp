@@ -121,7 +121,7 @@ namespace ALYSLC
 		(
 			controlMap && userEvents ? 
 			controlMap->GetMappedKey(userEvents->togglePOV, RE::INPUT_DEVICE::kGamepad) :
-			GAMEPAD_MASK_RIGHT_THUMB
+			GAME_INPUT_CODE_RIGHT_THUMB
 		);
 		// Cam pitch and yaw calculated in the main task function.
 		camPitch = camYaw = 0.0f;
@@ -625,7 +625,7 @@ namespace ALYSLC
 						(
 							userEvents->togglePOV, RE::INPUT_DEVICE::kGamepad
 						) :
-						GAMEPAD_MASK_RIGHT_THUMB
+						GAME_INPUT_CODE_RIGHT_THUMB
 					);
 					InputAction toggleAction = InputAction::kRThumb;
 					const auto iter = glob.cdh->GAMEMASK_TO_INPUT_ACTION.find(camToggleXIMask);
@@ -3858,10 +3858,10 @@ namespace ALYSLC
 			// By default, suspend if the focal player is not sprinting and not facing a target.
 			noAutoRotationWithFocalPlayer |= 
 			(
-				focalPlayerPID != -1 &&
-				p->playerID == focalPlayerPID &&
+				focalPlayerPID != -1 && 
+				p->playerID == focalPlayerPID && 
 				!p->pam->isSprinting && 
-				!p->mm->reqFaceTarget
+				!p->mm->faceCrosshairPos
 			);
 			shouldSuspend |= noAutoRotationWithFocalPlayer;
 			// No need to check the rest of the players.
@@ -4002,18 +4002,28 @@ namespace ALYSLC
 		float prevBaseOffset = camBaseHeightOffset;
 		if (canAdjustHeight)
 		{
-			const auto& rsData = glob.cdh->GetAnalogStickState
+			// Can use the LS, so we have to check the camera adjustment bind.
+			const auto& p = glob.coopPlayers[controlCamPID];
+			const auto& paramsList = p->pam->paParamsList;
+			const auto& stickData = glob.cdh->GetAnalogStickState
 			(
-				glob.coopPlayers[controlCamPID]->deviceID, false
+				p->deviceID, 
+				(
+					paramsList[!InputAction::kZoomCam - !InputAction::kFirstAction].inputMask &
+					(1 << !InputAction::kLS)
+				) == (1 << !InputAction::kLS)
 			);
-			const auto& rsX = rsData.xComp;
-			const auto& rsY = rsData.yComp;
-			const auto& rsMag = rsData.normMag;
+			const auto& stickX = stickData.xComp;
+			const auto& stickY = stickData.yComp;
+			const auto& stickMag = stickData.normMag;
 			// Change height of the focus point if the x comp is larger than the y comp.
-			if (fabsf(rsX) > fabsf(rsY))
+			if (fabsf(stickX) > fabsf(stickY))
 			{
 				// Right to increase height, left to decrease.
-				camBaseHeightOffset += rsX * rsMag * camMaxMovementSpeed * *g_deltaTimeRealTime;
+				camBaseHeightOffset += 
+				(
+					stickX * stickMag * camMaxMovementSpeed * *g_deltaTimeRealTime
+				);
 			}
 		}
 		else if (isLockedOn && 
@@ -4934,9 +4944,9 @@ namespace ALYSLC
 			return;
 		}
 		
-		float rsX = 0.0f;
-		float rsY = 0.0f;
-		float rsMag = 0.0f;
+		float stickX = 0.0f;
+		float stickY = 0.0f;
+		float stickMag = 0.0f;
 		// Auto-zoom in/out.
 		const float prevRadialDistance = camTargetRadialDistance;
 		// Zoom offset decreases (zoom in) when moving the RS up,
@@ -4962,14 +4972,21 @@ namespace ALYSLC
 		};
 		if (canAdjustZoom)
 		{
-			const auto& rsData = glob.cdh->GetAnalogStickState
+			const auto& p = glob.coopPlayers[controlCamPID];
+			const auto& paramsList = p->pam->paParamsList;
+			// Can use the LS, so we have to check the camera adjustment bind.
+			const auto& stickData = glob.cdh->GetAnalogStickState
 			(
-				glob.coopPlayers[controlCamPID]->deviceID, false
+				p->deviceID, 
+				(
+					paramsList[!InputAction::kZoomCam - !InputAction::kFirstAction].inputMask &
+					(1 << !InputAction::kLS)
+				) == (1 << !InputAction::kLS)
 			);
-			rsX = rsData.xComp;
-			rsY = rsData.yComp;
-			rsMag = rsData.normMag;
-			if (fabsf(rsY) > fabsf(rsX))
+			stickX = stickData.xComp;
+			stickY = stickData.yComp;
+			stickMag = stickData.normMag;
+			if (fabsf(stickY) > fabsf(stickX))
 			{
 				// Reset the base radial distance when the camera is colliding.
 				// Do not want to increase the base radial distance to zoom out 
@@ -5002,15 +5019,15 @@ namespace ALYSLC
 						);
 					}
 
-					if ((camTrueRadialDistance < camTargetRadialDistance && rsY > 0.0f) ||
-						(camTrueRadialDistance > camTargetRadialDistance && rsY < 0.0f))
+					if ((camTrueRadialDistance < camTargetRadialDistance && stickY > 0.0f) ||
+						(camTrueRadialDistance > camTargetRadialDistance && stickY < 0.0f))
 					{
 						// Do not exceed the max camera movement speed when zooming in/out.
 						camRadialDistanceOffset = max
 						(
 							0.0f, 
 							camRadialDistanceOffset - 
-							(*g_deltaTimeRealTime * camMaxMovementSpeed * rsY * rsMag)
+							(*g_deltaTimeRealTime * camMaxMovementSpeed * stickY * stickMag)
 						);
 					}
 				}
@@ -5021,7 +5038,7 @@ namespace ALYSLC
 					(
 						0.0f, 
 						camRadialDistanceOffset - 
-						(*g_deltaTimeRealTime * camMaxMovementSpeed * rsY * rsMag)
+						(*g_deltaTimeRealTime * camMaxMovementSpeed * stickY * stickMag)
 					);
 				}
 			}
@@ -5258,7 +5275,7 @@ namespace ALYSLC
 		// Only update auto-zoom radial distance when not adjusting the camera's height.
 		bool adjustingHeight = 
 		(
-			camAdjMode == CamAdjustmentMode::kZoom && fabsf(rsX) > fabsf(rsY)
+			camAdjMode == CamAdjustmentMode::kZoom && fabsf(stickX) > fabsf(stickY)
 		);
 		if (!adjustingHeight)
 		{

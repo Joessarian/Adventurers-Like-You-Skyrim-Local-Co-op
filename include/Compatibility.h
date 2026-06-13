@@ -24,6 +24,12 @@ namespace ALYSLC
 		static bool g_installed;
 	};
 
+	struct ExtendedUICompat
+	{
+		static void CheckForExtendedUI(const SKSE::LoadInterface* a_loadInterface);
+		static bool g_installed;
+	};
+
 	struct MCOCompat
 	{
 		static void CheckForMCO(const SKSE::LoadInterface* a_loadInterface);

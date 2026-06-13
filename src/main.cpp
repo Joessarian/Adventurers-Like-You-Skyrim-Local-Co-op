@@ -32,6 +32,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 			g_loadInterface
 		);
 		ALYSLC::EldenSprintCompat::CheckForEldenSprint(g_loadInterface);
+		ALYSLC::ExtendedUICompat::CheckForExtendedUI(g_loadInterface);
 		ALYSLC::MCOCompat::CheckForMCO(g_loadInterface);
 		ALYSLC::NFFCompat::CheckForNFF(g_loadInterface);
 		ALYSLC::PersistentFavoritesCompat::CheckForPersistentFavorites();

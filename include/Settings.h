@@ -377,8 +377,9 @@ namespace ALYSLC
 		static inline float fMaxDashDodgeSpeedmult = 600.0f;
 		// Min dash dodge movement type speed mult to apply.
 		static inline float fMinDashDodgeSpeedmult = 300.0f;
-		// Cycle through nearby references after holding the activate bind for this many seconds.
-		static inline float fSecsBeforeActivationCycling = 1.0f;
+		// Switch to performing alternate activation, if any, or activate non-selected objects
+		// on release after holding the activate bind for this many seconds.
+		static inline float fSecsBeforeAlternateActivation = 0.6f;
 		// Seconds between activation checks 
 		// (time between highlighting objects once cycling starts).
 		static inline float fSecsBetweenActivationChecks = 0.7f;
@@ -864,22 +865,22 @@ namespace ALYSLC
 			2.0f, 2.0f, 2.0f, 2.0f
 		};
 		// Crosshair body is the same color as the overlay.
-		// Red, Green, Cyan, Yellow by default.
+		// Blue, Green, Yellow, and Magenta by default.
 		static inline std::vector<uint32_t> vuOverlayRGBAValues = 
 		{
-			0xFF0000AA, 0x00FF00AA, 0x00FFFFAA, 0xFF00FFAA 
+			0x0096FFD4, 0x15FF00D4, 0xFFD000D4, 0xEA00FFD4
 		};
 		// Inner outline is always drawn.
 		// Black by default.
 		static inline std::vector<uint32_t> vuCrosshairInnerOutlineRGBAValues = 
 		{
-			0x000000AA, 0x000000AA, 0x000000AA, 0x000000AA 
+			0x000000D4, 0x000000D4, 0x000000D4, 0x000000D4
 		};
 		// Outer outline is only drawn when the crosshair is over a selectable target.
 		// White by default.
 		static inline std::vector<uint32_t> vuCrosshairOuterOutlineRGBAValues = 
 		{
-			0xFFFFFFAA, 0xFFFFFFAA, 0xFFFFFFAA, 0xFFFFFFAA 
+			0xFFFFFFD4, 0xFFFFFFD4, 0xFFFFFFD4, 0xFFFFFFD4
 		};
 		// Player indicator visibility modes:
 		// kDisabled: Never show the player indicator.

@@ -1094,6 +1094,10 @@ namespace ALYSLC
 
 			// Mutex for queueing/handling havok contact events.
 			std::mutex contactEventsQueueMutex;
+			
+			// TODO:
+			// Mutex for reading/writing manipulated refr data.
+			// std::mutex manipulatedRefrMutex;
 
 			// Maps grabbed refr handles to their positions in the managed grabbed refrs list.
 			std::unordered_map<RE::ObjectRefHandle, uint8_t> grabbedRefrHandlesToInfoIndices;
@@ -1538,7 +1542,10 @@ namespace ALYSLC
 				RE::NiPoint3& a_initialVelocityOut,
 				const ProjectileTrajType& a_trajType
 			);
-
+			
+			// TODO:
+			// Mutex for searching/modifying the managed projectile map.
+			// std::mutex managedProjMapMutex;
 			// Holds trajectory info for managed projectiles, indexed by their handles.
 			std::unordered_map<RE::ObjectRefHandle, std::unique_ptr<ManagedProjTrajectoryInfo>> 
 			managedProjHandleToTrajInfoMap;
@@ -1589,6 +1596,20 @@ namespace ALYSLC
 			prevQuickLootRefrHandle = RE::ObjectRefHandle();
 		}
 
+		// Get the default scaleform position for the crosshair.
+		// Offset left or right about the center of the screen based on player index.
+		inline glm::vec3 GetDefaultCrosshairPosition()
+		{
+			return glm::vec3
+			(
+				DebugAPI::screenResX / 2.0f + 
+				100.0f * (fmod(playerID, 2) * 2 - 1) * 
+				ceil((playerID + 1) / 2.0f),
+				DebugAPI::screenResY / 2.0f,
+				0.0f
+			);
+		}
+
 		// Get the farthest distance an object can be located from the player 
 		// while activating an object.
 		inline float GetMaxActivationDist() const
@@ -1605,15 +1626,7 @@ namespace ALYSLC
 		// Reset the player's crosshair scaleform position to its default position straight away.
 		inline void ResetCrosshairPosition()
 		{
-			// Offset left or right about the center of the screen based on player index.
-			crosshairScaleformPos.x = 
-			(
-				DebugAPI::screenResX / 2.0f + 
-				100.0f * (fmod(playerID, 2) * 2 - 1) * 
-				ceil((playerID + 1) / 2.0f)
-			);
-			crosshairScaleformPos.y = DebugAPI::screenResY / 2.0f;
-			crosshairScaleformPos.z = 0.0f;
+			crosshairScaleformPos = GetDefaultCrosshairPosition();
 			crosshairLocalPosOffset = 
 			crosshairLastMovementHitPosOffset = 
 			crosshairInitialMovementHitPosOffset = RE::NiPoint3();
@@ -1744,7 +1757,11 @@ namespace ALYSLC
 		// If indicating a failed activation, either do not colorize the shader or colorize 
 		// to fully black.
 		void ColorizeActivationShader(RE::TESEffectShader* a_shader, bool a_canActivateRefr);
-		
+
+		// Clear the current crosshair target, request to reset the crosshair's position, 
+		// reset crosshair data + offsets, and set as inactive.
+		void DeactivateCrosshair();
+
 		// Draw an indicator on the player's chosen activation target 
 		// if it is not the crosshair target.
 		void DrawActivationTargetIndicator();
@@ -1952,10 +1969,6 @@ namespace ALYSLC
 			bool a_wasThrown
 		);
 
-		// Clear the current crosshair target, request to reset the crosshair's position, 
-		// and reset the face target flag (if requested).
-		void InactivateCrosshair(bool a_stopFacingTarget);
-
 		// Is the given refr valid for targeting with the player's crosshair:
 		// - Handle valid, visible, and not disabled/deleted.
 		// - Not self, or part of the selection blacklist, 
@@ -2006,11 +2019,6 @@ namespace ALYSLC
 		// Used to maintain up-to-date info on the selected crosshair target
 		// or stealth state while the player is sneaking.
 		void SetPeriodicCrosshairMessage(const CrosshairMessageType& a_type);
-
-		// TEMPORARY:
-		// Only to test out binds ideas before actually adding in a customizable 
-		// switch aim mode bind.
-		void SwitchAimMode();
 		
 		// Set the activation target refr handle directly to the crosshair/aim correction handle,
 		// or check for a selectable refr nearby.
@@ -2183,6 +2191,11 @@ namespace ALYSLC
 		// Is the currently selected activation refr target chosen by simply tapping 
 		// the 'Activate' bind and NOT selected via the crosshair or lock on?
 		bool choseQuickActivationTarget;
+		// True if the crosshair is NOT in the process of returning 
+		// and has not returned to its default position.
+		bool crosshairActive; 
+		// Was the crosshair manually adjusted by the player?
+		bool crosshairManuallyAdjusted;
 		// Was the selected crosshair refr chosen by raycast?
 		bool crosshairRefrFromRaycast;
 		// Is the crosshair target refr in sight of the player?
@@ -2197,12 +2210,13 @@ namespace ALYSLC
 		bool lockOnToAimCorrectionTarget;
 		// True if the item should be used instead of looted/stolen.
 		bool performSecondaryActivationAction;
-		// Requesting to reset the crosshair to its default position.
-		bool reqResetCrosshairPosition;
 		// Is the crosshair/lock on activation refr in range to open the QuickLoot menu?
 		bool selectedRefrInRangeForQuickLoot;
 		// Restart the next lock on aim target selection chain from the player as the origin.
 		bool shouldFindLockOnTargetFromPlayer;
+		// Should the crosshair return to its default position, 
+		// whether requested externally or automatically?
+		bool shouldResetCrosshairPosition;
 		// Has the player started cycling through nearby objects for activation?
 		bool startedActivationCycling;
 		// Is a valid object being targeted by the crosshair's raycast?
@@ -2250,6 +2264,10 @@ namespace ALYSLC
 		uint32_t detectionPctRGB;
 		// Aim mode currently in use (free aim, lock on, or twin stick).
 		AimMode aimMode;
+
+		// REMOVE when all the new binds are ready.
+		bool tempInterruptedBind1 = false;
+		bool tempInterruptedBind2 = false;
 
 	private:
 		// Helper funcs.

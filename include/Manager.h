@@ -263,34 +263,71 @@ namespace ALYSLC
 			std::function<void()> a_task
 		) 
 		{
-			std::jthread tempEnqueuerThread([this, a_sourceName, a_funcName, a_task]() 
-			{
-				// Continue trying to enqueue task for, at most, 5 seconds.
-				SteadyClock::time_point startTP = SteadyClock::now();
-				while (Util::GetElapsedSeconds(startTP, true) < 5.0f)
+			// Avoid repeatedly trying to obtain the lock and detaching a thread each time.
+			// Not a great way to go about this.
+			/*
+			std::jthread tempEnqueuerThread
+			(
+				[this, a_sourceName, a_funcName, a_task]() 
 				{
-					DBG("{}: Getting lock. (0x{:X})", 
-						name, std::hash<std::jthread::id>()(std::this_thread::get_id()));
-					std::unique_lock<std::mutex> lock(queueMutex, std::try_to_lock);
-					if (lock)
-					{	
-						DBG("{}: Adding task from {}: {}.", name, a_sourceName, a_funcName);
-						queue.emplace(a_task);
-						queueCV.notify_one();
-						break;
-					}
-					else
+					// Continue trying to enqueue task for, at most, 5 seconds.
+					SteadyClock::time_point startTP = SteadyClock::now();
+					while (Util::GetElapsedSeconds(startTP, true) < 5.0f)
 					{
-						std::this_thread::sleep_for
-						(
-							std::chrono::seconds(static_cast<long long>(*g_deltaTimeRealTime))
-						);
+						DBG("{}: Getting lock. (0x{:X})", 
+							name, std::hash<std::jthread::id>()(std::this_thread::get_id()));
+						std::unique_lock<std::mutex> lock(queueMutex, std::try_to_lock);
+						if (lock)
+						{	
+							DBG("{}: Adding task from {}: {}.", name, a_sourceName, a_funcName);
+							queue.emplace(a_task);
+							queueCV.notify_one();
+							break;
+						}
+						else
+						{
+							std::this_thread::sleep_for
+							(
+								std::chrono::seconds(static_cast<long long>(*g_deltaTimeRealTime))
+							);
+						}
 					}
 				}
-			});
+			);
 
 			// Detach the thread to avoid locking up one of the game's threads.
 			tempEnqueuerThread.detach();
+			*/
+
+			// One try to enqueue, walk away if the lock isn't obtainable.
+			/*std::unique_lock<std::mutex> lock(queueMutex, std::try_to_lock);
+			if (lock)
+			{	
+				DBG("{}: Adding task from {}: {}.", name, a_sourceName, a_funcName);
+				queue.emplace(a_task);
+				queueCV.notify_one();
+			}
+			else
+			{
+				DBG
+				(
+					"ERR: {}: Failed to obtain lock and queue task from {}: {}. (0x{:X}).",
+					name, 
+					a_sourceName, 
+					a_funcName, 
+					std::hash<std::jthread::id>()(std::this_thread::get_id())
+				);
+			}*/
+
+			DBG("{}: Getting lock. (0x{:X})", 
+				name, std::hash<std::jthread::id>()(std::this_thread::get_id()));
+			{
+				std::unique_lock<std::mutex> lock(queueMutex);
+				DBG("{}: Adding task from {}: {}.", name, a_sourceName, a_funcName);
+				queue.emplace(a_task);
+			}
+			
+			queueCV.notify_one();
 		}
 
 		// Condition variable waited upon by the task runner thread.
@@ -325,29 +362,34 @@ namespace ALYSLC
 			// Continue looping until externally prompted to stop.
 			while (!a_stoken.stop_requested())
 			{
+				std::optional<std::function<void()>> task{ };
 				{
 					DBG("{}: Getting lock. (0x{:X})", 
 						name, std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					std::unique_lock<std::mutex> lock(queueMutex);
 					DBG("{}: Lock obtained. (0x{:X})", 
 						name, std::hash<std::jthread::id>()(std::this_thread::get_id()));
+
 					queueCV.wait
 					(
 						lock,
 						[&]() 
 						{
 							DBG("{}: Waiting for a task.", name);
-							return (queue.size() > 0 || a_stoken.stop_requested());
+							return (!queue.empty() || a_stoken.stop_requested());
 						}
 					);
-
-					while (queue.size() > 0)
-					{
-						DBG("{}: Got a task.", name);
-						queue.front()();
-						queue.pop();
-					}
+					
+					DBG("{}: Got a task.", name);
+					task = queue.front();
+					queue.pop();
 				}
+
+				if (task.has_value())
+				{
+					task.value()();
+				}
+				
 			}
 
 			// Clear out all remaining tasks when done.

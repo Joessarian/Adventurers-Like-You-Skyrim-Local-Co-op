@@ -348,7 +348,8 @@ namespace ALYSLC
 							a_count, 
 							a_defaultProcessingOnly
 						);
-					}				}
+					}				
+				}
 				else
 				{
 					DBG("{}: Pick up {} (0x{:X}).",
@@ -9653,6 +9654,82 @@ namespace ALYSLC
 			(
 				a_artObj, a_timeSecs, a_facingRefr, a_faceTarget, a_attachToCamera
 			);
+		}
+
+		void StopAllActivationEffectShaders(RE::TESObjectREFR* a_refr, int32_t a_playerID)
+		{
+			// Stop all activation-related effect shaders currently playing on the given refr.
+			// Credits to po3:
+			// Adapted from their papyrus extender code found here:
+			// https://github.com/powerof3/PapyrusExtenderSSE/blob/master/src/Papyrus/Util/Graphics.cpp#L42
+
+			if (!IsValidRefrForTargeting(a_refr))
+			{
+				return;
+			}
+
+			const auto processLists = RE::ProcessLists::GetSingleton(); 
+			if (!processLists)
+			{
+				return;
+			}
+
+			processLists->magicEffectsLock.Lock();
+			for (const auto tempEffectPtr : processLists->magicEffects)
+			{
+				if (!tempEffectPtr || !tempEffectPtr->As<RE::ShaderReferenceEffect>())
+				{
+					continue;
+				}
+
+				auto shaderEffect = tempEffectPtr->As<RE::ShaderReferenceEffect>();
+				// The effect is playing on the refr, so set it as finished
+				// and allow the game to clean it up at its own pace.
+				
+				if (!shaderEffect ||
+					!HandleIsValid(shaderEffect->target) ||
+					shaderEffect->target.get().get() != a_refr ||
+					!shaderEffect->effectData)
+				{
+					continue;
+				}
+
+				bool shouldStop = false;
+				if (shaderEffect->effectData == glob.activateFailureShader ||
+					shaderEffect->effectData == glob.activateUseShader ||
+					shaderEffect->effectData == glob.activateDefaultShader)
+				{
+					shouldStop = true;
+				}
+				else
+				{
+					for (auto i = 0; i < glob.activateHighlightShaders.size(); ++i)
+					{
+						const auto shader = glob.activateHighlightShaders[i];
+						if (!shader)
+						{
+							continue;
+						}
+
+
+						if ((shader == shaderEffect->effectData) &&
+							(a_playerID == -1 || i == a_playerID))
+						{
+							shouldStop = true;
+							break;
+						}
+					}
+				}
+				
+				if (!shouldStop)
+				{
+					continue;
+				}
+
+				// Is an activation shader on this refr, so stop it.
+				shaderEffect->finished = true;
+			}
+			processLists->magicEffectsLock.Unlock();
 		}
 
 		void StopAllEffectShaders(RE::TESObjectREFR* a_refr)

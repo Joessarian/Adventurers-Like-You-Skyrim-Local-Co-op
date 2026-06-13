@@ -1093,10 +1093,13 @@ namespace ALYSLC
 
 			// Final pass to ensure only started or pressed actions 
 			// remain in the occurring player actions list.
+			// Also flag the movement manager to stop the player's movement if an action 
+			// contains the LS as one of its inputs.
+			bool movementBlocked = false;
 			std::erase_if
 			(
 				occurringPAs,
-				[this, &paFuncs](const InputAction& a_action) 
+				[this, &movementBlocked, &paFuncs](const InputAction& a_action) 
 				{
 					const auto& perfStage = 
 					(
@@ -1153,10 +1156,27 @@ namespace ALYSLC
 							coopActor->GetName(), a_action, perfStage
 						);
 					}
+					else
+					{
+						// If this action contains LS movement as one of its inputs,
+						// we have to flag the movement manager to stop the player from moving.
+						if (!movementBlocked)
+						{
+							movementBlocked = 
+							(
+								(
+									paParamsList[!a_action - !InputAction::kFirstAction].inputMask &
+									(1 << !InputAction::kLS)
+								) == (1 << !InputAction::kLS)
+							);
+						}
+					}
 
 					return shouldStop;
 				}
 			);
+
+			actionPreventsMovement = movementBlocked;
 		}
 
 		//=================
@@ -1373,6 +1393,18 @@ namespace ALYSLC
 		downedPlayerTarget = nullptr;
 		player1RefAlias = glob.player1RefAlias;
 		killerPlayerActorHandle = killmoveTargetActorHandle = RE::ActorHandle();
+		
+		// Player action (PA) bookkeeping.
+		// AV cost manager for triggered player actions.
+		if (avcam)
+		{
+			std::unique_lock<std::mutex> lock(avcam->perfAnimQueueMutex);
+			avcam->Clear();
+		}
+		else
+		{
+			avcam = std::make_unique<AVCostActionManager>();
+		}
 
 		// Clear assigned packages to P1 ref alias.
 		if (p->isPlayer1 && player1RefAlias && player1RefAlias->fillData.uniqueActor.uniqueActor)
@@ -1551,9 +1583,6 @@ namespace ALYSLC
 
 		// Attacking hand.
 		lastAttackingHand = HandIndex::kNone;
-		// Player action (PA) bookkeeping.
-		// AV cost manager for triggered player actions.
-		avcam = std::make_unique<AVCostActionManager>();
 		// Currently occurring PAs.
 		occurringPAs.clear();
 		// Sets of conflicting PAs for each PA.
@@ -1636,6 +1665,7 @@ namespace ALYSLC
 		// Currently used for sneak attacks.
 		reqDamageMult = 1.0f;
 		// Bools.
+		actionPreventsMovement = false;
 		attackDamageMultSet = false;
 		autoEndDialogue = false;
 		blockAllInputActions = false;
@@ -1952,13 +1982,9 @@ namespace ALYSLC
 		}
 
 		RE::NiPoint3 targetPos = coopActor->data.location;
-		const bool crosshairActive = 
-		(
-			p->tm->aimMode == AimMode::kCrosshair
-		);
 		auto targetRefrPtr = Util::GetRefrPtrFromHandle
 		(
-			crosshairActive ? 
+			p->tm->crosshairActive ? 
 			p->tm->crosshairRefrHandle :
 			p->tm->aimCorrectionTargetHandle
 		); 
@@ -1966,7 +1992,7 @@ namespace ALYSLC
 		{
 			targetPos = targetRefrPtr->data.location;
 		}
-		else if (crosshairActive && p->mm->reqFaceTarget)
+		else if (p->tm->crosshairActive)
 		{
 			targetPos = p->tm->crosshairWorldPos;
 		}
@@ -6144,10 +6170,7 @@ namespace ALYSLC
 				p1->SetAIDriven(false);
 			}
 			
-			if (p->mm->dontMoveSet)
-			{
-				Util::NativeFunctions::SetDontMove(coopActor.get(), false);
-			}
+			p->mm->SetForceDontMove(false);
 		};
 		
 		// Let go of the revive bind.
@@ -6169,8 +6192,7 @@ namespace ALYSLC
 				glob.coopPlayers[a_playerTargetIndex]->coopActor->GetName()
 			);
 			// Stop P1 from moving.
-			p->mm->dontMoveSet = true;
-			Util::NativeFunctions::SetDontMove(coopActor.get(), true);
+			p->mm->SetForceDontMove(true);
 			downedPlayerTarget = glob.coopPlayers[a_playerTargetIndex];
 			downedPlayerTarget->isBeingRevived = true;
 			p->isRevivingPlayer = true;
@@ -8293,8 +8315,8 @@ namespace ALYSLC
 		// 2. If B conflicts with A, B should block and prevent A from executing.
 		for (auto i = 0; i < !InputAction::kActionTotal; ++i)
 		{
-			// Composing inputs for action 1.
-			const auto& compInputs1 = paStatesList[i].paParams.composingInputs;
+			// Composing inputs for action i.
+			const auto& iCompInputs = paStatesList[i].paParams.composingInputs;
 			// Must not be disabled.
 			if (paParamsList[i].perfType == PerfType::kDisabled) 
 			{
@@ -8303,14 +8325,231 @@ namespace ALYSLC
 
 			for (auto j = 0; j < !InputAction::kActionTotal; ++j)
 			{
-				// Composing inputs for action 2.
-				const auto& compInputs2 = paStatesList[j].paParams.composingInputs;
+				// Composing inputs for action j.
+				const auto& jCompInputs = paStatesList[j].paParams.composingInputs;
 				// Ensure not comparing to the same action and the action is not disabled.
 				if (j == i || paParamsList[j].perfType == PerfType::kDisabled)
 				{
 					continue;
 				}
 
+				bool conflicts = false;
+				bool iOrderMatters = paStatesList[i].paParams.triggerFlags.none
+				(
+					TriggerFlag::kDoNotUseCompActionsOrdering
+				);
+				bool jOrderMatters = paStatesList[j].paParams.triggerFlags.none
+				(
+					TriggerFlag::kDoNotUseCompActionsOrdering
+				);
+				// Can only conflict if action j's input list is larger than equal to
+				// action i's input list in size and action i's input list is not empty.
+				// Checking if:
+				// 
+				// Input order matters for action j:
+				// 
+				//	If order matters for action i:
+				//		Action i's inputs are a contiguous subsequence of action j's inputs.
+				// 
+				//	OR:
+				// 
+				//	If order does not matter for action i:
+				//		Action i's inputs can be arranged into a contiguous subsequence 
+				//		of action j's inputs.
+				// 
+				// Input order does not matter for action j:
+				// 
+				//	Action i's inputs are a subset of action j's inputs.
+				if (jCompInputs.size() >= iCompInputs.size() && !iCompInputs.empty())
+				{
+					if (jOrderMatters && iOrderMatters)
+					{
+						// Start as conflicting and then set to false 
+						// if action j's inputs list does not contain all of action i's inputs
+						// or action j's inputs list contains all of action i's inputs
+						// but action i's input list is not a contiguous subsequence
+						// of action j's input list.
+						conflicts = true;
+						int16_t lastMatchIndex = -1;
+						for (uint8_t iIndex = 0; iIndex < iCompInputs.size(); ++iIndex)
+						{
+							if (!conflicts)
+							{
+								break;
+							}
+
+							const auto& iInput = iCompInputs[iIndex];
+							uint8_t jIndex = lastMatchIndex == -1 ? 0 : lastMatchIndex + 1;
+							for (; jIndex < jCompInputs.size(); ++jIndex)
+							{
+								const auto& jInput = jCompInputs[jIndex];
+								if (jInput == iInput)
+								{
+									// Set first match or subsequent matches only if the index
+									// of the previous match is the previous element's index.
+									if (lastMatchIndex == -1 || lastMatchIndex == jIndex - 1)
+									{
+										lastMatchIndex = jIndex;
+										/*DBG
+										(
+											"Match: Input {}, new matching index: {} "
+											"(i: {}, j: {}).",
+											jInput,
+											jIndex,
+											static_cast<InputAction>
+											(
+												i + !InputAction::kFirstAction
+											),
+											static_cast<InputAction>
+											(
+												j + !InputAction::kFirstAction
+											)
+										);*/
+									}
+									else
+									{
+										// Otherwise, there is a gap between matching indices,
+										// meaning the subsequence is not contiguous,
+										// so there can be no conflict.
+										/*DBG
+										(
+											"NOT CONTIGUOUS: Input {}, last matching index: {} "
+											"(i: {}, j: {}).",
+											iInput,
+											jIndex,
+											static_cast<InputAction>
+											(
+												i + !InputAction::kFirstAction
+											),
+											static_cast<InputAction>
+											(
+												j + !InputAction::kFirstAction
+											)
+										);*/
+										conflicts = false;
+									}
+										
+									break;
+								}
+							}
+
+							// Not found further along in action j's inputs list, 
+							// so action i's inputs are either not a subset of action j's inputs 
+							// or action j's inputs contain all of action i's inputs
+							// but in a different order and thus cannot conflict.
+							// We can exit early.
+							if (jIndex == jCompInputs.size())
+							{
+								conflicts = false;
+								/*DBG
+								(
+									"NOT FOUND: Input {}, last matching index: {} "
+									"(i: {}, j: {}).",
+									iInput,
+									lastMatchIndex,
+									static_cast<InputAction>(i + !InputAction::kFirstAction),
+									static_cast<InputAction>(j + !InputAction::kFirstAction)
+								);*/
+							}
+						}
+
+						if (conflicts)
+						{
+							DBG
+							(
+								"CONFLICT: ORDER MATTERS (i: {}, j: {}): "
+								"Action i ({})'s input set ({}) is a subset "
+								"of action j ({})'s input set ({}), and action i ({})'s inputs "
+								"are arranged in the same order within action j ({})'s "
+								"input list. Last match index: {}.",
+								iOrderMatters,
+								jOrderMatters,
+								static_cast<InputAction>(i + !InputAction::kFirstAction),
+								iCompInputs.size(),
+								static_cast<InputAction>(j + !InputAction::kFirstAction),
+								jCompInputs.size(),
+								static_cast<InputAction>(i + !InputAction::kFirstAction),
+								static_cast<InputAction>(j + !InputAction::kFirstAction),
+								lastMatchIndex
+							);
+						}
+						else
+						{
+							/*DBG
+							(
+								"NO CONFLICT: ORDER MATTERS (i: {}, j: {}): "
+								"Action 1 ({})'s input set ({}) is not a subset "
+								"of action 2 ({})'s input set ({}), or action 1 ({})'s inputs "
+								"are not arranged in the same order within action 2 ({})'s "
+								"input list. Last match index: {}.",
+								iOrderMatters,
+								jOrderMatters,
+								static_cast<InputAction>(i + !InputAction::kFirstAction),
+								iCompInputs.size(),
+								static_cast<InputAction>(j + !InputAction::kFirstAction),
+								jCompInputs.size(),
+								static_cast<InputAction>(i + !InputAction::kFirstAction),
+								static_cast<InputAction>(j + !InputAction::kFirstAction),
+								lastMatchIndex
+							);*/
+						}
+					}
+					else
+					{
+						std::set<InputAction> jCompInputsSet
+						{
+							jCompInputs.begin(), jCompInputs.end() 
+						};
+						conflicts = 
+						{
+							!std::any_of
+							(
+								iCompInputs.begin(), iCompInputs.end(), 
+								[&jCompInputsSet, &conflicts](const InputAction& a_action) 
+								{ 
+									return !jCompInputsSet.contains(a_action); 
+								}
+							)
+						};
+
+						if (conflicts)
+						{
+							DBG
+							(
+								"CONFLICT: ORDER DOES NOT MATTER (Matters: 1: {}, 2: {}): "
+								"Action 1 ({})'s input set ({}) is a subset "
+								"of action 2 ({})'s input set ({}).",
+								iOrderMatters,
+								jOrderMatters,
+								static_cast<InputAction>(i + !InputAction::kFirstAction),
+								iCompInputs.size(),
+								static_cast<InputAction>(j + !InputAction::kFirstAction),
+								jCompInputs.size(),
+								static_cast<InputAction>(i + !InputAction::kFirstAction),
+								static_cast<InputAction>(j + !InputAction::kFirstAction)
+							);
+						}
+						else
+						{
+							/*DBG
+							(
+								"NO CONFLICT: ORDER DOES NOT MATTER (Matters: 1: {}, 2: {}): "
+								"Action 1 ({})'s input set ({}) is not a subset "
+								"of action 2 ({})'s input set ({}).",
+								iOrderMatters,
+								jOrderMatters,
+								static_cast<InputAction>(i + !InputAction::kFirstAction),
+								iCompInputs.size(),
+								static_cast<InputAction>(j + !InputAction::kFirstAction),
+								jCompInputs.size(),
+								static_cast<InputAction>(i + !InputAction::kFirstAction),
+								static_cast<InputAction>(j + !InputAction::kFirstAction)
+							);*/
+						}
+					}	
+				}
+
+				// OLD CODE. Keeping for now.
 				// Subset check.
 				// If action 2's composing inputs set contains ALL of action 1's composing inputs,
 				// action 2 conflicts with action 1. Order does not matter.
@@ -8326,7 +8565,7 @@ namespace ALYSLC
 				// RotateCam's composing inputs list does not
 				// contain all of AdjustAimPitch's composing inputs,
 				// so RotateCam does not conflict with AdjustAimPitch.
-				std::set<InputAction> compInputs2Set{ compInputs2.begin(), compInputs2.end() };
+				/*std::set<InputAction> compInputs2Set{ compInputs2.begin(), compInputs2.end() };
 				bool conflicts = 
 				{
 					!std::any_of
@@ -8337,7 +8576,7 @@ namespace ALYSLC
 							return !compInputs2Set.contains(a_action); 
 						}
 					)
-				};
+				};*/
 
 				// Action 2 conflicts with and should block action 1 by default.
 				if (conflicts)

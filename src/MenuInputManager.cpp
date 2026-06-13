@@ -5571,8 +5571,8 @@ namespace ALYSLC
 			// 'X' is not mapped by default in the menu context 
 			// and 'Y' maps to 'DownloadAll' which does not trigger the correct menu response
 			// unless in the Creations Menu (won't ever happen in co-op).
-			if (a_bindInfoOut.idCode == GAMEPAD_MASK_X ||
-				a_bindInfoOut.idCode == GAMEPAD_MASK_Y)
+			if (a_bindInfoOut.idCode == GAME_INPUT_CODE_X ||
+				a_bindInfoOut.idCode == GAME_INPUT_CODE_Y)
 			{
 				context = RE::UserEvents::INPUT_CONTEXT_ID::kItemMenu;
 			}

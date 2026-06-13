@@ -1091,6 +1091,9 @@ namespace ALYSLC
 		// Action state
 		// 
 		
+		// Is the player performing an action that involves moving the left stick?
+		// If so, the player should stop moving and rotating.
+		bool actionPreventsMovement;
 		// Is attacking/casting.
 		bool isAttacking;
 		// Is performing a bash attack.

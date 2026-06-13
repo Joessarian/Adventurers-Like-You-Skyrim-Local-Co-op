@@ -633,6 +633,12 @@ namespace ALYSLC
 			secsSinceUpdate = secsUpdateInterval;
 		}
 
+		// Set the interpolation update interval.
+		inline void SetUpdateInterval(const float& a_secsUpdateInterval)
+		{
+			secsUpdateInterval = a_secsUpdateInterval;
+		}
+
 		// Shift over the current value into
 		// the previous value, and the new
 		// next value into the next value.
@@ -5065,6 +5071,11 @@ namespace ALYSLC
 			bool&& a_faceTarget = false, 
 			bool&& a_attachToCamera = false
 		);
+		
+		// Stop all activation-related effect shaders currently playing on the given refr.
+		// Can stop all players' activation shaders (-1 for player ID),
+		// or just the activation shader for the player with the given player ID.
+		void StopAllActivationEffectShaders(RE::TESObjectREFR* a_refr, int32_t a_playerID);
 
 		// Stop all effect shaders currently playing on the given refr.
 		void StopAllEffectShaders(RE::TESObjectREFR* a_refr);

@@ -55,8 +55,6 @@ namespace ALYSLC
 
 	void TargetingManager::MainTask()
 	{
-		// TEMPORARY until new binds are added.
-		SwitchAimMode();
 		// Update crosshair position and selection first, 
 		// and draw the crosshair, player indicator, and aim pitch indicator
 		// if no fullscreen menu is open or not controlling menus.
@@ -103,8 +101,8 @@ namespace ALYSLC
 			// No longer selecting a crosshair target.
 			validCrosshairRefrHit = false;
 			rmm->ClearAll();
-			// Reset crosshair position.
-			ResetCrosshairPosition();
+			// Move crosshair back to its default position and hide.
+			DeactivateCrosshair();
 		}
 		else
 		{
@@ -182,17 +180,83 @@ namespace ALYSLC
 		coopActor = p->coopActor;
 
 		// Projectile manager.
-		mph = std::make_unique<ManagedProjectileHandler>();
+		if (mph)
+		{
+			// TODO:
+			//std::unique_lock<std::mutex> lock(mph->managedProjMapMutex);
+			mph->Clear();
+		}
+		else
+		{
+			mph = std::make_unique<ManagedProjectileHandler>();
+		}
+		
 		// Grabbed/released object manipulation manager.
-		rmm = std::make_unique<RefrManipulationManager>();
+		if (rmm)
+		{
+			// TODO:
+			//std::unique_lock<std::mutex> lock(rmm->manipulatedRefrMutex);
+			rmm->ClearAll();
+		}
+		else
+		{
+			rmm = std::make_unique<RefrManipulationManager>();
+		}
+
 		// Motion state.
-		targetMotionState = std::make_unique<RefrTargetMotionState>();
+		if (targetMotionState)
+		{
+			targetMotionState->Refresh();
+		}
+		else
+		{
+			targetMotionState = std::make_unique<RefrTargetMotionState>();
+		}
+
 		// Crosshair text messages.
-		crosshairMessage = std::make_unique<CrosshairMessage>();
-		extCrosshairMessage = std::make_unique<CrosshairMessage>();
-		lastCrosshairMessage = std::make_unique<CrosshairMessage>();
+
+		// Current.
+		if (crosshairMessage)
+		{
+			crosshairMessage->Clear();
+		}
+		else
+		{
+			crosshairMessage = std::make_unique<CrosshairMessage>();
+		}
+
+		// Externally set.
+		if (extCrosshairMessage)
+		{
+			extCrosshairMessage->Clear();
+		}
+		else
+		{
+			extCrosshairMessage = std::make_unique<CrosshairMessage>();
+		}
+
+		// Last set.
+		if (lastCrosshairMessage)
+		{
+			lastCrosshairMessage->Clear();
+		}
+		else
+		{
+			lastCrosshairMessage = std::make_unique<CrosshairMessage>();
+		}
+
 		// UI element fade data.
-		activationIndicatorOscillationData = std::make_unique<TwoWayInterpData>();
+
+		// Activation indicator oscillation.
+		if (activationIndicatorOscillationData)
+		{
+			activationIndicatorOscillationData->Reset(true, true);
+		}
+		else
+		{
+			activationIndicatorOscillationData = std::make_unique<TwoWayInterpData>();
+		}
+
 		activationIndicatorOscillationData->SetInterpInterval
 		(
 			Settings::fSecsBetweenActivationChecks, true
@@ -201,7 +265,17 @@ namespace ALYSLC
 		(
 			Settings::fSecsBetweenActivationChecks, false
 		);
-		aimCorrectionIndicatorOscillationData = std::make_unique<TwoWayInterpData>();
+
+		// Aim correction indicator oscillation.
+		if (aimCorrectionIndicatorOscillationData)
+		{
+			aimCorrectionIndicatorOscillationData->Reset(true, true);
+		}
+		else
+		{
+			aimCorrectionIndicatorOscillationData = std::make_unique<TwoWayInterpData>();
+		}
+		
 		aimCorrectionIndicatorOscillationData->SetInterpInterval
 		(
 			Settings::vfSecsToOscillateCrosshair[playerID], true
@@ -210,7 +284,17 @@ namespace ALYSLC
 		(
 			Settings::vfSecsToOscillateCrosshair[playerID], false
 		);
-		aimCorrectionIndicatorRotationData = std::make_unique<TwoWayInterpData>();
+
+		// Aim correction indicator rotation.
+		if (aimCorrectionIndicatorRotationData)
+		{
+			aimCorrectionIndicatorRotationData->Reset(true, true);
+		}
+		else
+		{
+			aimCorrectionIndicatorRotationData = std::make_unique<TwoWayInterpData>();
+		}
+
 		aimCorrectionIndicatorRotationData->SetInterpInterval
 		(
 			Settings::vfSecsToRotateCrosshair[playerID], true
@@ -219,27 +303,105 @@ namespace ALYSLC
 		(
 			Settings::vfSecsToRotateCrosshair[playerID], false
 		);
-		aimPitchIndicatorFadeInterpData = std::make_unique<TwoWayInterpData>();
+
+		// Aim pitch indicator fade.
+		if (aimPitchIndicatorFadeInterpData)
+		{
+			aimPitchIndicatorFadeInterpData->Reset(true, true);
+		}
+		else
+		{
+			aimPitchIndicatorFadeInterpData = std::make_unique<TwoWayInterpData>();
+		}
+
 		aimPitchIndicatorFadeInterpData->SetInterpInterval(0.25f, true);
 		aimPitchIndicatorFadeInterpData->SetInterpInterval(0.5f, false);
-		crosshairFadeInterpData = std::make_unique<TwoWayInterpData>();
+
+		// Crosshair fade.
+		if (crosshairFadeInterpData)
+		{
+			crosshairFadeInterpData->Reset(true, true);
+		}
+		else
+		{
+			crosshairFadeInterpData = std::make_unique<TwoWayInterpData>();
+		}
+
 		crosshairFadeInterpData->SetInterpInterval(0.5f, true);
 		crosshairFadeInterpData->SetInterpInterval(1.0f, false);
-		crosshairSizeRatioInterpData = std::make_unique<TwoWayInterpData>();
+
+		// Crosshair size.
+		if (crosshairSizeRatioInterpData)
+		{
+			crosshairSizeRatioInterpData->Reset(true, true);
+		}
+		else
+		{
+			crosshairSizeRatioInterpData = std::make_unique<TwoWayInterpData>();
+		}
+
 		crosshairSizeRatioInterpData->SetInterpInterval(1.0f, true);
 		crosshairSizeRatioInterpData->SetInterpInterval(1.0f, false);
-		playerIndicatorFadeInterpData = std::make_unique<TwoWayInterpData>();
+
+		// Player indicator fade.
+		if (playerIndicatorFadeInterpData)
+		{
+			playerIndicatorFadeInterpData->Reset(true, true);
+		}
+		else
+		{
+			playerIndicatorFadeInterpData = std::make_unique<TwoWayInterpData>();
+		}
+
 		playerIndicatorFadeInterpData->SetInterpInterval(1.0f, true);
 		playerIndicatorFadeInterpData->SetInterpInterval(1.0f, false);
-		// Crosshair interpolation data.
-		crosshairOscillationData = std::make_unique<InterpolationData<float>>
-		(
-			0.0f, 0.0f, 0.0f, Settings::vfSecsToOscillateCrosshair[playerID]
-		);
-		crosshairRotationData = std::make_unique<InterpolationData<float>>
-		(
-			0.0f, 0.0f, 0.0f, Settings::vfSecsToRotateCrosshair[playerID]
-		);
+
+		// Crosshair oscillation.
+		if (crosshairOscillationData)
+		{
+			crosshairOscillationData->ResetData();
+			// Differing starting oscillation values for each player so the crosshairs 
+			// do not completely overlap when over a target.
+			crosshairOscillationData->prev = 
+			crosshairOscillationData->current = static_cast<float>(playerID) * 0.25f;
+			crosshairOscillationData->next = 1.0f;
+			crosshairOscillationData->SetUpdateInterval
+			(
+				Settings::vfSecsToOscillateCrosshair[playerID]
+			);
+			crosshairOscillationData->secsSinceUpdate = 
+			(
+				crosshairOscillationData->secsUpdateInterval * crosshairOscillationData->current
+			);
+		}
+		else
+		{
+			crosshairOscillationData = std::make_unique<InterpolationData<float>>
+			(
+				static_cast<float>(playerID) * 0.25f, 
+				static_cast<float>(playerID) * 0.25f, 
+				1.0f, 
+				Settings::vfSecsToOscillateCrosshair[playerID]
+			);
+			crosshairOscillationData->secsSinceUpdate = 
+			(
+				crosshairOscillationData->secsUpdateInterval * crosshairOscillationData->current
+			);
+		}
+		
+		// Crosshair rotation.
+		if (crosshairRotationData)
+		{
+			crosshairRotationData->ResetData();
+			crosshairRotationData->SetUpdateInterval(Settings::vfSecsToRotateCrosshair[playerID]);
+		}
+		else
+		{
+			crosshairRotationData = std::make_unique<InterpolationData<float>>
+			(
+				0.0f, 0.0f, 0.0f, Settings::vfSecsToRotateCrosshair[playerID]
+			);
+		}
 
 		// Target handles.
 		// Clear all target handles, not just crosshair selection-related ones.
@@ -267,13 +429,15 @@ namespace ALYSLC
 		choseProximityActivationTarget = false;
 		choseLockOnAimTarget = false;
 		choseQuickActivationTarget = false;
+		crosshairActive = false;
+		crosshairManuallyAdjusted = false;
 		crosshairRefrInSight = false;
 		isMARFing = false;
 		isSMORFing = false;
 		lockOnToAimCorrectionTarget = false;
-		reqResetCrosshairPosition = false;
 		selectedRefrInRangeForQuickLoot = false;
 		shouldFindLockOnTargetFromPlayer = false;
+		shouldResetCrosshairPosition = false;
 		startedActivationCycling = false;
 		validCrosshairRefrHit = false;
 		wantsToSMORF = false;
@@ -494,22 +658,7 @@ namespace ALYSLC
 		); 
 		if (activationRefrPtr)
 		{
-			Util::StopEffectShader
-			(
-				activationRefrPtr.get(), glob.activateHighlightShaders[playerID]
-			);
-			Util::StopEffectShader
-			(
-				activationRefrPtr.get(), glob.activateDefaultShader
-			);
-			Util::StopEffectShader
-			(
-				activationRefrPtr.get(), glob.activateFailureShader
-			);
-			Util::StopEffectShader
-			(
-				activationRefrPtr.get(), glob.activateUseShader
-			);
+			Util::StopAllActivationEffectShaders(activationRefrPtr.get(), playerID);
 		}
 		
 		DBG
@@ -719,6 +868,23 @@ namespace ALYSLC
 		}
 	}
 
+	void TargetingManager::DeactivateCrosshair()
+	{
+		// Clear the current crosshair target, request to reset the crosshair's position, 
+		// reset crosshair data + offsets, and set as inactive.
+		
+		selectedTargetActorHandle = RE::ActorHandle();
+		crosshairRefrHandle = RE::ObjectRefHandle();
+		crosshairLocalPosOffset = 
+		crosshairLastMovementHitPosOffset = 
+		crosshairInitialMovementHitPosOffset = RE::NiPoint3();
+		crosshairOnRefrPixelXYDeltas = { 0.0f, 0.0f };
+
+		crosshairManuallyAdjusted = false;
+		shouldResetCrosshairPosition = true;
+		ClearAimTargetData();
+	}
+
 	void TargetingManager::DrawActivationTargetIndicator()
 	{
 		// Draw the lower portion of the player indicator 
@@ -727,6 +893,7 @@ namespace ALYSLC
 		// Need to have a valid activation target that is not the crosshair refr
 		// and be performing an activation player action.
 
+		auto ui = RE::UI::GetSingleton();
 		auto activationRefrPtr = Util::GetRefrPtrFromHandle(activationRefrHandle);
 		bool isActivating = p->pam->IsPerformingOneOf
 		(
@@ -737,6 +904,7 @@ namespace ALYSLC
 		bool hasLockOnActivationTarget = Util::HandleIsValid(activationRefrHandle);
 		bool shouldNotDraw = 
 		(
+			(!baseCanDrawOverlayElements) ||
 			(!activationRefrPtr || !Util::IsValidRefrForTargeting(activationRefrPtr.get())) ||
 			(!hasLockOnActivationTarget && !isActivating)
 		);
@@ -928,6 +1096,15 @@ namespace ALYSLC
 			(
 				posScreenCoords,
 				lowerPortionOffsets,
+				Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID],
+				false, 
+				1.5f * indicatorThickness,
+				0.0f
+			);
+			DebugAPI::QueueShape2D
+			(
+				posScreenCoords,
+				lowerPortionOffsets,
 				Settings::vuCrosshairInnerOutlineRGBAValues[p->playerID],
 				false, 
 				indicatorThickness,
@@ -959,7 +1136,7 @@ namespace ALYSLC
 
 		// Need to have an aim correction target.
 		auto aimCorrectionTargetPtr = Util::GetActorPtrFromHandle(aimCorrectionTargetHandle);
-		if (!aimCorrectionTargetPtr)
+		if (!aimCorrectionTargetPtr || crosshairActive)
 		{
 			return;
 		}
@@ -1064,7 +1241,7 @@ namespace ALYSLC
 		);
 		*/
 
-		bool shouldFaceTarget = p->mm->reqFaceTarget || Settings::bRingIndicatorForActivation;
+		bool shouldFaceTarget = Settings::bRingIndicatorForActivation;
 		auto screenTorsoPos = Util::WorldToScreenPoint3
 		(
 			Util::GetTorsoPosition(aimCorrectionTargetPtr.get())
@@ -1317,14 +1494,8 @@ namespace ALYSLC
 
 		bool shouldShowIndicator = 
 		(
-			(
-				p->pam->IsPerforming(InputAction::kAdjustAimPitch)
-			) || 
-			(
-				p->pam->GetPlayerActionInputHoldTime(InputAction::kFaceTarget) > 
-				Settings::fSecsDefMinHoldTime &&
-				p->pam->GetSecondsSinceLastStop(InputAction::kFaceTarget) < 0.25f
-			)
+			p->pam->IsPerforming(InputAction::kAdjustAimPitch) ||
+			p->pam->GetSecondsSinceLastStop(InputAction::kResetAim) < 0.25f
 		);
 		aimPitchIndicatorFadeInterpData->UpdateInterpolatedValue
 		(
@@ -1486,30 +1657,19 @@ namespace ALYSLC
 		if (Settings::vbFadeInactiveCrosshair[playerID])
 		{
 			float secsSinceActive = Util::GetElapsedSeconds(p->crosshairLastActiveTP);
-			// Active if locked on target, moving, facing a target,
+			// Can fade in if on a target, moving, facing a target,
 			// or if not in the process of being re-centered while inactive.
 			// Allow 1x inactive interval while static + 0.5x an inactive interval
 			// while auto-recentering to elapse before fading out.
-			bool isCrosshairActive = 
-			{
-				(aimMode == AimMode::kCrosshair) &&
-				(!reqResetCrosshairPosition) &&
-				(
-					(
-						p->pam->IsPerforming(InputAction::kMoveCrosshair)
-					) ||
-					(
-						Util::GetRefrPtrFromHandle(crosshairRefrHandle) || 
-						p->mm->reqFaceTarget ||
-						secsSinceActive <= 
-						1.5f * Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
-					)
-				)
-			};
 			crosshairFadeInterpData->UpdateInterpolatedValue
 			(
-				baseCanDrawOverlayElements && isCrosshairActive
+				baseCanDrawOverlayElements && crosshairActive
 			);
+		}
+		else
+		{
+			// Fade in/out when in crosshair/twin-stick mode while the auto-fade setting is off.
+			crosshairFadeInterpData->UpdateInterpolatedValue(aimMode == AimMode::kCrosshair);
 		}
 
 		if (Settings::vbSkyrimStyleCrosshair[playerID]) 
@@ -1568,8 +1728,8 @@ namespace ALYSLC
 		// Draw the main four lines of the crosshair using the player's assigned crosshair color 
 		// and size params.
 
-		// When facing a target, rotate all lines 45 degrees.
-		float angToRotate = p->mm->reqFaceTarget ? -PI / 4.0f : 0.0f;
+		// No rotation for now.
+		float angToRotate = 0.0f;
 		float gapDelta = 0.0f;
 		// Animate the mode change rotation and contraction/expansion if enabled.
 		if (Settings::vbAnimatedCrosshair[playerID])
@@ -1648,13 +1808,11 @@ namespace ALYSLC
 		// Use interped fade value if enabled; otherwise, use the player's static fade value.
 		uint8_t alpha = 
 		(
-			Settings::vbFadeInactiveCrosshair[playerID] ?
 			static_cast<uint8_t>
 			(
 				crosshairFadeInterpData->value * 
 				static_cast<float>(Settings::vuOverlayRGBAValues[playerID] & 0xFF)
-			) :
-			0xFF
+			)
 		);
 		// Up.
 		DebugAPI::QueueLine2D
@@ -1737,8 +1895,8 @@ namespace ALYSLC
 		// The higher the index, the further from the crosshair base lines
 		// the outline will be drawn.
 
-		// Rotate the outlines when facing a target to match the rotation of the crosshair body.
-		float angToRotate = p->mm->reqFaceTarget ? -PI / 4.0f : 0.0f;
+		// No rotation for now.
+		float angToRotate = 0.0f;
 		float gapDelta = 0.0f;
 		// Animate the rotation, contraction, and expansion, if enabled.
 		if (Settings::vbAnimatedCrosshair[playerID])
@@ -1846,12 +2004,10 @@ namespace ALYSLC
 		// Use interped fade value if enabled; otherwise, use the player's static fade value.
 		uint8_t alpha = 
 		(
-			Settings::vbFadeInactiveCrosshair[playerID] ?
 			static_cast<uint8_t>
 			(
 				crosshairFadeInterpData->value * static_cast<float>(a_outlineRGBA & 0xFF)
-			) :
-			0xFF
+			)
 		);
 		DebugAPI::QueueLine2D
 		(
@@ -2145,13 +2301,46 @@ namespace ALYSLC
 				// Draw each shape and their outlines.
 				uint8_t alpha = static_cast<uint8_t>
 				(
+					playerIndicatorFadeInterpData->value *
+					static_cast<float>
+					(
+						Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF
+					)
+				);
+				DebugAPI::QueueShape2D
+				(
+					playerIndicatorScaleformPos,
+					upperPortionOffsets,
+					(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
+					false,
+					1.5f * indicatorThickness
+				);
+
+				// Lower portion.
+				alpha = static_cast<uint8_t>
+				(
+					playerIndicatorFadeInterpData->value * 
+					static_cast<float>
+					(
+						Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF
+					)
+				);
+				DebugAPI::QueueShape2D
+				(
+					playerIndicatorScaleformPos, 
+					lowerPortionOffsets, 
+					(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
+					false, 
+					1.5f * indicatorThickness
+				);
+				alpha = static_cast<uint8_t>
+				(
 					playerIndicatorFadeInterpData->value * 
 					static_cast<float>
 					(
 						Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFF
 					)
 				);
-				// Lower portion.
 				DebugAPI::QueueShape2D
 				(
 					playerIndicatorScaleformPos, 
@@ -2285,7 +2474,37 @@ namespace ALYSLC
 
 			// Rotate and draw lower portion of the indicator + its outline.
 			DebugAPI::RotateOffsetPoints2D(lowerPortionOffsets, indicatorRotRads);
+			// Rotate and draw upper portion of the indicator + its outline.
+			DebugAPI::RotateOffsetPoints2D(upperPortionOffsets, indicatorRotRads);
 			uint8_t alpha = static_cast<uint8_t>
+			(
+				playerIndicatorFadeInterpData->value * 
+				static_cast<float>(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF)
+			);
+			DebugAPI::QueueShape2D
+			(
+				origin, 
+				upperPortionOffsets, 
+				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+				false, 
+				1.5f * indicatorThickness
+			);
+
+			// Lower.
+			alpha = static_cast<uint8_t>
+			(
+				playerIndicatorFadeInterpData->value * 
+				static_cast<float>(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF)
+			);
+			DebugAPI::QueueShape2D
+			(
+				origin, 
+				lowerPortionOffsets, 
+				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
+				false, 
+				1.5f * indicatorThickness
+			);
+			alpha = static_cast<uint8_t>
 			(
 				playerIndicatorFadeInterpData->value * 
 				static_cast<float>(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFF)
@@ -2310,8 +2529,7 @@ namespace ALYSLC
 				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha
 			);
 
-			// Rotate and draw upper portion of the indicator + its outline.
-			DebugAPI::RotateOffsetPoints2D(upperPortionOffsets, indicatorRotRads);
+			// Upper.
 			alpha = static_cast<uint8_t>
 			(
 				playerIndicatorFadeInterpData->value * 
@@ -2343,8 +2561,8 @@ namespace ALYSLC
 	{
 		// Draw a Skyrim-style crosshair with a player-specific colorway.
 
-		// Rotate 45 degrees when facing a target.
-		float angToRotate = p->mm->reqFaceTarget ? -PI / 4.0f : 0.0f;
+		// No rotation for now.
+		float angToRotate = 0.0f;
 		float gapDelta = 0.0f;
 		// Animate rotation, contraction, and expansion, if enabled.
 		if (Settings::vbAnimatedCrosshair[playerID])
@@ -2412,7 +2630,6 @@ namespace ALYSLC
 				// Interped fade value or full alpha.
 				alpha = 
 				(
-					Settings::vbFadeInactiveCrosshair[playerID] ?
 					static_cast<uint8_t>
 					(
 						crosshairFadeInterpData->value * 
@@ -2420,8 +2637,7 @@ namespace ALYSLC
 						(
 							Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF
 						)
-					) :
-					0xFF 
+					)
 				);
 				DebugAPI::QueueShape2D
 				(
@@ -2461,7 +2677,6 @@ namespace ALYSLC
 			// Interped fade value or full alpha.
 			alpha = 
 			(
-				Settings::vbFadeInactiveCrosshair[playerID] ?
 				static_cast<uint8_t>
 				(
 					crosshairFadeInterpData->value * 
@@ -2469,8 +2684,7 @@ namespace ALYSLC
 					(
 						Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFF
 					)
-				) :
-				0xFF
+				)
 			);
 			DebugAPI::QueueShape2D
 			(
@@ -2508,13 +2722,11 @@ namespace ALYSLC
 			// Interped fade value or full alpha.
 			alpha = 
 			(
-				Settings::vbFadeInactiveCrosshair[playerID] ?
 				static_cast<uint8_t>
 				(
 					crosshairFadeInterpData->value * 
 					static_cast<float>(Settings::vuOverlayRGBAValues[playerID] & 0xFF)
-				) :
-				0xFF
+				)
 			);
 			DebugAPI::QueueShape2D
 			(
@@ -2529,13 +2741,11 @@ namespace ALYSLC
 		{
 			alpha = 
 			(
-				Settings::vbFadeInactiveCrosshair[playerID] ? 
 				static_cast<uint8_t>
 				(
 					crosshairFadeInterpData->value * 
 					static_cast<float>(Settings::vuOverlayRGBAValues[playerID] & 0xFF)
-				) :
-				0xFF
+				)
 			);
 			DebugAPI::QueueCircle2D
 			(
@@ -2600,17 +2810,9 @@ namespace ALYSLC
 		// Actor targeted (aim correction or otherwise), 
 		// should face crosshair position (never true while mounted), 
 		// or mounted and targeting an object.
-		bool canDirectTowardsCrosshairPos = 
-		(
-			p->mm->reqFaceTarget && aimMode == AimMode::kCrosshair
-		);
 		bool adjustTowardsTarget = 
 		{
-			(targetActorPtr != coopActor) &&
-			(
-				(targetActorValidity || canDirectTowardsCrosshairPos) || 
-				(coopActor->IsOnMount() && crosshairRefrValidity)
-			)
+			(targetActorPtr != coopActor) && (targetActorValidity || crosshairActive)
 		};
 		// Aim in the player's facing direction if there is no target.
 		if (!adjustTowardsTarget)
@@ -3065,7 +3267,7 @@ namespace ALYSLC
 		//===================
 
 		// Trying to throw a grabbed object at the crosshair target position.
-		if (p->mm->reqFaceTarget &&
+		if (crosshairActive &&
 			rmm->isGrabbing && 
 			rmm->GetNumGrabbedRefrs() > 0 && 
 			p->pam->IsPerforming(InputAction::kGrabObject))
@@ -3892,7 +4094,7 @@ namespace ALYSLC
 					(!trajCollision) &&
 					(
 						(rangedTargetActorValidity) || 
-						(crosshairRefrPtr && p->mm->reqFaceTarget)
+						(crosshairRefrPtr && p->tm->crosshairActive)
 					)
 				);
 				if ((inRange) && (hitTarget || hitSelectableNonTargetRefr))
@@ -4527,7 +4729,7 @@ namespace ALYSLC
 		float screenTargetingAngle = 0.0f;
 		// Want to find actors in front of the player in their facing direction
 		// if they are currently facing a target or the crosshair world position.
-		bool usePlayerFacingAngle = aimMode == AimMode::kCrosshair && p->mm->reqFaceTarget;
+		bool usePlayerFacingAngle = crosshairActive;
 		if ((a_useLeftStickAngle && p->lsMoved) || (!a_useLeftStickAngle && p->rsMoved))
 		{
 			if (usePlayerFacingAngle)
@@ -4780,8 +4982,7 @@ namespace ALYSLC
 		// Only want to choose friendly actors to heal with spells when out of combat.
 		if ((a_useLeftStickAngle) &&
 			(!glob.isInCoopCombat) && 
-			(!sourceHasSpell || !shouldOnlyTargetAllies) &&
-			(aimMode == AimMode::kCrosshair || !p->mm->reqFaceTarget)) 
+			(!sourceHasSpell || !shouldOnlyTargetAllies)) 
 		{
 			return RE::ActorHandle();
 		}
@@ -5939,14 +6140,14 @@ namespace ALYSLC
 				(
 					Settings::vbUseAimCorrection[playerID] &&
 					Util::HandleIsValid(aimCorrectionTargetHandle) &&
-					!p->mm->reqFaceTarget
+					!p->tm->crosshairActive
 				)
 			);
 			if (hasAimCorrectionTarget)
 			{
 				return aimCorrectionTargetHandle;
 			}
-			else if (!p->mm->reqFaceTarget && !Settings::vbUseAimCorrection[playerID])
+			else if (!p->tm->crosshairActive && !Settings::vbUseAimCorrection[playerID])
 			{
 				// NOTE:
 				// Will comment out if bugs occur.
@@ -5990,13 +6191,14 @@ namespace ALYSLC
 		// Clear out crosshair pick handle, which will be updated below if valid.
 		crosshairPickRefrHandle = RE::ObjectRefHandle();
 		const auto currentMount = p->GetCurrentMount();
+		const auto& lsAngle = p->analogStickParams[!AnalogStickParams::kLSCamRelAng];
 		// Re-populate nearby references if needed.
 		bool orientationChanged = 
 		(
 			p->lsMoved || 
 			fabsf
 			(
-				Util::NormalizeAngToPi(coopActor->GetHeading(false) - lastActivationFacingAngle)
+				Util::NormalizeAngToPi(lsAngle - lastActivationFacingAngle)
 			) > 
 			Settings::fMinTurnAngToRefreshRefrs	
 		);
@@ -6005,10 +6207,10 @@ namespace ALYSLC
 			// Clear out any cached objects.
 			nearbyReferences.clear();
 			// Player heading angle in Cartesian convention.
-			const float convHeadingAng = Util::ConvertAngle(coopActor->GetHeading(false));
+			const float convLSAngle = Util::ConvertAngle(lsAngle);
 			// Player's facing direction in the XY plane (yaw direction).
-			RE::NiPoint3 facingDirXY = Util::RotationToDirectionVect(0.0f, convHeadingAng);
-			facingDirXY.Unitize();
+			RE::NiPoint3 movingDirXY = Util::RotationToDirectionVect(0.0f, convLSAngle);
+			movingDirXY.Unitize();
 			// Max activation reach distance.
 			const float maxCheckDist = GetMaxActivationDist();
 			// Used to check if activation cycling has started.
@@ -6026,7 +6228,7 @@ namespace ALYSLC
 					this, 
 					&currentMount, 
 					&playerTorsoPos, 
-					&facingDirXY, 
+					&movingDirXY, 
 					&maxCheckDist,
 					&secsSinceActivationStarted,
 					&a_quickSelection
@@ -6179,7 +6381,7 @@ namespace ALYSLC
 					// Lastly scale by the distance from the player to the object,
 					// meaning objects that are further away have a larger factor.
 					// Divide by max reach distance to set range to [0, 1]
-					facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+					facingToRefrDot = movingDirXY.Dot(toRefrDirXY);
 					if (facingToRefrDot >= 0.0f)
 					{
 						allPositionsBehindPlayer = false;
@@ -6206,7 +6408,7 @@ namespace ALYSLC
 						toRefrDirXY = refrLoc2.value() - playerTorsoPos;
 						toRefrDirXY.z = 0.0f;
 						toRefrDirXY.Unitize();
-						facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+						facingToRefrDot = movingDirXY.Dot(toRefrDirXY);
 						if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
 						{
 							allPositionsBehindPlayer = false;
@@ -6229,7 +6431,7 @@ namespace ALYSLC
 						toRefrDirXY = refrLoc3.value() - playerTorsoPos;
 						toRefrDirXY.z = 0.0f;
 						toRefrDirXY.Unitize();
-						facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+						facingToRefrDot = movingDirXY.Dot(toRefrDirXY);
 						if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
 						{
 							allPositionsBehindPlayer = false;
@@ -6309,7 +6511,7 @@ namespace ALYSLC
 							RE::NiPoint3 toRefrDirXY = refrLoc1 - playerTorsoPos;
 							toRefrDirXY.z = 0.0f;
 							toRefrDirXY.Unitize();
-							facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+							facingToRefrDot = movingDirXY.Dot(toRefrDirXY);
 							if (facingToRefrDot >= 0.0f)
 							{
 								allPositionsBehindPlayer = false;
@@ -6334,7 +6536,7 @@ namespace ALYSLC
 								toRefrDirXY = refrLoc2.value() - playerTorsoPos;
 								toRefrDirXY.z = 0.0f;
 								toRefrDirXY.Unitize();
-								facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+								facingToRefrDot = movingDirXY.Dot(toRefrDirXY);
 								if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
 								{
 									allPositionsBehindPlayer = false;
@@ -6356,7 +6558,7 @@ namespace ALYSLC
 								toRefrDirXY = refrLoc3.value() - playerTorsoPos;
 								toRefrDirXY.z = 0.0f;
 								toRefrDirXY.Unitize();
-								facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+								facingToRefrDot = movingDirXY.Dot(toRefrDirXY);
 								if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
 								{
 									allPositionsBehindPlayer = false;
@@ -6763,7 +6965,7 @@ namespace ALYSLC
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
 
-			p->mm->reqFaceTarget = false;
+			DeactivateCrosshair();
 		}
 
 		// Play sound.
@@ -7229,7 +7431,7 @@ namespace ALYSLC
 				// Cache the total magicka required to throw all objects.
 				// A single factor derived from this cost scales all thrown refrs' release speeds.
 				// Must be facing the crosshair position to throw.
-				if (p->mm->reqFaceTarget)
+				if (p->tm->crosshairActive)
 				{
 					rmm->SetTotalThrownRefrMagickaCost(p, true);
 				}
@@ -7283,6 +7485,9 @@ namespace ALYSLC
 						RE::ActorValue::kMagicka, -rmm->totalThrownRefrMagickaCost
 					);
 				}
+
+				// REMOVE when separate throw bind is added.
+				DeactivateCrosshair();
 			}
 			else
 			{
@@ -8297,7 +8502,7 @@ namespace ALYSLC
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
 
-			p->mm->reqFaceTarget = false;
+			DeactivateCrosshair();
 		}
 
 		auto audioManager = RE::BSAudioManager::GetSingleton(); 
@@ -8339,19 +8544,6 @@ namespace ALYSLC
 			0.0f,
 			releasedActorPtr->data.location
 		);
-	}
-
-	void TargetingManager::InactivateCrosshair(bool a_stopFacingTarget)
-	{
-		// Clear the current crosshair target, request to reset the crosshair's position, 
-		// and reset the face target flag (if requested).
-
-		reqResetCrosshairPosition = true;
-		ClearAimTargetData();
-		if (a_stopFacingTarget)
-		{				
-			p->mm->reqFaceTarget = false;
-		}
 	}
 
 	void TargetingManager::IsRefrInRangeAndInFOV
@@ -10111,12 +10303,10 @@ namespace ALYSLC
 		// Select the target if a bind is held or on press. 
 		// Selecting on hold will select at an interval, instead of right away.
 
-
 		// Evaluate for a new target in the direction of the player's analog stick.
-		bool crosshairActive = aimMode == AimMode::kCrosshair;
 		const auto prevHandle = 
 		(
-			crosshairActive ? crosshairRefrHandle : aimCorrectionTargetHandle
+			aimMode == AimMode::kCrosshair ? crosshairRefrHandle : aimCorrectionTargetHandle
 		);
 		auto newHandle = GetLockOnTarget
 		(
@@ -10129,7 +10319,7 @@ namespace ALYSLC
 		{
 			// Set crosshair refr handle and selected target actor handle to the target's handle
 			// if the crosshair is active; otherwise, set the aim correction handle.
-			if (crosshairActive)
+			if (aimMode == AimMode::kCrosshair)
 			{
 				crosshairRefrHandle = newHandle;
 				if (newHandle.get() && newHandle.get()->As<RE::Actor>())
@@ -10160,22 +10350,7 @@ namespace ALYSLC
 				// Remove all previous activation shaders.
 				if (Util::HandleIsValid(prevHandle))
 				{
-					Util::StopEffectShader
-					(
-						prevHandle.get().get(), glob.activateHighlightShaders[playerID]
-					);
-					Util::StopEffectShader
-					(
-						prevHandle.get().get(), glob.activateDefaultShader
-					);
-					Util::StopEffectShader
-					(
-						prevHandle.get().get(), glob.activateFailureShader
-					);
-					Util::StopEffectShader
-					(
-						prevHandle.get().get(), glob.activateUseShader
-					);
+					Util::StopAllActivationEffectShaders(prevHandle.get().get(), playerID);
 				}
 
 				ColorizeActivationShader(glob.activateHighlightShaders[playerID], true);
@@ -10249,7 +10424,7 @@ namespace ALYSLC
 				text = fmt::format
 				(
 					"P{}: {} <font color=\"#{:X}\">L{}</font> <font color=\"#{:X}\">{}</font>",
-					playerID + 1, p->mm->reqFaceTarget ? "Facing" : "Targeting",
+					playerID + 1, crosshairActive ? "Facing" : "Targeting",
 					levelRGB, selectedTargetActorPtr->GetLevel(),
 					!selectedTargetActorPtr->IsHostileToActor(coopActor.get()) ? 
 					0xFFFFFF : 
@@ -10529,85 +10704,6 @@ namespace ALYSLC
 		);
 	}
 
-	void TargetingManager::SwitchAimMode()
-	{
-		const auto& rThumbState = glob.cdh->GetInputState(deviceID, InputAction::kRThumb);
-		bool allButtonsReleased = 
-		(
-			(p->pam->inputBitMask & ((1 << !InputAction::kButtonTotal) - 1)) == 0
-		);
-		if (!allButtonsReleased || !rThumbState.justReleased)
-		{
-			return;
-		}
-
-		if (rThumbState.heldTimeSecs >= Settings::fSecsDefMinHoldTime * 3.0f)
-		{
-			if (aimMode == AimMode::kCrosshair)
-			{
-				aimMode = AimMode::kTwinStick;
-				InactivateCrosshair(false);
-				SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kGeneralNotification,
-					fmt::format
-					(
-						"P{}: Aim mode: <font color=\"#FF0000\">Twin-stick</font>",
-						playerID + 1
-					),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
-			}
-			else
-			{
-				aimMode = AimMode::kCrosshair;
-				p->mm->reqFaceTarget = Settings::vbFaceCrosshairPositionByDefault[playerID];
-				ClearTarget(TargetActorType::kAimCorrection);
-				SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kGeneralNotification,
-					fmt::format
-					(
-						"P{}: Aim mode: <font color=\"#00FF00\">Crosshair</font>",
-						playerID + 1
-					),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
-			}
-		}
-		else
-		{
-			// Toggle face target mode.
-			// If enabled, the player will continuously face the crosshair position.
-			// Otherwise, the player rotates to face their movement direction as usual.
-			p->mm->reqFaceTarget = !p->mm->reqFaceTarget;
-			if (!Settings::vbAnimatedCrosshair[playerID]) 
-			{
-				return;
-			}
-
-			// Signal targeting manager to smoothly rotate the crosshair 
-			// into the 'X' configuration  to notify the player 
-			// that they are facing the crosshair position now,
-			// or using the right stick to rotate the player if not in crosshair free aim mode.
-			crosshairRotationData->SetTimeSinceUpdate(0.0f);
-			crosshairRotationData->ShiftEndpoints
-			(
-				p->mm->reqFaceTarget ? PI / 4.0f : 0.0f
-			);
-		}
-	}
-	
 	void TargetingManager::UpdateActivationTarget
 	(
 		bool a_setToAimTargetHandle, bool a_quickSelection, bool a_playActivationShader
@@ -10642,22 +10738,7 @@ namespace ALYSLC
 			// Remove all previous activation shaders.
 			if (Util::HandleIsValid(prevHandle))
 			{
-				Util::StopEffectShader
-				(
-					prevHandle.get().get(), glob.activateHighlightShaders[playerID]
-				);
-				Util::StopEffectShader
-				(
-					prevHandle.get().get(), glob.activateDefaultShader
-				);
-				Util::StopEffectShader
-				(
-					prevHandle.get().get(), glob.activateFailureShader
-				);
-				Util::StopEffectShader
-				(
-					prevHandle.get().get(), glob.activateUseShader
-				);
+				Util::StopAllActivationEffectShaders(prevHandle.get().get(), playerID);
 			}
 				
 			activationRefrHandle = newHandle;
@@ -10677,7 +10758,7 @@ namespace ALYSLC
 				"NONE"
 			);
 				
-			if (newHandle != prevHandle)
+			if (newHandle != prevHandle || newHandle == crosshairRefrHandle)
 			{
 				// Will not play shader for now if the player cannot activate.
 				if (a_playActivationShader)
@@ -10693,12 +10774,7 @@ namespace ALYSLC
 						shader, 
 						canActivateRefr || GlobalCoopData::IsCoopPlayer(activationRefrHandle)
 					);
-					Util::StartEffectShader
-					(
-						newHandle.get().get(),
-						shader,
-						max(0.1f, Settings::fSecsBeforeActivationCycling)
-					);
+					Util::StartEffectShader(newHandle.get().get(), shader, 1.0f);
 				}
 			}
 		}
@@ -10815,30 +10891,25 @@ namespace ALYSLC
 		if (twinStickPickTarget)
 		{
 			lockOnToAimCorrectionTarget = true;
-			// Set as facing the target when picking an aim target in twin stick mode.
-			p->mm->reqFaceTarget = true;
 		}
 		
 		bool twinStickThrowSelection = 
 		(
 			aimMode == AimMode::kTwinStick && !rmm->grabbedRefrInfoList.empty()
 		);
-		// Guarantee the player has a selected aim correction target if face target is on.
-		bool twinStickFaceTargetSelection = 
-		(
-			aimMode == AimMode::kTwinStick && p->mm->reqFaceTarget && !currentTargetPtr	
-		);
 		const auto& stickState = glob.cdh->GetAnalogStickState(deviceID, !twinStickPickTarget);
 		const auto selectedTargetActorPtr = Util::GetActorPtrFromHandle(selectedTargetActorHandle);
 		// Can select an aim correction target with the LS when attacking.
 		bool lsSelectTempTarget = 
 		(
+			(aimMode == AimMode::kCrosshair) &&
+			(!crosshairActive) &&
 			(Settings::vbUseAimCorrection[playerID]) && 
-			(!p->mm->reqFaceTarget && attackOrBlockRequest && !selectedTargetActorPtr)
+			(attackOrBlockRequest && !selectedTargetActorPtr)
 		);
 		bool canValidateTarget =
 		(
-			twinStickFaceTargetSelection || twinStickPickTarget || lsSelectTempTarget
+			twinStickPickTarget || lsSelectTempTarget
 		);
 
 		// Clear when not selecting a new target, choosing a ranged target actor in Crosshair mode,
@@ -10849,12 +10920,7 @@ namespace ALYSLC
 			(!canValidateTarget) &&
 			(
 				(aimMode == AimMode::kCrosshair && selectedTargetActorPtr && currentTargetPtr) ||
-				(
-					(aimMode == AimMode::kCrosshair || !p->mm->reqFaceTarget) &&
-					(
-						!attackOrBlockRequest && !twinStickThrowSelection
-					)
-				)
+				(!lockOnToAimCorrectionTarget && !attackOrBlockRequest && !twinStickThrowSelection)
 			)
 		);
 		if (canValidateTarget)
@@ -10879,7 +10945,7 @@ namespace ALYSLC
 			);
 			bool canSelectNewTarget = 
 			(
-				(twinStickFaceTargetSelection) || 
+				(twinStickPickTarget) || 
 				(
 					(
 						Util::GetElapsedSeconds(p->lastAimCorrectionTargetSetTP) > selectionInterval
@@ -10900,18 +10966,16 @@ namespace ALYSLC
 					GetClosestTargetableActorInFOV
 					(
 						coopActor.get(),
-						!twinStickPickTarget,
+						lsSelectTempTarget,
 						false,
-						!twinStickPickTarget && !twinStickFaceTargetSelection,
+						lsSelectTempTarget,
 						true,
 						Settings::vbScreenspaceBasedAimCorrectionCheck[playerID],
-						twinStickFaceTargetSelection ? 
-						2.0f * PI :
 						Settings::vfAimCorrectionFOV[playerID],
 						!combatActionBindPressed || 
 						performingRangedAction ||
 						twinStickThrowSelection ||
-						twinStickFaceTargetSelection ? 
+						twinStickPickTarget ? 
 						Settings::fMaxRaycastAndZoomOutDistance :
 						GetMaxActivationDist()
 					)
@@ -10981,37 +11045,14 @@ namespace ALYSLC
 							// Stop the activation shader on the previous aim correction target.
 							if (currentTargetPtr)
 							{
-								Util::StopEffectShader
+								Util::StopAllActivationEffectShaders
 								(
-									currentTargetPtr.get(), glob.activateHighlightShaders[playerID]
+									currentTargetPtr.get(), playerID
 								);
 							}
 
 							if (lockOnToAimCorrectionTarget)
 							{
-								// Remove all previous activation shaders.
-								const auto prevHandle = currentTargetPtr->GetHandle();
-								if (Util::HandleIsValid(prevHandle))
-								{
-									Util::StopEffectShader
-									(
-										prevHandle.get().get(),
-										glob.activateHighlightShaders[playerID]
-									);
-									Util::StopEffectShader
-									(
-										prevHandle.get().get(), glob.activateDefaultShader
-									);
-									Util::StopEffectShader
-									(
-										prevHandle.get().get(), glob.activateFailureShader
-									);
-									Util::StopEffectShader
-									(
-										prevHandle.get().get(), glob.activateUseShader
-									);
-								}
-
 								// Play a highlight shader when locking on to a target 
 								// outside of activation range.
 								ColorizeActivationShader
@@ -11022,7 +11063,7 @@ namespace ALYSLC
 								(
 									aimCorrectionTargetHandle.get().get(),
 									glob.activateHighlightShaders[playerID],
-									max(0.1f, Settings::fSecsBeforeActivationCycling)
+									1.0f
 								);
 							}
 						}
@@ -11103,13 +11144,9 @@ namespace ALYSLC
 			);
 			if (canClear)
 			{
-				// Stop the activation shader on the current aim correction target
+				// Stop the activation shaders on the current aim correction target
 				// before clearing it.
-				Util::StopEffectShader
-				(
-					currentTargetPtr.get(), glob.activateHighlightShaders[playerID]
-				);
-
+				Util::StopAllActivationEffectShaders(currentTargetPtr.get(), playerID);
 				ClearTarget(TargetActorType::kAimCorrection);
 			}
 		}
@@ -11225,8 +11262,8 @@ namespace ALYSLC
 		// Update crosshair rotation and oscillation interpolation data
 		// to animate the crosshair.
 		
-		// Rotate 45 degrees when fully facing the crosshair position.
-		float endPointAng = p->mm->reqFaceTarget ? PI / 4.0f : 0.0f;
+		// No rotation for now.
+		float endPointAng = 0.0f;
 		crosshairRotationData->next = endPointAng;
 		if (crosshairRotationData->current != endPointAng)
 		{
@@ -11491,6 +11528,7 @@ namespace ALYSLC
 			{
 				// Not snapping to a lock on target if moving the crosshair.
 				choseLockOnAimTarget = false;
+				crosshairManuallyAdjusted = true;
 				// Get RS data.
 				const auto& rsData = glob.cdh->GetAnalogStickState(deviceID, false);
 				const auto& rsX = rsData.xComp;
@@ -11712,7 +11750,8 @@ namespace ALYSLC
 				// Refr selected when not moving the crosshair.
 				// While not moving the crosshair, 
 				// stick the crosshair to the target until it becomes invalid.
-
+				
+				crosshairManuallyAdjusted = false;
 				// Check if targeted refr is still selectable and valid.
 				validCrosshairRefrHit = 
 				(
@@ -11913,11 +11952,16 @@ namespace ALYSLC
 				}
 			}
 		}
+		else
+		{
+			crosshairManuallyAdjusted = false;
+		}
 
 		//=======================================
 		// [Crosshair Activity and Re-centering]:
 		//=======================================
 
+		const auto defaultCrosshairPos = GetDefaultCrosshairPosition();
 		// Check if the crosshair is being actively 
 		// or passively adjusted by the player in some way.
 		bool prevScaleformPosOnEdgeOfScreen = 
@@ -11948,124 +11992,111 @@ namespace ALYSLC
 				(playerCam->rotationInput.x != 0.0f || playerCam->rotationInput.y != 0.0f)
 			)
 		};
-
-		// The crosshair is considered active when on a target, when the player is facing a target, 
-		// when moving the crosshair, when selecting a new target, 
-		// or when first hitting the edge of the screen.
-		bool isActive = 
-		(
-			(aimMode == AimMode::kCrosshair) &&
-			(!reqResetCrosshairPosition) &&
-			(
-				(crosshairRefrPtr) ||
-				(isAiming) || 
-				(p->mm->reqFaceTarget) ||	
-				(crosshairRefrPtr != prevCrosshairRefrPtr) ||
-				(scaleformPosOnEdgeOfScreen && !prevScaleformPosOnEdgeOfScreen)
-			)
-		);
-		if (isActive)
+		
+		// Fulfilled reset-position request if the player is moving their crosshair,
+		// has selected a target with it, or the crosshair has faded out/re-centered
+		// depending on which option(s) the player has enabled,
+		// or if both fade and re-centering options are disabled.
+		bool noLongerResettingPosition = isAiming || Util::HandleIsValid(crosshairRefrHandle); 
+		if (!noLongerResettingPosition)
 		{
-			p->crosshairLastActiveTP = SteadyClock::now();
+			const auto& canFade = Settings::vbFadeInactiveCrosshair[playerID];
+			const auto& canRecenter = Settings::vbRecenterInactiveCrosshair[playerID];
+			if (canFade && canRecenter)
+			{
+				noLongerResettingPosition = 
+				(
+					crosshairFadeInterpData->value == 0.0f &&
+					crosshairScaleformPos == defaultCrosshairPos
+				);
+			}
+			else if (canFade)
+			{
+				noLongerResettingPosition = crosshairFadeInterpData->value == 0.0f;
+			}
+			else if (canRecenter)
+			{
+				noLongerResettingPosition = crosshairScaleformPos == defaultCrosshairPos;
+			}
+			else
+			{
+				noLongerResettingPosition = true;
+			}
 		}
 
-		// Will not reset if the player is moving the crosshair,
-		// or has picked a lock on target.
-		if ((reqResetCrosshairPosition) && 
-			(aimMode != AimMode::kTwinStick) &&
-			(isAiming || choseLockOnAimTarget))
+		if (shouldResetCrosshairPosition && noLongerResettingPosition)
 		{
-			reqResetCrosshairPosition = false;
+			shouldResetCrosshairPosition = false;
 		}
-
+		
 		// Re-center the crosshair after an interval passes if the crosshair is disabled,
 		// if requested externally, or if there is no valid target,
 		// the player is not moving their crosshair, 
 		// and the player is not facing the crosshair world position.
-		if (Settings::vbRecenterInactiveCrosshair[playerID])
+		float secsSinceActive = Util::GetElapsedSeconds(p->crosshairLastActiveTP);
+		bool shouldRecenter = aimMode == AimMode::kTwinStick || shouldResetCrosshairPosition;
+		if (shouldRecenter)
 		{
-			float secsSinceActive = Util::GetElapsedSeconds(p->crosshairLastActiveTP);
-			bool shouldRecenter = 
-			(
-				(aimMode == AimMode::kTwinStick) ||
-				(reqResetCrosshairPosition) ||
-				(
-					!crosshairRefrPtr &&
-					!isAiming && 
-					!p->mm->reqFaceTarget &&
-					secsSinceActive > Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
-				)
-			);
-			if (shouldRecenter)
+			// Continue interpolating the position back 
+			// towards the default position until reached.
+			if (crosshairScaleformPos.x != defaultCrosshairPos.x || 
+				crosshairScaleformPos.y != defaultCrosshairPos.y)
 			{
-				// Offset left or right about the center of the screen based on player index.
-				float targetPosX = 
-				(
-					(DebugAPI::screenResX / 2.0f) + 
-					(100.0f * (fmod(playerID, 2) * 2 - 1) * ceil((playerID + 1) / 2.0f))
-				);
-				// Along screen's center line.
-				float targetPosY = DebugAPI::screenResY / 2.0f;
-				// Continue interpolating the position back 
-				// towards the default position until reached.
-				if (crosshairScaleformPos.x != targetPosX || crosshairScaleformPos.y != targetPosY)
+				// Re-centering completes after about 1.5 inactivity intervals elapse.
+				float tRatio = 0.0f;
+				if (shouldResetCrosshairPosition)
 				{
-					// Re-centering completes after about 1.5 inactivity intervals elapse.
-					float tRatio = 0.0f;
-					if (reqResetCrosshairPosition)
-					{
-						// Start centering right away if a request was made.
-						// Centering speed must never be slower than the fade out speed.
-						tRatio = std::clamp
-						(
-							(
-								secsSinceActive / 
-								max
-								(
-									0.1f, 
-									min
-									(
-										Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID],
-										crosshairFadeInterpData->secsInterpToMinInterval
-									)
-								)
-							),
-							0.0f, 
-							1.0f
-						);
-					}
-					else
-					{
-						tRatio = std::clamp
-						(
-							(
-								secsSinceActive / 
-								max
-								(
-									0.1f, Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
-								)
-							) - 1.0f,
-							0.0f, 
-							1.0f
-						);
-					}
-
-					crosshairScaleformPos.x = Util::InterpolateSmootherStep
+					// Start centering right away if a request was made.
+					// Centering speed must never be slower than the fade out speed.
+					tRatio = std::clamp
 					(
-						crosshairScaleformPos.x, targetPosX, tRatio
+						(
+							secsSinceActive / 
+							max
+							(
+								0.1f, 
+								min
+								(
+									Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID],
+									crosshairFadeInterpData->secsInterpToMinInterval
+								)
+							)
+						),
+						0.0f, 
+						1.0f
 					);
-					crosshairScaleformPos.y = Util::InterpolateSmootherStep
-					(
-						crosshairScaleformPos.y, targetPosY, tRatio
-					);
-					crosshairScaleformPos.z = 0.0f;
-
-					// Reset offsets and pixel deltas too.
-					crosshairLocalPosOffset = 
-					crosshairLastMovementHitPosOffset = 
-					crosshairInitialMovementHitPosOffset = RE::NiPoint3();
-					crosshairOnRefrPixelXYDeltas = { 0.0f, 0.0f };
 				}
+				else
+				{
+					tRatio = std::clamp
+					(
+						(
+							secsSinceActive / 
+							max
+							(
+								0.1f, Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
+							)
+						) - 1.0f,
+						0.0f, 
+						1.0f
+					);
+				}
+
+				crosshairScaleformPos.x = Util::InterpolateSmootherStep
+				(
+					crosshairScaleformPos.x, defaultCrosshairPos.x, tRatio
+				);
+				crosshairScaleformPos.y = Util::InterpolateSmootherStep
+				(
+					crosshairScaleformPos.y, defaultCrosshairPos.y, tRatio
+				);
+				crosshairScaleformPos.z = 0.0f;
+
+				// Reset offsets and pixel deltas too.
+				crosshairLocalPosOffset = 
+				crosshairLastMovementHitPosOffset = 
+				crosshairInitialMovementHitPosOffset = RE::NiPoint3();
+				crosshairOnRefrPixelXYDeltas = { 0.0f, 0.0f };
 			}
 		}
 
@@ -12168,7 +12199,7 @@ namespace ALYSLC
 		}
 		
 		// Update selection TP if the crosshair refr handle changed.
-		if (isAiming && crosshairRefrHandle != prevCrosshairRefrHandle)
+		if ((crosshairRefrHandle != prevCrosshairRefrHandle) && (isAiming || choseLockOnAimTarget))
 		{
 			DBG
 			(
@@ -12239,13 +12270,53 @@ namespace ALYSLC
 			
 			if (Util::HandleIsValid(prevCrosshairRefrHandle))
 			{
-				Util::StopEffectShader
-				(
-					prevCrosshairRefrHandle.get().get(), glob.activateHighlightShaders[playerID]
-				);
+				Util::StopAllActivationEffectShaders(prevCrosshairRefrHandle.get().get(), playerID);
 			}
 
 			p->lastCrosshairTargetChangeTP = SteadyClock::now();
+		}
+		
+		// The crosshair is inactive when re-centering/fading 
+		// or when it has finished reaching its default position and faded out.
+		// It becomes active again externally or when player moves the crosshair manually 
+		// or snaps it to a target.
+		if (crosshairActive)
+		{
+			if (aimMode == AimMode::kTwinStick || shouldResetCrosshairPosition)
+			{
+				DBG
+				(
+					"{}: Crosshair is INACTIVE. Twin stick: {}, should reset position: {}.",
+					coopActor->GetName(),
+					aimMode == AimMode::kTwinStick, 
+					shouldResetCrosshairPosition
+				);
+				crosshairActive = false;
+			}
+		}
+		else
+		{
+			if ((aimMode == AimMode::kCrosshair) && 
+				( 
+					isAiming || Util::HandleIsValid(crosshairRefrHandle)
+				))
+			{
+				DBG
+				(
+					"{}: Crosshair is ACTIVE. Is aiming: {}, crosshair refr chosen: {}.",
+					coopActor->GetName(),
+					isAiming,
+					Util::HandleIsValid(crosshairRefrHandle)
+				);
+				crosshairActive = true;
+			}
+		}
+
+		// The crosshair is considered active when on a target, when moving the crosshair, 
+		// or when selecting a new target.
+		if (crosshairActive)
+		{
+			p->crosshairLastActiveTP = SteadyClock::now();
 		}
 
 		// Update the previous crosshair refr to current for the next frame.
@@ -12802,29 +12873,155 @@ namespace ALYSLC
 
 	void TargetingManager::UpdateLockOnTargets()
 	{
+		// ALL TEMPORARY UNTIL NEW BINDS ARE IMPLEMENTED
 		// Update the lock on crosshair/activation target.
 		// Select a new crosshair target if using the aim bind.
 		// Also clear the current activation target  
 		// when it is no longer within activation range of the player.
 			
 		// TEMPORARY
-		// Select a new target when aiming while in the 'LockOn' crosshair targeting mode.
+		// Selects an activation lock on target in the player's left stick/facing direction,
+		// starting from the player.
+		
+		const auto& inputState = glob.cdh->GetInputState(deviceID, InputAction::kRShoulder);
+		if (inputState.isPressed)
+		{
+			const auto inputMask = (1 << !InputAction::kRShoulder);
+			for (const auto& action : p->pam->occurringPAs)
+			{
+				auto occurringActionParams = 
+				(
+					p->pam->paStatesList[!action - !InputAction::kFirstAction].paParams
+				);
+				if ((occurringActionParams.inputMask & inputMask) == inputMask)
+				{
+					tempInterruptedBind1 = true;
+					break;
+				}
+			}
+
+			if (!tempInterruptedBind1 && p->rsMoved)
+			{
+				tempInterruptedBind1 = true;
+			}
+		}
+		else if (!inputState.justReleased)
+		{
+			tempInterruptedBind1 = false;
+		}
+
+		auto canSelect = 
+		(
+			!tempInterruptedBind1 &&
+			inputState.justReleased &&
+			(p->pam->inputBitMask & ((1 << !InputAction::kButtonTotal) - 1)) == 0
+		);
+		if (canSelect)
+		{
+			// Choose a new activation target when tapped.
+			UpdateActivationTarget(false, false, true);
+		}
+
+		// TEMPORARY
+		// Toggle lock on target.
+		// If the crosshair is inactive, 
+		// select a new aim target if pressing and releasing the RS without moving it.
+		// If the crosshair is active, hide it.
+
+		const auto& inputState2 = glob.cdh->GetInputState(deviceID, InputAction::kRThumb);
+		if (inputState2.isPressed)
+		{
+			const auto inputMask = (1 << !InputAction::kRThumb);
+			for (const auto& action : p->pam->occurringPAs)
+			{
+				auto occurringActionParams = 
+				(
+					p->pam->paStatesList[!action - !InputAction::kFirstAction].paParams
+				);
+				if ((occurringActionParams.inputMask & inputMask) == inputMask)
+				{
+					tempInterruptedBind2 = true;
+					break;
+				}
+			}
+		}
+		else if (!inputState2.justReleased)
+		{
+			tempInterruptedBind2 = false;
+		}
+
+		canSelect = 
+		(
+			!tempInterruptedBind2 &&
+			inputState2.justReleased &&
+			(p->pam->inputBitMask & ((1 << !InputAction::kButtonTotal) - 1)) == 0 &&
+			!glob.cdh->GetAnalogStickState(deviceID, false).Moved()
+		);
+		if (canSelect)
+		{
+			crosshairManuallyAdjusted = false;
+			if (crosshairActive)
+			{
+				// Signal the targeting manager to re-center and fade or remove the crosshair,
+				// or clear the aim correcion target.
+				if (aimMode == AimMode::kCrosshair)
+				{
+					DeactivateCrosshair();
+					SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kGeneralNotification,
+						fmt::format
+						(
+							"P{}: Crosshair is now inactive",
+							playerID + 1
+						),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection 
+						},
+						0.25f * Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+				else
+				{
+					ClearTarget(TargetActorType::kAimCorrection);
+					SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kGeneralNotification,
+						fmt::format
+						(
+							"P{}: Cleared aim target",
+							playerID + 1
+						),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection 
+						},
+						0.25f * Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+			}
+			else
+			{
+				// Select a new lock on target.
+				SetLockOnAimTarget(true, false, false);
+			}
+		}
+		
+		// TEMPORARY
+		// Select a new aim target when aiming while in the 'LockOn' crosshair targeting mode.
 		if (aimMode == AimMode::kCrosshair)
 		{
 			// Ignore the left stick.
-			const auto inputMask = 
+			auto inputMask = 
 			(
 				p->pam->inputBitMask & 
 				(((1 << !InputAction::kInputTotal) - 1) & (~(1 << !InputAction::kLS)))
 			);
-			auto actionInputMask = 
-			(
-				p->pam->paParamsList
-				[!InputAction::kRotateCam - !InputAction::kFirstAction].inputMask |
-				p->pam->paParamsList
-				[!InputAction::kResetAim - !InputAction::kFirstAction].inputMask
-			);
-			auto canSelect = (inputMask & actionInputMask) == actionInputMask;
+			auto actionInputMask = (1 << !InputAction::kRS) | (1 << !InputAction::kRShoulder);
+			canSelect = (inputMask & actionInputMask) == actionInputMask;
 			if (canSelect)
 			{
 				for (const auto& action : p->pam->occurringPAs)
@@ -13106,10 +13303,14 @@ namespace ALYSLC
 			);
 			bool onlyAlwaysUnpaused = Util::MenusOnlyAlwaysUnpaused();
 			bool anotherPlayerControllingMenus = !GlobalCoopData::CanControlMenus(playerID);
+			bool inDialogue = 
+			(
+				ui && ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) && glob.menuPID == playerID
+			);
 			baseCanDrawOverlayElements = 
 			(
 				(onlyAlwaysUnpaused || anotherPlayerControllingMenus) &&
-				(!ui->GameIsPaused() && !fullscreenMenuOpen)
+				(!ui->GameIsPaused() && !fullscreenMenuOpen && !inDialogue)
 			);
 		}
 
@@ -13234,7 +13435,7 @@ namespace ALYSLC
 					(
 						p->pam->IsPerforming(InputAction::kActivate) && 
 						p->pam->GetPlayerActionInputHoldTime(InputAction::kActivate) < 
-						Settings::fSecsBetweenActivationChecks
+						Settings::fSecsBeforeAlternateActivation
 					)
 				);
 				bool isLocked = activationRefrPtr->IsLocked();
@@ -13461,6 +13662,7 @@ namespace ALYSLC
 									activationRefrPtr.get(),
 									hasActivationText
 								);
+									SI_Error err = SI_OK;
 								if (hasActivationText)
 								{
 									// Show regular message if performing primary activation action,
@@ -13477,7 +13679,6 @@ namespace ALYSLC
 										ini.SetUnicode();
 
 										// Import defaults.
-										SI_Error err = SI_OK;
 										const std::filesystem::path configPath = 
 										(
 											"Data/SKSE/Plugins/po3_UseOrTake.ini"
@@ -13740,7 +13941,7 @@ namespace ALYSLC
 										);
 									}
 								}
-
+								
 								int32_t value = -1;
 								float weight = 0.0f;
 								auto asActor = activationRefrPtr->As<RE::Actor>();
@@ -13987,31 +14188,20 @@ namespace ALYSLC
 		(
 			a_p->tm->aimCorrectionTargetHandle
 		);
-		if (!a_p->mm->reqFaceTarget)
-		{
-			// The last recorded LS game angle.
-			facingAng = a_p->analogStickParams[!AnalogStickParams::kLSCamRelAng];
-		}
-		else if (isRagdolled)
+		if (a_p->tm->crosshairActive)
 		{
 			// For S.M.O.R.F/M.A.R.F-ing, attempt to place the other grabbed players
 			// between the player and the crosshair world position/target torso position
 			// when facing it.
-			if (a_p->tm->aimMode == AimMode::kTwinStick && aimCorrectionTargetPtr)
-			{
-				facingAng = Util::GetYawBetweenPositions
-				(
-					a_p->coopActor->data.location, 
-					Util::GetTorsoPosition(aimCorrectionTargetPtr.get())
-				);
-			}
-			else
-			{
-				facingAng = Util::GetYawBetweenPositions
-				(
-					a_p->coopActor->data.location, a_p->tm->crosshairWorldPos
-				);
-			}
+			facingAng = Util::GetYawBetweenPositions
+			(
+				a_p->coopActor->data.location, a_p->tm->crosshairWorldPos
+			);
+		}
+		else if (isRagdolled)
+		{
+			// The last recorded LS game angle.
+			facingAng = a_p->analogStickParams[!AnalogStickParams::kLSCamRelAng];
 		}
 		
 		// Suspend the grabbed objects in front of the player
@@ -14746,8 +14936,7 @@ namespace ALYSLC
 			bool noTargetAndMovingCrosshair = 
 			(
 				!targetRefrPtr &&
-				a_p->tm->aimMode == AimMode::kCrosshair &&
-				a_p->mm->reqFaceTarget &&
+				a_p->tm->crosshairActive &&
 				a_p->pam->IsPerforming(InputAction::kMoveCrosshair)
 			);
 			if (noTargetAndMovingCrosshair ||
@@ -14937,7 +15126,7 @@ namespace ALYSLC
 		(
 			(
 				!a_p->pam->IsPerforming(InputAction::kGrabObject) ||
-				!a_p->mm->reqFaceTarget || 
+				!a_p->tm->crosshairActive || 
 				objectPtr == a_p->coopActor ||
 				refrHandle == a_p->tm->crosshairRefrHandle
 			) ||
@@ -15258,7 +15447,7 @@ namespace ALYSLC
 		bool objectIsPlayer = GlobalCoopData::IsCoopPlayer(objectPtr.get());
 		bool shouldThrow = 
 		(
-			(a_p->mm->reqFaceTarget) && 
+			(a_p->tm->crosshairActive) && 
 			(
 				(
 					(
@@ -15289,13 +15478,13 @@ namespace ALYSLC
 		// REMOVE when done debugging.
 		DBG
 		(
-			"{}: {}: should throw: {}, face target: {}, is crosshair refr: {}, "
+			"{}: {}: should throw: {}, crosshair active: {}, is crosshair refr: {}, "
 			"is player: {}, is self: {}, is SMORFing: {}, grab just released: {}, "
 			"can SMORF: {}, wants to SMORF: {}.",
 			a_p->coopActor->GetName(),
 			objectPtr->GetName(),
 			shouldThrow,
-			a_p->mm->reqFaceTarget,
+			a_p->tm->crosshairActive,
 			refrHandle == a_p->tm->crosshairRefrHandle,
 			objectIsPlayer,
 			objectPtr == a_p->coopActor,
@@ -17900,20 +18089,19 @@ namespace ALYSLC
 				Util::GetRefrPosition(targetRefrPtr.get())
 			);
 			// Refr is selected by the crosshair and the player is facing it.
-			if (a_p->mm->reqFaceTarget && targetRefrHandle == a_p->tm->crosshairRefrHandle) 
+			if (a_p->tm->crosshairActive && targetRefrHandle == a_p->tm->crosshairRefrHandle) 
 			{
 				trajectoryEndPos += targetLocalPosOffset;
 			}
 		}
 
-		bool canAimAtCrosshairPos = a_p->tm->aimMode == AimMode::kCrosshair;
 		// Firing an aim prediction or aim direction projectile 
 		// while aiming at an actor or facing the target refr.
 		bool predictInterceptPos = 
 		(
 			(a_trajType != ProjectileTrajType::kHoming) && 
 			(!a_setStraightTrajectory) &&
-			((targetActorPtr) || (a_p->mm->reqFaceTarget && canAimAtCrosshairPos))
+			((targetActorPtr) || (a_p->tm->crosshairActive))
 		);
 
 		// REMOVE when done debugging.
@@ -18216,7 +18404,7 @@ namespace ALYSLC
 			// If not, aim far away in the projectile's initial facing direction, 
 
 			// Set launch angles, end position, and time to target.
-			if ((targetActorPtr) || (a_p->mm->reqFaceTarget && canAimAtCrosshairPos))
+			if ((targetActorPtr) || (a_p->tm->crosshairActive))
 			{
 				launchPitch = -Util::GetPitchBetweenPositions(releasePos, trajectoryEndPos);
 				launchYaw = Util::ConvertAngle

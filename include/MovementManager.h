@@ -390,7 +390,7 @@ namespace ALYSLC
 		// IMPORTANT: 
 		// Lock before reading/adjusting any nodes' rotations
 		// managed by this manager.
-		std::mutex rotationDataMutex;
+		std::mutex orientationDataMutex;
 		// Maps adjustable nodes by node name to their corresponding custom rotation data.
 		// IMPORTANT NOTE:
 		// I have not found out how to adjust Precision's cloned nodes directly 
@@ -501,7 +501,12 @@ namespace ALYSLC
 		void SetAimRotation();
 
 		// Set/unset don't move flag for current movement actor.
+		// Will only set if certain conditions are met and if not already (un)set as requested.
 		void SetDontMove(bool&& a_set);
+
+		// Will (un)set regardless, even if already set/unset.
+		// ALWAYS call this when not using the conditional version, unless not in co-op.
+		void SetForceDontMove(bool&& a_set);
 		
 		// Set head-tracking target position for the player.
 		void SetHeadTrackTarget();
@@ -621,14 +626,6 @@ namespace ALYSLC
 		bool p1ExtPackageRunning;
 		// Player had their ragdoll triggered.
 		bool playerRagdollTriggered;
-		// Player has requested, via player action, to face the targeted position 
-		// or rotate their character with the right stick:
-		// 1. Crosshair free aim mode: 
-		// Directly rotate and aim at the crosshair world position when possible.
-		// 2. Crosshair lock on mode:
-		// Directly rotate the player and aim at the targeted object or NPC when possible.
-		// 3. Otherwise, the player rotates to face the direction of the right stick.
-		bool reqFaceTarget;
 		// Player has requested, via player action, to reset aim pitch and body node rotations.
 		bool reqResetAimAndBody;
 		// Player has requested, via player action, to start jumping.
@@ -716,5 +713,7 @@ namespace ALYSLC
 		uint32_t framesSinceStartingJump;
 		// Total frame count for the last/current dash dodge.
 		uint32_t framesToCompleteDashDodge;
+		// Frames the jump bind was held for since the jump started.
+		uint32_t jumpBindHeldFrameCount;
 	};
 }

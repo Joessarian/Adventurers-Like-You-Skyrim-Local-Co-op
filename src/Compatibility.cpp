@@ -8,6 +8,7 @@ namespace ALYSLC
 	bool AlternateConversationCameraCompat::g_installed{ false };
 	bool EldenSprintCompat::g_installed{ false };
 	bool EnderalCompat::g_installed{ false };
+	bool ExtendedUICompat::g_installed{ false };
 	bool MCOCompat::g_installed{ false };
 	bool NFFCompat::g_installed{ false };
 	bool PersistentFavoritesCompat::g_installed{ false };
@@ -94,6 +95,21 @@ namespace ALYSLC
 				"To avoid issues, please make sure only the '.esp' that matches your game "
 				"(Skyrim or Enderal) is enabled and then restart the game."
 			);
+		}
+	}
+	
+	void ExtendedUICompat::CheckForExtendedUI(const SKSE::LoadInterface* a_loadInterface)
+	{
+		g_installed = a_loadInterface->GetPluginInfo("Extended UI");
+		auto dataHandler = RE::TESDataHandler::GetSingleton();
+		if (!g_installed && dataHandler)
+		{
+			g_installed = dataHandler->LookupModByName("Extended UI.esp") != nullptr;
+		}
+
+		if (g_installed)
+		{
+			INF("Extended UI installed!");
 		}
 	}
 	

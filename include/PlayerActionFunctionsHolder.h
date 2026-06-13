@@ -149,42 +149,43 @@ namespace ALYSLC
 		bool DebugResetPlayer(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Dismount(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Dodge(const std::shared_ptr<CoopPlayer>& a_p);
-		// TEMPORARY
-		bool FaceTarget(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Favorites(const std::shared_ptr<CoopPlayer>& a_p);
 		bool GrabRotateYZ(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Jump(const std::shared_ptr<CoopPlayer>& a_p);
 		bool PowerAttackDual(const std::shared_ptr<CoopPlayer>& a_p);
 		bool PowerAttackLH(const std::shared_ptr<CoopPlayer>& a_p);
 		bool PowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p);
-		// TEMPORARY.
-		bool ResetAim(const std::shared_ptr<CoopPlayer>& a_p);
+		bool RotateCam(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Sheathe(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Sneak(const std::shared_ptr<CoopPlayer>& a_p);
 		bool SpecialAction(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Sprint(const std::shared_ptr<CoopPlayer>& a_p);
 		bool TeleportToPlayer(const std::shared_ptr<CoopPlayer>& a_p);
+		bool ZoomCam(const std::shared_ptr<CoopPlayer>& a_p);
 
 		// Multiple use.
 		// Checks if the co-op camera manager is running.
 		bool CamActive(const std::shared_ptr<CoopPlayer>& a_p);
 
 		// Camera is adjustable if the player is not power attacking or trying to power attack,
-		// not moving their arms, and moving the right stick.
+		// not moving their arms.
 		bool CanAdjustCamera(const std::shared_ptr<CoopPlayer>& a_p);
 
-		// REMOVE once official binds are added.
-		// Camera is adjustable if the player is not power attacking or trying to power attack,
-		// not moving their arms, and moving the right stick.
-		bool CanAdjustCameraTEMP(const std::shared_ptr<CoopPlayer>& a_p);
-
-		// Can power attack if not already power attacking, 
-		// on the ground, not sprinting, has the right weapon(s) equipped,
-		// and has enough stamina.
-		bool CanPowerAttack(const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action);
+		// Can play power attack animation if the player is transformed,
+		// or is not mounted, has the unlocked right perks (if sprinting),
+		// has the correct LH/RH/2H weapon(s) equipped, and has enough stamina.
+		bool CanPlayPowerAttackAnimation
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action
+		);
 
 		// Can this player rotate their forearms/hands/shoulders?
 		bool CanRotateArms(const std::shared_ptr<CoopPlayer>& a_p);
+
+		// Could power attack if the player is not already power attacking 
+		// or if the player has not drawn their weapons and is not transformed.
+		// Skips mounted, transformed, stamina, and weapon checks.
+		bool CouldPowerAttack(const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action);
 
 		// Can cycle equipment if not attacking/casting, not changing gear, 
 		// and the player does not have  their inventory copied over to P1.
@@ -336,6 +337,11 @@ namespace ALYSLC
 			RE::TESObjectREFR* a_interactionRefr, 
 			RE::TESBoundObject* a_interactionBaseObj
 		);
+
+		// Is the player trying to rotate their arms?
+		// Meaning arms rotation is enabled, the player's weapons are sheathed, 
+		// and all the inputs for at least one arm rotation bind are pressed.
+		bool IsTryingToRotateArms(const std::shared_ptr<CoopPlayer>& a_p);
 
 		// Have the given player loot all lootable items from the given container.
 		// Return the number of looted objects.

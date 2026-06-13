@@ -434,7 +434,7 @@ namespace ALYSLC
 						// for this disabled bind.
 						// This is done to ensure these disabled actions 
 						// can act as composing actions for other enabled binds.
-						composingActionEnabled= true;
+						composingActionEnabled = true;
 					}
 
 					// Get the composing action's assigned input action index if it exists.
@@ -482,7 +482,8 @@ namespace ALYSLC
 								tempComposingActionsLists[bindIndex].emplace_back(compAction);
 								composingActions.emplace(compAction);
 							}
-							else if (assignedInputActionIndex > !InputAction::kLastAction)
+							else if (static_cast<int32_t>(assignedInputActionIndex) != -1 && 
+									 assignedInputActionIndex > !InputAction::kLastAction)
 							{
 								ERR
 								(
@@ -1198,9 +1199,9 @@ namespace ALYSLC
 		(
 			a_ini, 
 			"NewSystems", 
-			"fSecsBeforeActivationCycling",
-			fSecsBeforeActivationCycling, 
-			0.0f,
+			"fSecsBeforeAlternateActivation",
+			fSecsBeforeAlternateActivation, 
+			0.2f,
 			3.0f
 		);
 		ReadFloatSetting
@@ -1758,25 +1759,34 @@ namespace ALYSLC
 				10.0f
 			);
 
-			// Default RGB values:
-			// P1: Red, P2: Green, P3: Cyan, P4: Yellow.
 			uint32_t rgb = 
 			(
-				pIndex == 0 ? 0xFF0000 : 
-				pIndex == 1 ? 0x00FF00 :
-				pIndex == 2 ? 0x00FFFF :
-				pIndex == 3 ? 0xFFFF00 :
-				0xFFFFFF
+				pIndex < ALYSLC_MAX_CONTROLLER_COUNT ? vuOverlayRGBAValues[pIndex] >> 8 : 0xFFFFFF
 			);
 
 			// Set RGB and alpha values separately.
-			uint32_t alpha = 0xFF;
+			uint32_t alpha =
+			(
+				pIndex < ALYSLC_MAX_CONTROLLER_COUNT ? 
+				vuOverlayRGBAValues[pIndex] & 0x000000FF : 
+				0xFF
+			);
 			ReadRGBStringSetting(a_ini, sectionName.data(), "sOverlayRGBValue", rgb);
 			ReadUInt32Setting(a_ini, sectionName.data(), "uOverlayAlpha", alpha, 0, 0xFF);
 			vuOverlayRGBAValues[pIndex] = (rgb << 8) | alpha;
 
-			rgb = 0;
-			alpha = 0xFF;
+			rgb = 
+			(
+				pIndex < ALYSLC_MAX_CONTROLLER_COUNT ? 
+				vuCrosshairInnerOutlineRGBAValues[pIndex] >> 8 : 
+				0x000000
+			);
+			alpha = 
+			(
+				pIndex < ALYSLC_MAX_CONTROLLER_COUNT ? 
+				vuCrosshairInnerOutlineRGBAValues[pIndex] & 0x000000FF : 
+				0xFF
+			);
 			ReadRGBStringSetting(a_ini, sectionName.data(), "sCrosshairInnerOutlineRGB", rgb);
 			ReadUInt32Setting
 			(
@@ -1784,8 +1794,18 @@ namespace ALYSLC
 			);
 			vuCrosshairInnerOutlineRGBAValues[pIndex] = (rgb << 8) | alpha;
 
-			rgb = 0xFFFFFF;
-			alpha = 0xFF;
+			rgb = 
+			(
+				pIndex < ALYSLC_MAX_CONTROLLER_COUNT ? 
+				vuCrosshairOuterOutlineRGBAValues[pIndex] >> 8 : 
+				0xFFFFFF
+			);
+			alpha = 
+			(
+				pIndex < ALYSLC_MAX_CONTROLLER_COUNT ? 
+				vuCrosshairOuterOutlineRGBAValues[pIndex] & 0x000000FF : 
+				0xFF
+			);
 			ReadRGBStringSetting(a_ini, sectionName.data(), "sCrosshairOuterOutlineRGB", rgb);
 			ReadUInt32Setting
 			(

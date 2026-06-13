@@ -21,18 +21,6 @@ namespace ALYSLC
 			a_p->playerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			p = a_p;
-			// Init once.
-			if (!glob.allPlayersInit)
-			{
-				// Initially face the target if in the 'Crosshair' aim mode 
-				// and electing to do so by default.
-				reqFaceTarget = 
-				(
-					Settings::vuDefaultAimMode[p->playerID] == !AimMode::kCrosshair &&
-					Settings::vbFaceCrosshairPositionByDefault[p->playerID]
-				);
-			}
-
 			DBG
 			(
 				"Constructor for {} (0x{:X}), PID, DID: {}, {}, shared ptr count: {}.",
@@ -252,6 +240,18 @@ namespace ALYSLC
 		// IDs.
 		deviceID = p->deviceID;
 		playerID = p->playerID;
+
+		// Node orientation manager.
+		if (nom)
+		{
+			std::unique_lock<std::mutex> lock(nom->orientationDataMutex);
+			nom->InstantlyResetAllNodeData(p);
+		}
+		else
+		{
+			nom = std::make_unique<NodeOrientationManager>();
+		}
+
 		// Positions.
 		aimPitchPos = coopActor->data.location;
 		dashDodgeDir = RE::NiPoint3();
@@ -266,8 +266,7 @@ namespace ALYSLC
 		playerTorsoPosition = Util::GetTorsoPosition(coopActor.get());
 		// Externally set flags.
 		reqResetAimAndBody = reqStartJump = false;
-		// Node orientation manager.
-		nom = std::make_unique<NodeOrientationManager>();
+		
 		// Booleans.
 		adjustAimPitchToFaceTarget = false;
 		aimPitchAdjusted = false;
@@ -324,7 +323,8 @@ namespace ALYSLC
 		framesSinceRequestingDashDodge = 
 		framesSinceStartingDashDodge = 
 		framesSinceStartingJump = 
-		framesToCompleteDashDodge = 0;
+		framesToCompleteDashDodge =
+		jumpBindHeldFrameCount = 0;
 
 		// Reset time points used by this manager.
 		ResetTPs();
@@ -572,7 +572,7 @@ namespace ALYSLC
 			// Turn to face the crosshair position before dodging
 			// to make sure the dodge direction is determined by to the angle difference
 			// between the player and the crosshair position.
-			if (reqFaceTarget && p->tm->aimMode == AimMode::kCrosshair)
+			if (p->tm->crosshairActive)
 			{
 				coopActor->data.angle.z = Util::NormalizeAng0To2Pi
 				(
@@ -1176,10 +1176,15 @@ namespace ALYSLC
 			return;
 		}
 
+		if (p->pam->JustStarted(InputAction::kJump))
+		{
+			jumpBindHeldFrameCount = 1;
+		}
+
 		auto& currentHKPState = charController->context.currentState;
 		// Number of frames to spend ascending to the apex of the jump.
 		// Not less than 1.
-		const uint32_t jumpAscentFramecount = max
+		const uint32_t baseJumpAscentFramecount = max
 		(
 			1, 
 			static_cast<uint32_t>
@@ -1188,11 +1193,93 @@ namespace ALYSLC
 				(1.0f / (*g_deltaTimeRealTime * RE::BSTimer::QGlobalTimeMultiplier())) + 0.5f
 			)
 		);
+		// TODO:
+		// Tweaks, tweaks, and more tweaks.
+		const int32_t jumpAscentFramecount = max
+		(
+			1, 
+			static_cast<uint32_t>
+			(
+				std::lerp
+				(
+					0.25f * baseJumpAscentFramecount,
+					2.0f * baseJumpAscentFramecount,
+					min(0.5f * jumpBindHeldFrameCount / baseJumpAscentFramecount, 1.0f)
+				)
+			)
+		);
+		DBG
+		(
+			"{}: {} ({}) / {} ({}).", 
+			coopActor->GetName(), 
+			framesSinceStartingJump,
+			jumpBindHeldFrameCount,
+			jumpAscentFramecount,
+			baseJumpAscentFramecount
+		);
+		
 		// Start jump. Play gather animation(s) and invert gravity for the player.
 		if (reqStartJump)
 		{
 			// Gotta move.
 			SetDontMove(false);
+			
+			// First check if the player should get up if grabbed or if ragdolled on the ground
+			if (coopActor->IsInRagdollState() && 
+				coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kGetUp)
+			{
+				// Stop a player from grabbing this player 
+				// or get up if ragdolled on the ground.
+				auto isGrabbedIter = std::find_if
+				(
+					glob.coopPlayers.begin(), glob.coopPlayers.end(),
+					[this](const auto& a_p2) 
+					{
+						return 
+						(
+							a_p2->isActive &&
+							a_p2->tm->rmm->IsManaged(coopActor->GetHandle(), true)
+						);
+					}
+				);
+				bool shouldAttemptGetUp = 
+				{
+					(isGrabbedIter != glob.coopPlayers.end()) ||
+					(
+						charController &&
+						charController->context.currentState == 
+						RE::hkpCharacterStateType::kOnGround
+					)
+				};
+
+				if (shouldAttemptGetUp) 
+				{
+					// Release this player. Now!
+					if (isGrabbedIter != glob.coopPlayers.end())
+					{
+						const auto& grabbingP = *isGrabbedIter;
+						grabbingP->tm->rmm->ClearRefr(coopActor->GetHandle());
+					}
+
+					// Reset fall time and height before attempting to get up.
+					charController->lock.Lock();
+					Util::AdjustFallState(charController, false);
+					charController->lock.Unlock();
+
+					coopActor->NotifyAnimationGraph("GetUpBegin");
+					coopActor->PotentiallyFixRagdollState();
+				}
+			
+				isAirborneWhileJumping = false;
+				isFallingWhileJumping = false;
+				reqStartJump = false;
+				sentJumpFallEvent = false;
+				p->jumpStartTP = SteadyClock::now();
+				jumpBindHeldFrameCount =
+				framesSinceStartingJump = 0;
+				return;
+			}
+
 			RE::hkVector4 velBeforeJumpVect{ };
 			charController->GetLinearVelocityImpl(velBeforeJumpVect);
 			if (velBeforeJumpVect.Length3() == 0.0f)
@@ -1252,6 +1339,7 @@ namespace ALYSLC
 			charController->lock.Unlock();
 
 			// Jump has started.
+			jumpBindHeldFrameCount = 
 			framesSinceStartingJump = 1;
 			isAirborneWhileJumping = true;
 			isFallingWhileJumping = false;
@@ -1277,6 +1365,7 @@ namespace ALYSLC
 				reqStartJump = false;
 				sentJumpFallEvent = false;
 				p->jumpStartTP = SteadyClock::now();
+				jumpBindHeldFrameCount = 
 				framesSinceStartingJump = 0;
 				return;
 			}
@@ -1298,6 +1387,7 @@ namespace ALYSLC
 				reqStartJump = false;
 				sentJumpFallEvent = false;
 				p->jumpStartTP = SteadyClock::now();
+				jumpBindHeldFrameCount =
 				framesSinceStartingJump = 0;
 				return;
 			}
@@ -1318,6 +1408,11 @@ namespace ALYSLC
 					);
 				}
 				charController->lock.Unlock();
+				
+				if (p->pam->AllButtonsPressedForAction(InputAction::kJump))
+				{
+					jumpBindHeldFrameCount++;
+				}
 
 				framesSinceStartingJump++;
 			}
@@ -1420,6 +1515,7 @@ namespace ALYSLC
 
 					// Update jump start TP on landing.
 					p->jumpStartTP = SteadyClock::now();
+					jumpBindHeldFrameCount = 
 					framesSinceStartingJump = 0;
 
 					return;
@@ -1440,6 +1536,11 @@ namespace ALYSLC
 					);
 				}
 				charController->lock.Unlock();
+				
+				if (p->pam->AllButtonsPressedForAction(InputAction::kJump))
+				{
+					jumpBindHeldFrameCount++;
+				}
 
 				framesSinceStartingJump++;
 			}
@@ -1752,7 +1853,7 @@ namespace ALYSLC
 
 				RE::NiPoint3 forward{ 0.0f, 1.0f, 0.0f };	
 				// Get pitch/yaw to the target position.
-				if (a_targetPtr || reqFaceTarget)
+				if (a_targetPtr || p->tm->crosshairActive)
 				{
 					float pitch = Util::GetPitchBetweenPositions
 					(
@@ -1814,7 +1915,7 @@ namespace ALYSLC
 
 		// No target and not facing the crosshair position,
 		// so use default aim direction pitch/yaw.
-		bool useAimPitchPos = !targetValidity && !reqFaceTarget;
+		bool useAimPitchPos = !targetValidity && !p->tm->crosshairActive;
 		if (useAimPitchPos)
 		{
 			avgPitchYawPair = { aimPitch, coopActor->data.angle.z };
@@ -1975,6 +2076,7 @@ namespace ALYSLC
 		// Prevent or allow movement for the player or their mount,
 		// based on player movement speed and LS position (centered or not).
 
+		//DBG("{}: dont move set: {}, set to {}.", coopActor->GetName(), dontMoveSet, a_set);
 		auto mountPtr = p->GetCurrentMount();
 		if (a_set) 
 		{
@@ -2023,10 +2125,27 @@ namespace ALYSLC
 				// Stop any playing idles as well before moving.
 				movementActorPtr->NotifyAnimationGraph("IdleStopInstant");
 				movementActorPtr->NotifyAnimationGraph("moveStart");
+				//Util::NativeFunctions::SetDontMove(coopActor.get(), false);
 			}
 
 			dontMoveSet = false;
 		}
+	}
+
+	void MovementManager::SetForceDontMove(bool&& a_set)
+	{
+		// Will (un)set regardless, even if already set/unset.
+		// ALWAYS call this when not using the conditional version, unless not in co-op.
+		
+		//DBG("{}: dont move set: {}, set to {}.", coopActor->GetName(), dontMoveSet, a_set);
+		auto mountPtr = p->GetCurrentMount();
+		if (mountPtr)
+		{
+			Util::NativeFunctions::SetDontMove(mountPtr.get(), a_set);	
+		}
+
+		Util::NativeFunctions::SetDontMove(coopActor.get(), a_set);
+		dontMoveSet = a_set;
 	}
 
 	void MovementManager::SetHeadTrackTarget()
@@ -2052,10 +2171,7 @@ namespace ALYSLC
 			// While attacking, if targeting an actor while not facing them,
 			// look at the actor's torso; otherwise look at the crosshair world position.
 			auto rangedTargetActorPtr = Util::GetActorPtrFromHandle(p->tm->GetRangedTargetActor());
-			bool lookAtTorso = 
-			(
-				(rangedTargetActorPtr) && (!reqFaceTarget || p->tm->aimMode == AimMode::kTwinStick)
-			);
+			bool lookAtTorso = rangedTargetActorPtr && !p->tm->crosshairManuallyAdjusted;
 			if (lookAtTorso)
 			{
 				auto torsoPos = Util::GetTorsoPosition(rangedTargetActorPtr.get());
@@ -2069,7 +2185,7 @@ namespace ALYSLC
 					currentProc->SetHeadtrackTarget(coopActor.get(), p->tm->crosshairWorldPos);
 				}
 			}
-			else if (p->tm->aimMode == AimMode::kCrosshair)
+			else if (p->tm->crosshairActive)
 			{
 				currentProc->SetHeadtrackTarget(coopActor.get(), p->tm->crosshairWorldPos);
 			}
@@ -2267,12 +2383,13 @@ namespace ALYSLC
 			// 6. Not swimming.
 			// 7. Not sprinting and not sneak rolling.
 			// 8. No crosshair target or not trying to face grabbed/released target.
+			// 9. Not in dialogue.
+			auto ui = RE::UI::GetSingleton();
 			faceCrosshairPos = 
 			{
 				(
-					reqFaceTarget && 
+					p->tm->crosshairActive &&
 					!p->isRevivingPlayer &&
-					p->tm->aimMode == AimMode::kCrosshair &&
 					!isTKDodging && 
 					!isTDMDodging && 
 					!coopActor->IsOnMount() && 
@@ -2293,6 +2410,11 @@ namespace ALYSLC
 						!p->tm->rmm->IsGrabbed(p->tm->crosshairRefrHandle) && 
 						!p->tm->rmm->IsReleased(p->tm->crosshairRefrHandle)
 					)
+				) &&
+				(
+					!ui ||
+					!ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) ||
+					glob.menuPID != playerID
 				)
 			};
 
@@ -2323,7 +2445,7 @@ namespace ALYSLC
 							(p->pam->TurnToTargetForCombatAction()) ||
 							(
 								p->tm->aimMode == AimMode::kTwinStick && 
-								reqFaceTarget &&
+								Util::HandleIsValid(p->tm->aimCorrectionTargetHandle) &&
 								coopActor->IsWeaponDrawn()
 							)
 						) &&
@@ -2444,21 +2566,6 @@ namespace ALYSLC
 					playerTargetYaw = yawToTarget;
 				}
 			}
-			//else if (p->tm->aimMode == AimMode::kTwinStick &&
-			//		 !reqFaceTarget &&
-			//		 !coopActor->IsOnMount() && 
-			//		 !p->pam->IsRotatingArms() && 
-			//		 !p->pam->IsPerforming(InputAction::kSprint) &&
-			//		 p->pam->AllInputsPressedForAction(InputAction::kResetAim) &&
-			//		 p->pam->AllInputsPressedForAction(InputAction::kRotateCam) &&
-			//		 !p->tm->isSMORFing &&
-			//		 !p->tm->isMARFing)
-			//{
-			//	// Turn to face the right stick's direction when not facing a target
-			//	// and holding the 'Snap To Target' bind.
-			//	const auto& moveZAngle = p->analogStickParams[!AnalogStickParams::kRSCamRelAng];
-			//	playerTargetYaw = moveZAngle;
-			//}
 			else if (p->lsMoved)
 			{
 				// Turn to face the player movement direction.
@@ -3067,38 +3174,42 @@ namespace ALYSLC
 				SetDontMove(false);
 			}
 
-			// Manually rotate to avoid slow motion shifting when the Z rotation offset is small.
-			midHighProc->rotationSpeed.z = 0.0f;
-			movementActorPtr->SetHeading
-			(
-				Util::NormalizeAng0To2Pi
-				(
-					movementActorPtr->data.angle.z + rawYawOffset
-				)
-			);
-
-			// P1 will rotate automatically towards/away from the dialogue NPC 
-			// when Alternate Conversation Camera is active.
-			// Set rotation to the last LS angle to prevent this.
-			auto ui = RE::UI::GetSingleton();
-			if (p->isPlayer1 &&
-				ALYSLC::AlternateConversationCameraCompat::g_installed &&
-				ui &&
-				ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) &&
-				glob.menuPID == 0 && 
-				!p->lsMoved)
+			// Should not rotate when performing an action that uses the left stick.
+			if (!p->pam->actionPreventsMovement)
 			{
-				/*DBG
-				(
-					"P1 angle: {}, yaw offset: {}, LS angle: {}.",
-					TO_DEGREES * movementActorPtr->data.angle.z,
-					TO_DEGREES * rawYawOffset,
-					TO_DEGREES * p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
-				);*/
+				// Manually rotate to avoid slow motion shifting when the rotation offset is small.
+				midHighProc->rotationSpeed.z = 0.0f;
 				movementActorPtr->SetHeading
 				(
-					p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+					Util::NormalizeAng0To2Pi
+					(
+						movementActorPtr->data.angle.z + rawYawOffset
+					)
 				);
+
+				// P1 will rotate automatically towards/away from the dialogue NPC 
+				// when Alternate Conversation Camera is active.
+				// Set rotation to the last LS angle to prevent this.
+				auto ui = RE::UI::GetSingleton();
+				if (p->isPlayer1 &&
+					ALYSLC::AlternateConversationCameraCompat::g_installed &&
+					ui &&
+					ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) &&
+					glob.menuPID == 0 && 
+					!p->lsMoved)
+				{
+					/*DBG
+					(
+						"P1 angle: {}, yaw offset: {}, LS angle: {}.",
+						TO_DEGREES * movementActorPtr->data.angle.z,
+						TO_DEGREES * rawYawOffset,
+						TO_DEGREES * p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+					);*/
+					movementActorPtr->SetHeading
+					(
+						p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+					);
+				}
 			}
 		}
 		else
@@ -3238,7 +3349,6 @@ namespace ALYSLC
 			!p->pam->isBashing &&
 			!p->pam->isBlocking &&
 			!p->pam->isInCastingAnim && 
-			!reqFaceTarget && 
 			!isDashDodging && 
 			!isTKDodging && 
 			!isTDMDodging &&
@@ -3377,7 +3487,7 @@ namespace ALYSLC
 		bool turningToCrosshairTarget = isUsingWeapMag && crosshairRefrValidity;
 		bool usingAimCorrectionOrLinkedTarget = 
 		(
-			(!reqFaceTarget || p->tm->aimMode == AimMode::kTwinStick) &&
+			(!p->tm->crosshairActive) &&
 			(
 				aimCorrectionTargetValidity && 
 				!turningToCrosshairTarget && 
@@ -3391,7 +3501,7 @@ namespace ALYSLC
 		// Can still manually adjust the transformed player's spinal rotation though.
 		if (p->tm->isMARFing || p->tm->isSMORFing)
 		{
-			adjustAimPitchToFaceTarget = !p->isTransformed && reqFaceTarget;
+			adjustAimPitchToFaceTarget = !p->isTransformed && p->tm->crosshairActive;
 		}
 		else
 		{
@@ -3399,7 +3509,7 @@ namespace ALYSLC
 			{ 
 				(!p->isTransformed && p->coopActor->IsWeaponDrawn()) && 
 				(
-					reqFaceTarget || turningToCrosshairTarget || usingAimCorrectionOrLinkedTarget
+					(p->tm->crosshairActive || usingAimCorrectionOrLinkedTarget)
 				) 
 			};
 		}
@@ -3413,7 +3523,9 @@ namespace ALYSLC
 		{
 			targetPos = Util::GetTorsoPosition(aimCorrectionOrLinkedTargetPtr.get());
 		}
-		else if (!reqFaceTarget && crosshairRefrValidity && crosshairRefrPtr->As<RE::Actor>())
+		else if (p->tm->crosshairActive &&
+				 crosshairRefrValidity && 
+				 crosshairRefrPtr->As<RE::Actor>())
 		{
 			targetPos = Util::GetTorsoPosition(crosshairRefrPtr->As<RE::Actor>());
 		}
@@ -3542,7 +3654,7 @@ namespace ALYSLC
 			// Instantly resets all nodes' rotations to their defaults, without blending out.
 			if (reqResetAimAndBody) 
 			{
-				std::unique_lock<std::mutex> lock(p->mm->nom->rotationDataMutex);
+				std::unique_lock<std::mutex> lock(p->mm->nom->orientationDataMutex);
 				nom->ClearCustomRotations();
 			}
 
@@ -3650,7 +3762,7 @@ namespace ALYSLC
 				{
 					auto lhMagNode = lhCaster ? lhCaster->GetMagicNode() : nullptr;
 					auto rhMagNode = rhCaster ? rhCaster->GetMagicNode() : nullptr;
-					if (reqFaceTarget)
+					if (p->tm->crosshairActive)
 					{
 						// Direct at crosshair position.
 						if (lhTargetLocationCast)
@@ -4206,6 +4318,32 @@ namespace ALYSLC
 				shouldCurtailMomentum = true;
 			}
 
+			// REMOVE when done debugging.
+			/*DBG
+			(
+				"{}: Curtail: {}, start/stop moving: {}, {}, dont move set: {}, LS moved: {}, "
+				"movement speed: {}, attacking: {}, blocking: {}, bashing: {}, casting: {}, "
+				"movement yaw target changed: {}, turn: {}, face: {}, finished getting up: {}, "
+				"turn to face when stopped: {}, stop when turning: {}",
+				coopActor->GetName(), 
+				shouldCurtailMomentum,
+				shouldStartMoving,
+				shouldStopMoving,
+				dontMoveSet,
+				p->lsMoved,
+				movementSpeed,
+				p->pam->isAttacking,
+				p->pam->isBlocking,
+				p->pam->isBashing,
+				p->pam->isInCastingAnim,
+				movementYawTargetChanged, 
+				turnToTarget, 
+				faceCrosshairPos,
+				finishedGettingUp,
+				turnToFaceTargetWhileStopped,
+				stopWhenTurningToTarget
+			);*/
+
 			isGettingUp = false;
 		}
 		
@@ -4287,13 +4425,6 @@ namespace ALYSLC
 					coopActor->NotifyAnimationGraph("swimStop");
 				}
 				
-				// Commented out for now if the current fix in place does not work.
-				// Stop facing the crosshair position if the crosshair position is underwater,
-				// since the player will stop and turn,
-				// which will nudge them slightly in the direction of the crosshair
-				// and they will start swimming again.
-				//reqFaceTarget = false;
-
 				isSwimming = false;
 			}
 
@@ -4599,6 +4730,10 @@ namespace ALYSLC
 			!menuStopsMovement && 
 			!p->isRevivingPlayer
 		};
+
+		// Should stop and not start moving if an action makes use of the left stick.
+		shouldStopMoving |= p->pam->actionPreventsMovement;
+		shouldStartMoving &= !p->pam->actionPreventsMovement;
 	}
 
 	void NodeOrientationManager::ApplyCustomNodeRotation
@@ -4685,7 +4820,7 @@ namespace ALYSLC
 		}
 
 		{
-			std::unique_lock<std::mutex> lock(rotationDataMutex);
+			std::unique_lock<std::mutex> lock(orientationDataMutex);
 			const auto& uiRGBA = Settings::vuOverlayRGBAValues[a_p->playerID];
 			std::vector<RE::BSFixedString> nodeNamesToCheck{};
 			bool checkLeftArm = a_p->pam->IsPerformingOneOf
@@ -5928,7 +6063,7 @@ namespace ALYSLC
 						// Knocking down an actor while facing the crosshair will throw them,
 						// double the stamina cost, since throwing the actor has the potential
 						// for more damage dealt.
-						if (a_p->mm->reqFaceTarget)
+						if (a_p->tm->crosshairActive)
 						{
 							a_staminaCostOut *= 2.0f;
 
@@ -6389,7 +6524,7 @@ namespace ALYSLC
 						static_cast<RE::TESHitEvent::Flag>(AdditionalHitEventFlags::kSlap)
 					);
 
-					if (a_p->mm->reqFaceTarget)
+					if (a_p->tm->crosshairActive)
 					{
 						// Slap -> telekinetic throw at target if facing the crosshair.
 						// No stamina cost.
@@ -8848,7 +8983,6 @@ namespace ALYSLC
 						float yawOffset = 0.0f;
 						// Must be targeting something with the crosshair
 						// or have an aim correction target if the crosshair is disabled.
-						const bool crosshairActive = a_p->tm->aimMode == AimMode::kCrosshair;
 						const auto targetActorHandle = a_p->tm->GetRangedTargetActor();
 						const auto targetActorPtr = Util::GetActorPtrFromHandle
 						(
@@ -8859,7 +8993,7 @@ namespace ALYSLC
 							targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get())
 						);
 						auto targetPos = RE::NiPoint3();
-						if ((crosshairActive) && 
+						if ((a_p->tm->crosshairActive) && 
 							(
 								!targetActorValidity || 
 								Util::HandleIsValid(a_p->tm->crosshairRefrHandle)

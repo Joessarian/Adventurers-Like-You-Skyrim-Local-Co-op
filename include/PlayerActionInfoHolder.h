@@ -362,8 +362,7 @@ namespace ALYSLC
 				},
 				// AdjustAimPitch
 				{ 
-					InputAction::kLShoulder,
-					InputAction::kRThumb,
+					InputAction::kPowerAttackRH,
 					InputAction::kRS 
 				},
 				// AttackLH
@@ -390,7 +389,8 @@ namespace ALYSLC
 				},
 				// CamManualPos
 				{ 
-					InputAction::kLShoulder, 
+					InputAction::kRShoulder, 
+					InputAction::kLThumb,
 					InputAction::kRThumb
 				},
 				// CastLH
@@ -413,12 +413,12 @@ namespace ALYSLC
 				// CoopIdlesMenu
 				{
 					InputAction::kRShoulder, 
-					InputAction::kDPadR 
+					InputAction::kStart 
 				},
 				// CoopMiniGamesMenu
 				{ 
-					InputAction::kRShoulder,
-					InputAction::kDPadD
+					InputAction::kRShoulder, 
+					InputAction::kStart
 				},
 				// CoopSummoningMenu
 				{ 
@@ -427,72 +427,78 @@ namespace ALYSLC
 				},
 				// CycleAmmo
 				{ 
-					InputAction::kLShoulder,
-					InputAction::kY
+					InputAction::kX,
+					InputAction::kRT,
+					InputAction::kLT
 				},
 				// CycleSpellCategoryLH
 				{ 
-					InputAction::kY, 
+					InputAction::kBack, 
 					InputAction::kLShoulder 
 				},
 				// CycleSpellCategoryRH
 				{
-					InputAction::kY,
+					InputAction::kBack,
 					InputAction::kRShoulder 
 				},
 				// CycleSpellLH
 				{ 
-					InputAction::kLShoulder,
-					InputAction::kX
+					InputAction::kX,
+					InputAction::kLShoulder
 				},
 				// CycleSpellRH
 				{ 
-					InputAction::kRShoulder, 
-					InputAction::kX 
+					InputAction::kX, 
+					InputAction::kRShoulder 
 				},
 				// CycleVoiceSlotMagic
 				{
+					InputAction::kX,
 					InputAction::kRShoulder,
-					InputAction::kY 
+					InputAction::kLShoulder
 				},
 				// CycleWeaponCategoryLH
 				{ 
-					InputAction::kY, 
+					InputAction::kBack, 
 					InputAction::kLT 
 				},
 				// CycleWeaponCategoryRH
 				{ 
-					InputAction::kY,
+					InputAction::kBack,
 					InputAction::kRT 
 				},
 				// CycleWeaponLH
 				{ 
-					InputAction::kLShoulder, 
-					InputAction::kB 
+					InputAction::kX, 
+					InputAction::kLT
 				},
 				// CycleWeaponRH
 				{ 
-					InputAction::kRShoulder,
-					InputAction::kB 
+					InputAction::kX,
+					InputAction::kRT
 				},
 				// DebugRagdollPlayer
 				{ 
-					InputAction::kLShoulder, 
-					InputAction::kDPadR
+					InputAction::kRShoulder, 
+					InputAction::kLShoulder,
+					InputAction::kDPadL 
 				},
 				// DebugReEquipHandForms
 				{ 
+					InputAction::kRShoulder, 
 					InputAction::kLShoulder,
-					InputAction::kDPadL
+					InputAction::kDPadR 
 				},
 				// DebugRefreshPlayerManagers
 				{ 
-					InputAction::kLShoulder, 
-					InputAction::kDPadD 
+					InputAction::kRShoulder, 
+					InputAction::kLShoulder,
+					InputAction::kDPadU
 				},
 				// DebugResetPlayer
 				{ 
-					InputAction::kLShoulder, 
+					InputAction::kRShoulder, 
+					InputAction::kLShoulder,
 					InputAction::kDPadU 
 				},
 				// DisableCoopCam
@@ -510,7 +516,7 @@ namespace ALYSLC
 				},
 				// FaceTarget
 				{
-					InputAction::kLShoulder
+					InputAction::kNone
 				},
 				// Favorites
 				{
@@ -518,19 +524,18 @@ namespace ALYSLC
 				},
 				// GrabObject
 				{ 
-					InputAction::kFaceTarget, 
-					InputAction::kActivate 
+					InputAction::kRShoulder, 
+					InputAction::kA 
 				},
 				// GrabRotateYZ
 				{ 
-					InputAction::kRShoulder,
+					InputAction::kPowerAttackRH,
 					InputAction::kRThumb, 
 					InputAction::kRS 
 				},
 				// HotkeyEquip
 				{ 
-					InputAction::kRShoulder,
-					InputAction::kLShoulder,
+					InputAction::kRThumb,
 					InputAction::kRS
 				},
 				// Inventory
@@ -551,6 +556,7 @@ namespace ALYSLC
 				},
 				// MoveCrosshair
 				{ 
+					InputAction::kRShoulder,
 					InputAction::kLShoulder,
 					InputAction::kRS 
 				},
@@ -576,25 +582,23 @@ namespace ALYSLC
 				},
 				// QuickSlotCast
 				{
-					InputAction::kLShoulder,
-					InputAction::kRShoulder, 
-					InputAction::kA 
+					InputAction::kRShoulder,
+					InputAction::kY
 				},
 				// QuickSlotItem
 				{ 
-					InputAction::kRShoulder, 
-					InputAction::kLShoulder,
-					InputAction::kSpecialAction 
+					InputAction::kRShoulder,
+					InputAction::kX 
 				},
 				// ResetAim
 				{
-					InputAction::kRShoulder
+					InputAction::kPowerAttackRH,
+					InputAction::kRThumb
 				},
 				// ResetCamOrientation
 				{
-					InputAction::kLShoulder,
-					InputAction::kRShoulder,
 					InputAction::kRThumb,
+					InputAction::kLThumb
 				},
 				// RotateCam
 				{
@@ -602,14 +606,14 @@ namespace ALYSLC
 				},
 				// RotateLeftForearm
 				{ 
-					InputAction::kLShoulder, 
 					InputAction::kAttackLH,
+					InputAction::kLShoulder, 
 					InputAction::kRS 
 				},
 				// RotateLeftHand
 				{ 
-					InputAction::kLShoulder, 
 					InputAction::kAttackLH, 
+					InputAction::kLShoulder, 
 					InputAction::kRThumb, 
 					InputAction::kRS 
 				},
@@ -620,14 +624,14 @@ namespace ALYSLC
 				},
 				// RotateRightForearm
 				{ 
-					InputAction::kRShoulder, 
 					InputAction::kAttackRH,
+					InputAction::kRShoulder, 
 					InputAction::kRS 
 				},
 				// RotateRightHand
 				{ 
-					InputAction::kRShoulder,
 					InputAction::kAttackRH, 
+					InputAction::kRShoulder,
 					InputAction::kRThumb, 
 					InputAction::kRS 
 				},
@@ -638,12 +642,12 @@ namespace ALYSLC
 				},
 				// Sheathe
 				{ 
-					InputAction::kLThumb
+					InputAction::kX
 				},
 				// Shout
 				{ 
 					InputAction::kRShoulder,
-					InputAction::kA 
+					InputAction::kB 
 				},
 				// Sneak
 				{ 
@@ -651,11 +655,11 @@ namespace ALYSLC
 				},
 				// SpecialAction
 				{
-					InputAction::kX 
+					InputAction::kB 
 				},
 				// Sprint
 				{ 
-					InputAction::kB
+					InputAction::kLShoulder
 				},
 				// StatsMenu
 				{
@@ -664,7 +668,8 @@ namespace ALYSLC
 				// TeleportToPlayer
 				{ 
 					InputAction::kRShoulder, 
-					InputAction::kDPadU 
+					InputAction::kLShoulder,
+					InputAction::kDPadD 
 				},
 				// TradeWithPlayer
 				{
@@ -680,9 +685,8 @@ namespace ALYSLC
 				},
 				// ZoomCam
 				{
-					InputAction::kLShoulder,
-					InputAction::kRShoulder,
-					InputAction::kRS 
+					InputAction::kRThumb,
+					InputAction::kLS
 				} 
 			}
 		);
@@ -721,8 +725,8 @@ namespace ALYSLC
 			PerfType::kOnRelease,
 			// ActivateCancel
 			PerfType::kOnRelease,
-			// AdjustAimPitch (TEMPORARY, CHANGE BACK TO 'OnPressAndRelease' WHEN NEW BINDS ADDED)
-			PerfType::kOnHold,
+			// AdjustAimPitch
+			PerfType::kOnPressAndRelease,
 			// AttackLH
 			PerfType::kOnHold,
 			// AttackRH
@@ -746,7 +750,7 @@ namespace ALYSLC
 			// CoopIdlesMenu
 			PerfType::kOnRelease,
 			// CoopMiniGamesMenu
-			PerfType::kOnRelease,
+			PerfType::kOnPress,
 			// CoopSummoningMenu
 			PerfType::kOnRelease,
 			// CycleAmmo
@@ -776,7 +780,7 @@ namespace ALYSLC
 			// DebugRefreshPlayerManagers
 			PerfType::kOnRelease,
 			// DebugResetPlayer
-			PerfType::kOnRelease,
+			PerfType::kOnPress,
 			// DisableCoopCam
 			PerfType::kOnRelease,
 			// Dismount
@@ -784,7 +788,7 @@ namespace ALYSLC
 			// Dodge
 			PerfType::kOnRelease,
 			// FaceTarget
-			PerfType::kOnRelease,
+			PerfType::kDisabled,
 			// Favorites
 			PerfType::kOnRelease,
 			// GrabObject
@@ -796,7 +800,7 @@ namespace ALYSLC
 			// Inventory
 			PerfType::kOnRelease,
 			// Jump
-			PerfType::kOnRelease,
+			PerfType::kOnPress,
 			// MagicMenu
 			PerfType::kOnRelease,
 			// MapMenu
@@ -834,7 +838,7 @@ namespace ALYSLC
 			// RotateRightShoulder
 			PerfType::kNoAction,
 			// Sheathe
-			PerfType::kOnPress,
+			PerfType::kOnRelease,
 			// Shout
 			PerfType::kOnHold,
 			// Sneak
@@ -938,7 +942,9 @@ namespace ALYSLC
 			// CoopMiniGamesMenu
 			TriggerFlags
 			(
-				TriggerFlag::kLoneAction
+				TriggerFlag::kLoneAction,
+				TriggerFlag::kMinHoldTime,
+				TriggerFlag::kIgnoreConflictingActions
 			),
 			// CoopSummoningMenu
 			TriggerFlags
@@ -949,7 +955,8 @@ namespace ALYSLC
 			TriggerFlags
 			(
 				TriggerFlag::kLoneAction, 
-				TriggerFlag::kNoCleanupAfterInterrupt
+				TriggerFlag::kNoCleanupAfterInterrupt,
+				TriggerFlag::kDoNotUseCompActionsOrdering
 			),
 			// CycleSpellCategoryLH
 			TriggerFlags
@@ -979,7 +986,8 @@ namespace ALYSLC
 			TriggerFlags
 			(
 				TriggerFlag::kLoneAction, 
-				TriggerFlag::kNoCleanupAfterInterrupt
+				TriggerFlag::kNoCleanupAfterInterrupt,
+				TriggerFlag::kDoNotUseCompActionsOrdering
 			),
 			// CycleWeaponCategoryLH
 			TriggerFlags
@@ -1023,7 +1031,9 @@ namespace ALYSLC
 			// DebugResetPlayer
 			TriggerFlags
 			(
-				TriggerFlag::kLoneAction
+				TriggerFlag::kLoneAction,
+				TriggerFlag::kMinHoldTime,
+				TriggerFlag::kIgnoreConflictingActions
 			),
 			// DisableCoopCam
 			TriggerFlags
@@ -1073,7 +1083,7 @@ namespace ALYSLC
 			// Jump
 			TriggerFlags
 			(
-				TriggerFlag::kDefault
+				TriggerFlag::kBlockOnConditionFailure
 			),
 			// MagicMenu
 			TriggerFlags
@@ -1113,7 +1123,7 @@ namespace ALYSLC
 			// QuickSlotCast
 			TriggerFlags
 			(
-				TriggerFlag::kDoNotUseCompActionsOrdering
+				TriggerFlag::kDefault
 			),
 			// QuickSlotItem
 			TriggerFlags
@@ -1174,8 +1184,7 @@ namespace ALYSLC
 			// Sheathe
 			TriggerFlags
 			(
-				TriggerFlag::kMinHoldTime,
-				TriggerFlag::kIgnoreConflictingActions
+				TriggerFlag::kDefault
 			),
 			// Shout
 			TriggerFlags
