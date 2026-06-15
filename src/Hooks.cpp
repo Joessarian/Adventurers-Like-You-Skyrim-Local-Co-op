@@ -15563,7 +15563,6 @@ namespace ALYSLC
 			);
 			if (base.IsNull() || base.IsUndefined())
 			{
-				DBG("BUH");
 				return;
 			}
 			
@@ -18011,6 +18010,625 @@ namespace ALYSLC
 			return _ProcessMessage(a_this, a_message);
 		}
 
+		void StatsMenuHooks::AdvanceMovie
+		(
+			RE::StatsMenu* a_this, float a_interval, uint32_t a_currentTime
+		)
+		{
+			// Set companion player's name and race name to override P1's info.
+
+			// Run the game's update first and then overwrite its changes.
+			_AdvanceMovie(a_this, a_interval, a_currentTime);
+			auto ui = RE::UI::GetSingleton();
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (!ui || !p1 || !glob.coopSessionActive || glob.menuPID <= 0)
+			{
+				return;
+			}
+
+			auto view = a_this->uiMovie;
+			if (!view)
+			{
+				return;
+			}
+			bool hasCopiedData = 
+			(
+				*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone
+			);
+			
+			const auto& playerInMenusPtr = glob.coopPlayers[glob.menuPID]->coopActor;
+			const auto iter = glob.serializablePlayerData.find
+			(
+				playerInMenusPtr->formID
+			);
+			if (iter == glob.serializablePlayerData.end())
+			{
+				return;
+			}
+
+			const auto& data = iter->second;
+			DBG
+			(
+				"[HMS Breakdown] "
+				"Current levels displayed on P1: H: {}, M: {}, S: {}. "
+				"P1 current base: H: {}, M: {}, S: {}. "
+				"P1 current permanent: H: {}, M: {}, S: {}. " 
+				"P1 base values recorded on entry: H: {}, M: {}, S: {}. "
+				"{}'s modifiers (temp, permanent, damage): "
+				"H: ({}, {}, {}), M: ({}, {}, {}), S: ({}, {}, {}). "
+				"{}'s HMS values: "
+				"Current levels: H: {}, M: {}, S: {}. "
+				"Current base: H: {}, M: {}, S: {}. "
+				"Current permanent: H: {}, M: {}, S: {}. "
+				"Serialized values: "
+				"Base: H: {}, M: {}, S: {}. "
+				"Serialized increases: H: {}, M: {}, S: {}. "
+				"Current increases: H: {}, M: {}, S: {}. "
+				"To display on P1: H: ({} / {}), M: ({} / {}), S: ({} / {})",
+				p1->GetActorValue(RE::ActorValue::kHealth),
+				p1->GetActorValue(RE::ActorValue::kMagicka),
+				p1->GetActorValue(RE::ActorValue::kStamina),
+				p1->GetBaseActorValue(RE::ActorValue::kHealth),
+				p1->GetBaseActorValue(RE::ActorValue::kMagicka),
+				p1->GetBaseActorValue(RE::ActorValue::kStamina),
+				p1->GetPermanentActorValue(RE::ActorValue::kHealth),
+				p1->GetPermanentActorValue(RE::ActorValue::kMagicka),
+				p1->GetPermanentActorValue(RE::ActorValue::kStamina),
+				data->p1HMSBaseAVsOnMenuEntry[0],
+				data->p1HMSBaseAVsOnMenuEntry[1],
+				data->p1HMSBaseAVsOnMenuEntry[2],
+				playerInMenusPtr->GetName(),
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+				),
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				),
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				),
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+				),
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
+				),
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+				),
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
+				),
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+				),
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+				),
+				playerInMenusPtr->GetName(),
+				playerInMenusPtr->GetActorValue(RE::ActorValue::kHealth),
+				playerInMenusPtr->GetActorValue(RE::ActorValue::kMagicka),
+				playerInMenusPtr->GetActorValue(RE::ActorValue::kStamina),
+				playerInMenusPtr->GetBaseActorValue(RE::ActorValue::kHealth),
+				playerInMenusPtr->GetBaseActorValue(RE::ActorValue::kMagicka),
+				playerInMenusPtr->GetBaseActorValue(RE::ActorValue::kStamina),
+				playerInMenusPtr->GetPermanentActorValue(RE::ActorValue::kHealth),
+				playerInMenusPtr->GetPermanentActorValue(RE::ActorValue::kMagicka),
+				playerInMenusPtr->GetPermanentActorValue(RE::ActorValue::kStamina),
+				data->hmsBasePointsList[0],
+				data->hmsBasePointsList[1],
+				data->hmsBasePointsList[2],
+				data->hmsPointIncreasesList[0],
+				data->hmsPointIncreasesList[1],
+				data->hmsPointIncreasesList[2],
+				p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
+				data->p1HMSBaseAVsOnMenuEntry[0],
+				p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
+				data->p1HMSBaseAVsOnMenuEntry[1],
+				p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
+				data->p1HMSBaseAVsOnMenuEntry[2],
+				(
+					data->hmsBasePointsList[0] + 
+					data->hmsPointIncreasesList[0] +
+					(
+						p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
+						data->p1HMSBaseAVsOnMenuEntry[0]
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+						RE::ActorValue::kHealth
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent,
+						RE::ActorValue::kHealth
+					) 	 + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+					)
+				),
+				(
+					data->hmsBasePointsList[0] + 
+					data->hmsPointIncreasesList[0] +
+					(
+						p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
+						data->p1HMSBaseAVsOnMenuEntry[0]
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+						RE::ActorValue::kHealth
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent, 
+						RE::ActorValue::kHealth
+					) 	
+				),
+				(
+					data->hmsBasePointsList[1] + 
+					data->hmsPointIncreasesList[1] +
+					(
+						p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
+						data->p1HMSBaseAVsOnMenuEntry[1]
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+						RE::ActorValue::kMagicka
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent, 
+						RE::ActorValue::kMagicka
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+					)
+				),
+				(
+					data->hmsBasePointsList[1] + 
+					data->hmsPointIncreasesList[1] +
+					(
+						p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
+						data->p1HMSBaseAVsOnMenuEntry[1]
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary,
+						RE::ActorValue::kMagicka
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent,
+						RE::ActorValue::kMagicka
+					) 	
+				),
+				(
+					data->hmsBasePointsList[2] + 
+					data->hmsPointIncreasesList[2] +
+					(
+						p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
+						data->p1HMSBaseAVsOnMenuEntry[2]
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary,
+						RE::ActorValue::kStamina
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent,
+						RE::ActorValue::kStamina
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+					)
+				),
+				(
+					data->hmsBasePointsList[2] + 
+					data->hmsPointIncreasesList[2] +
+					(
+						p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
+						data->p1HMSBaseAVsOnMenuEntry[2]
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+						RE::ActorValue::kStamina
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent,
+						RE::ActorValue::kStamina
+					) 	
+				)
+			);
+			
+			// Same solution with/without Extended UI installed for now.
+			// Keeping the else block because I remember there being an issue
+			// with SetPlayerInfo on a previous setup and may have to revert.
+			//if (ALYSLC::ExtendedUICompat::g_installed)
+			//{
+
+			RE::GFxValue root{ };
+			bool base1Set = false;
+			RE::GFxValue base{ };
+			// Sometimes there's two base instances with modded Stats Menus. 
+			// Modify both, idk anymore.
+			RE::GFxValue base2{ };
+			view->GetVariable
+			(
+				std::addressof(root), "_root"
+			);
+			if (!root.IsNull() && !root.IsUndefined())
+			{
+				root.VisitMembers
+				(
+					[&base, &base2, &base1Set]
+					(const char* a_name, const RE::GFxValue& a_value)
+					{
+						if (Hash(a_name) == "StatsMenuBaseInstance"_h)
+						{
+							if (base1Set)
+							{
+								base2 = a_value;
+							}
+							else
+							{
+								base1Set = true;
+								base = a_value;
+							}
+						}
+					}
+				);
+			}
+
+			RE::GFxValue playerName{ };
+			RE::GFxValue playerRace{ };
+			if (base.IsNull() || base.IsUndefined())
+			{
+				return;
+			}
+\
+			view->SetVariable("_root.StatsMenuBaseInstance.playerName", playerName);
+			view->SetVariable("_root.StatsMenuBaseInstance.playerRace", playerRace);
+			std::array<RE::GFxValue, 13> args{ };
+			args[0] = playerInMenusPtr->GetName();
+			// Subtract 1 when the LevelUp Menu is set to open because P1's level
+			// is incremented before the menu opens 
+			// and before P1 can even choose a stat,
+			// meaning once P1 reaches 0 more available level ups, 
+			// their final level will have displayed twice.
+			args[1] = 
+			(
+				p1->skills->data->xp < p1->skills->data->levelThreshold ?
+				p1->GetLevel() : 
+				max(p1->GetLevel() - 1, 1)
+			);
+			args[2] = std::clamp
+			(
+				100.0 * p1->skills->data->xp / p1->skills->data->levelThreshold,
+				0.0,
+				100.0
+			);
+			args[3] = playerInMenusPtr->race->GetName();
+
+			// Magicka (current, full, color).
+			float tempAndPermMod = 
+			(
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary,
+					RE::ActorValue::kMagicka
+				) + 
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent,
+					RE::ActorValue::kMagicka
+				) 	
+			);
+
+			// FULL:
+			// Companion player's recorded base amount + 
+			// their recorded increase so far +
+			// the current change while in the Stats Menu + 
+			// any temporary and permanent modifiers from gear, perks, etc.
+			// (applied to P1 until export when the menu closes).
+			float fullValue = 
+			(
+				data->hmsBasePointsList[1] + 
+				data->hmsPointIncreasesList[1] +
+				(
+					p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
+					data->p1HMSBaseAVsOnMenuEntry[1]
+				) + 
+				tempAndPermMod
+			);
+			// CURRENT:
+			// The max value above modified by the companion player's 
+			// current damage AV modifier.
+			float currentValue = 
+			(
+				fullValue + 
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+				)
+			);
+			
+			args[4] = RE::GFxValue(std::roundf(currentValue));
+			args[5] = RE::GFxValue(std::roundf(fullValue));
+			args[6] = RE::GFxValue
+			(
+				tempAndPermMod == 0.0f ? 0xFFFFFF : 
+				tempAndPermMod < 0.0f ? 0xFF0000 :
+				0x00FF00
+			);
+
+			// Health (current, full, color).
+			tempAndPermMod = 
+			(
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary,
+					RE::ActorValue::kHealth
+				) + 
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent,
+					RE::ActorValue::kHealth
+				) 	
+			);
+			fullValue = 
+			(
+				data->hmsBasePointsList[0] + 
+				data->hmsPointIncreasesList[0] +
+				(
+					p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
+					data->p1HMSBaseAVsOnMenuEntry[0]
+				) + 
+				tempAndPermMod
+			);
+			currentValue = 
+			(
+				fullValue + 
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				)
+			);
+			args[7] = RE::GFxValue(std::roundf(currentValue));
+			args[8] = RE::GFxValue(std::roundf(fullValue));
+			args[9] = RE::GFxValue
+			(
+				tempAndPermMod == 0.0f ? 0xFFFFFF : 
+				tempAndPermMod < 0.0f ? 0xFF0000 :
+				0x00FF00
+			);
+
+			// Stamina (current, max, color).
+			tempAndPermMod = 
+			(
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary,
+					RE::ActorValue::kStamina
+				) + 
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent,
+					RE::ActorValue::kStamina
+				) 	
+			);
+			fullValue = 
+			(
+				data->hmsBasePointsList[2] + 
+				data->hmsPointIncreasesList[2] +
+				(
+					p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
+					data->p1HMSBaseAVsOnMenuEntry[2]
+				) + 
+				tempAndPermMod
+			);
+			currentValue = 
+			(
+				fullValue + 
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+				)
+			);
+			args[10] = RE::GFxValue(std::roundf(currentValue));
+			args[11] = RE::GFxValue(std::roundf(fullValue));
+			args[12] = RE::GFxValue
+			(
+				tempAndPermMod == 0.0f ? 0xFFFFFF : 
+				tempAndPermMod < 0.0f ? 0xFF0000 :
+				0x00FF00
+			);
+
+			base.Invoke("SetPlayerInfo", args);
+
+			/*
+			}
+			else
+			{
+				view->GetVariable
+				(
+					std::addressof(playerName), 
+					"_root.StatsMenuBaseInstance.TopPlayerInfo.FirstLastLabel"
+				);
+				if (!playerName.IsNull() && !playerName.IsUndefined())
+				{
+					playerName.SetTextHTML(playerInMenusPtr->GetName());
+				}
+
+				view->GetVariable
+				(
+					std::addressof(playerRace), 
+					"_root.StatsMenuBaseInstance.TopPlayerInfo.RacevalueLabel"
+				);
+				if (!playerRace.IsNull() && !playerRace.IsUndefined())
+				{
+					playerRace.SetTextHTML(playerInMenusPtr->race->GetName());
+				}
+					
+				RE::GFxValue args[4];
+				// Magicka (current, full, color).
+				float tempAndPermMod = 
+				(
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary,
+						RE::ActorValue::kMagicka
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent,
+						RE::ActorValue::kMagicka
+					) 	
+				);
+				// FULL:
+				// Companion player's recorded base amount + 
+				// their recorded increase so far +
+				// the current change while in the Stats Menu + 
+				// any temporary and permanent modifiers from gear, perks, etc.
+				// (applied to P1 until export when the menu closes).
+				float fullValue = 
+				(
+					data->hmsBasePointsList[1] + 
+					data->hmsPointIncreasesList[1] +
+					(
+						p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
+						data->p1HMSBaseAVsOnMenuEntry[1]
+					) + 
+					tempAndPermMod
+				);
+				// CURRENT:
+				// The max value above modified by the companion player's 
+				// current damage AV modifier.
+				float currentValue = 
+				(
+					fullValue + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+					)
+				);
+			
+				args[0] = RE::GFxValue(0);
+				args[1] = RE::GFxValue(std::roundf(currentValue));
+				args[2] = RE::GFxValue(std::roundf(fullValue));
+				args[3] = RE::GFxValue
+				(
+					tempAndPermMod == 0.0f ? 0xFFFFFF : 
+					tempAndPermMod < 0.0f ? 0xFF0000 :
+					0x00FF00
+				);
+				base.Invoke("SetMeter", nullptr, args, 4);
+
+				// Health (current, full, color).
+				tempAndPermMod = 
+				(
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary,
+						RE::ActorValue::kHealth
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent,
+						RE::ActorValue::kHealth
+					) 	
+				);
+				fullValue = 
+				(
+					data->hmsBasePointsList[0] + 
+					data->hmsPointIncreasesList[0] +
+					(
+						p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
+						data->p1HMSBaseAVsOnMenuEntry[0]
+					) + 
+					tempAndPermMod
+				);
+				currentValue = 
+				(
+					fullValue + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+					)
+				);
+				args[0] = RE::GFxValue(1);
+				args[1] = RE::GFxValue(std::roundf(currentValue));
+				args[2] = RE::GFxValue(std::roundf(fullValue));
+				args[3] = RE::GFxValue
+				(
+					tempAndPermMod == 0.0f ? 0xFFFFFF : 
+					tempAndPermMod < 0.0f ? 0xFF0000 :
+					0x00FF00
+				);
+				base.Invoke("SetMeter", nullptr, args, 4);
+
+				// Stamina (current, max, color).
+				tempAndPermMod = 
+				(
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary,
+						RE::ActorValue::kStamina
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent,
+						RE::ActorValue::kStamina
+					) 	
+				);
+				fullValue = 
+				(
+					data->hmsBasePointsList[2] + 
+					data->hmsPointIncreasesList[2] +
+					(
+						p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
+						data->p1HMSBaseAVsOnMenuEntry[2]
+					) + 
+					tempAndPermMod
+				);
+				currentValue = 
+				(
+					fullValue + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+					)
+				);
+				args[0] = RE::GFxValue(2);
+				args[1] = RE::GFxValue(std::roundf(currentValue));
+				args[2] = RE::GFxValue(std::roundf(fullValue));
+				args[3] = RE::GFxValue
+				(
+					tempAndPermMod == 0.0f ? 0xFFFFFF : 
+					tempAndPermMod < 0.0f ? 0xFF0000 :
+					0x00FF00
+				);
+				base.Invoke("SetMeter", nullptr, args, 4);
+			}*/
+		}
+
 		RE::UI_MESSAGE_RESULTS StatsMenuHooks::ProcessMessage
 		(
 			RE::StatsMenu* a_this, RE::UIMessage& a_message
@@ -18222,601 +18840,10 @@ namespace ALYSLC
 						"Opening: {}, closing: {}, has copied data: {}.",
 						glob.menuPID, glob.lastResolvedMenuPID, opening, closing, hasCopiedData
 					);
-					if (glob.lastResolvedMenuPID > -1)
-					{
-						playerInMenusPtr = glob.coopPlayers[glob.lastResolvedMenuPID]->coopActor;
-					}
 				}
-				else if (glob.mim->IsRunning() && glob.mim->managerMenuPID > 0)
+				else 
 				{
-					// Set to companion player controlling menus.
-					playerInMenusPtr = glob.coopPlayers[glob.mim->managerMenuPID]->coopActor;
-				}
-
-				if (playerInMenusPtr && view)
-				{
-					RE::GFxValue root{ };
-					bool base1Set = false;
-					RE::GFxValue base{ };
-					// Sometimes there's two base instances with modded Stats Menus. 
-					// Modify both, idk anymore.
-					RE::GFxValue base2{ };
-					view->GetVariable
-					(
-						std::addressof(root), "_root"
-					);
-					if (!root.IsNull() && !root.IsUndefined())
-					{
-						root.VisitMembers
-						(
-							[&base, &base2, &base1Set]
-							(const char* a_name, const RE::GFxValue& a_value)
-							{
-								if (Hash(a_name) == "StatsMenuBaseInstance"_h)
-								{
-									if (base1Set)
-									{
-										base2 = a_value;
-									}
-									else
-									{
-										base1Set = true;
-										base = a_value;
-									}
-								}
-							}
-						);
-					}
-
-					RE::GFxValue playerName{ };
-					RE::GFxValue playerRace{ };
-					if (base.IsNull() || base.IsUndefined())
-					{
-						return result;
-					}
-			
-					const auto iter = glob.serializablePlayerData.find(playerInMenusPtr->formID);
-					if (iter == glob.serializablePlayerData.end())
-					{
-						return result;
-					}
-
-					const auto& data = iter->second;
-					DBG
-					(
-						"[HMS Breakdown] "
-						"Event type {}, "
-						"Current levels displayed on P1: H: {}, M: {}, S: {}. "
-						"P1 current base: H: {}, M: {}, S: {}. "
-						"P1 current permanent: H: {}, M: {}, S: {}. " 
-						"P1 base values recorded on entry: H: {}, M: {}, S: {}. "
-						"{}'s modifiers (temp, permanent, damage): "
-						"H: ({}, {}, {}), M: ({}, {}, {}), S: ({}, {}, {}). "
-						"{}'s HMS values: "
-						"Current levels: H: {}, M: {}, S: {}. "
-						"Current base: H: {}, M: {}, S: {}. "
-						"Current permanent: H: {}, M: {}, S: {}. "
-						"Serialized values: "
-						"Base: H: {}, M: {}, S: {}. "
-						"Serialized increases: H: {}, M: {}, S: {}. "
-						"Current increases: H: {}, M: {}, S: {}. "
-						"To display on P1: H: ({} / {}), M: ({} / {}), S: ({} / {})",
-						*a_message.type,
-						p1->GetActorValue(RE::ActorValue::kHealth),
-						p1->GetActorValue(RE::ActorValue::kMagicka),
-						p1->GetActorValue(RE::ActorValue::kStamina),
-						p1->GetBaseActorValue(RE::ActorValue::kHealth),
-						p1->GetBaseActorValue(RE::ActorValue::kMagicka),
-						p1->GetBaseActorValue(RE::ActorValue::kStamina),
-						p1->GetPermanentActorValue(RE::ActorValue::kHealth),
-						p1->GetPermanentActorValue(RE::ActorValue::kMagicka),
-						p1->GetPermanentActorValue(RE::ActorValue::kStamina),
-						data->p1HMSBaseAVsOnMenuEntry[0],
-						data->p1HMSBaseAVsOnMenuEntry[1],
-						data->p1HMSBaseAVsOnMenuEntry[2],
-						playerInMenusPtr->GetName(),
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
-						),
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
-						),
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
-						),
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
-						),
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
-						),
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
-						),
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
-						),
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
-						),
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
-						),
-						playerInMenusPtr->GetName(),
-						playerInMenusPtr->GetActorValue(RE::ActorValue::kHealth),
-						playerInMenusPtr->GetActorValue(RE::ActorValue::kMagicka),
-						playerInMenusPtr->GetActorValue(RE::ActorValue::kStamina),
-						playerInMenusPtr->GetBaseActorValue(RE::ActorValue::kHealth),
-						playerInMenusPtr->GetBaseActorValue(RE::ActorValue::kMagicka),
-						playerInMenusPtr->GetBaseActorValue(RE::ActorValue::kStamina),
-						playerInMenusPtr->GetPermanentActorValue(RE::ActorValue::kHealth),
-						playerInMenusPtr->GetPermanentActorValue(RE::ActorValue::kMagicka),
-						playerInMenusPtr->GetPermanentActorValue(RE::ActorValue::kStamina),
-						data->hmsBasePointsList[0],
-						data->hmsBasePointsList[1],
-						data->hmsBasePointsList[2],
-						data->hmsPointIncreasesList[0],
-						data->hmsPointIncreasesList[1],
-						data->hmsPointIncreasesList[2],
-						p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
-						data->p1HMSBaseAVsOnMenuEntry[0],
-						p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
-						data->p1HMSBaseAVsOnMenuEntry[1],
-						p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
-						data->p1HMSBaseAVsOnMenuEntry[2],
-						(
-							data->hmsBasePointsList[0] + 
-							data->hmsPointIncreasesList[0] +
-							(
-								p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
-								data->p1HMSBaseAVsOnMenuEntry[0]
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
-							) 	 + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
-							)
-						),
-						(
-							data->hmsBasePointsList[0] + 
-							data->hmsPointIncreasesList[0] +
-							(
-								p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
-								data->p1HMSBaseAVsOnMenuEntry[0]
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
-							) 	
-						),
-						(
-							data->hmsBasePointsList[1] + 
-							data->hmsPointIncreasesList[1] +
-							(
-								p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
-								data->p1HMSBaseAVsOnMenuEntry[1]
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
-							)
-						),
-						(
-							data->hmsBasePointsList[1] + 
-							data->hmsPointIncreasesList[1] +
-							(
-								p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
-								data->p1HMSBaseAVsOnMenuEntry[1]
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
-							) 	
-						),
-						(
-							data->hmsBasePointsList[2] + 
-							data->hmsPointIncreasesList[2] +
-							(
-								p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
-								data->p1HMSBaseAVsOnMenuEntry[2]
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
-							)
-						),
-						(
-							data->hmsBasePointsList[2] + 
-							data->hmsPointIncreasesList[2] +
-							(
-								p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
-								data->p1HMSBaseAVsOnMenuEntry[2]
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
-							) 	
-						)
-					);
-
-					// Same solution with/without Extended UI installed for now.
-					// Keeping the else block because I remember there being an issue
-					// with SetPlayerInfo on a previous setup and may have to revert.
-					//if (ALYSLC::ExtendedUICompat::g_installed)
-					{
-						auto ui = RE::UI::GetSingleton();
-						DBG("GAHHH");
-						view->SetVariable("_root.StatsMenuBaseInstance.playerName", playerName);
-						view->SetVariable("_root.StatsMenuBaseInstance.playerRace", playerRace);
-						std::array<RE::GFxValue, 13> args{ };
-						args[0] = playerInMenusPtr->GetName();
-						// Subtract 1 when the LevelUp Menu is set to open because P1's level
-						// is incremented before the menu opens 
-						// and before P1 can even choose a stat,
-						// meaning once P1 reaches 0 more available level ups, 
-						// their final level will have displayed twice.
-						args[1] = 
-						(
-							p1->skills->data->xp < p1->skills->data->levelThreshold ?
-							p1->GetLevel() : 
-							max(p1->GetLevel() - 1, 1)
-						);
-						args[2] = std::clamp
-						(
-							100.0 * p1->skills->data->xp / p1->skills->data->levelThreshold,
-							0.0,
-							100.0
-						);
-						args[3] = playerInMenusPtr->race->GetName();
-
-						// Magicka (current, full, color).
-						float tempAndPermMod = 
-						(
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kTemporary,
-								RE::ActorValue::kMagicka
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kPermanent,
-								RE::ActorValue::kMagicka
-							) 	
-						);
-
-						// FULL:
-						// Companion player's recorded base amount + 
-						// their recorded increase so far +
-						// the current change while in the Stats Menu + 
-						// any temporary and permanent modifiers from gear, perks, etc.
-						// (applied to P1 until export when the menu closes).
-						float fullValue = 
-						(
-							data->hmsBasePointsList[1] + 
-							data->hmsPointIncreasesList[1] +
-							(
-								p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
-								data->p1HMSBaseAVsOnMenuEntry[1]
-							) + 
-							tempAndPermMod
-						);
-						// CURRENT:
-						// The max value above modified by the companion player's 
-						// current damage AV modifier.
-						float currentValue = 
-						(
-							fullValue + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
-							)
-						);
-			
-						args[4] = RE::GFxValue(std::roundf(currentValue));
-						args[5] = RE::GFxValue(std::roundf(fullValue));
-						args[6] = RE::GFxValue
-						(
-							tempAndPermMod == 0.0f ? 0xFFFFFF : 
-							tempAndPermMod < 0.0f ? 0xFF0000 :
-							0x00FF00
-						);
-
-						// Health (current, full, color).
-						tempAndPermMod = 
-						(
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kTemporary,
-								RE::ActorValue::kHealth
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kPermanent,
-								RE::ActorValue::kHealth
-							) 	
-						);
-						fullValue = 
-						(
-							data->hmsBasePointsList[0] + 
-							data->hmsPointIncreasesList[0] +
-							(
-								p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
-								data->p1HMSBaseAVsOnMenuEntry[0]
-							) + 
-							tempAndPermMod
-						);
-						currentValue = 
-						(
-							fullValue + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
-							)
-						);
-						args[7] = RE::GFxValue(std::roundf(currentValue));
-						args[8] = RE::GFxValue(std::roundf(fullValue));
-						args[9] = RE::GFxValue
-						(
-							tempAndPermMod == 0.0f ? 0xFFFFFF : 
-							tempAndPermMod < 0.0f ? 0xFF0000 :
-							0x00FF00
-						);
-
-						// Stamina (current, max, color).
-						tempAndPermMod = 
-						(
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kTemporary,
-								RE::ActorValue::kStamina
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kPermanent,
-								RE::ActorValue::kStamina
-							) 	
-						);
-						fullValue = 
-						(
-							data->hmsBasePointsList[2] + 
-							data->hmsPointIncreasesList[2] +
-							(
-								p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
-								data->p1HMSBaseAVsOnMenuEntry[2]
-							) + 
-							tempAndPermMod
-						);
-						currentValue = 
-						(
-							fullValue + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
-							)
-						);
-						args[10] = RE::GFxValue(std::roundf(currentValue));
-						args[11] = RE::GFxValue(std::roundf(fullValue));
-						args[12] = RE::GFxValue
-						(
-							tempAndPermMod == 0.0f ? 0xFFFFFF : 
-							tempAndPermMod < 0.0f ? 0xFF0000 :
-							0x00FF00
-						);
-
-						base.Invoke("SetPlayerInfo", args);
-					}
-					/*
-					else
-					{
-						view->GetVariable
-						(
-							std::addressof(playerName), 
-							"_root.StatsMenuBaseInstance.TopPlayerInfo.FirstLastLabel"
-						);
-						if (!playerName.IsNull() && !playerName.IsUndefined())
-						{
-							playerName.SetTextHTML(playerInMenusPtr->GetName());
-						}
-
-						view->GetVariable
-						(
-							std::addressof(playerRace), 
-							"_root.StatsMenuBaseInstance.TopPlayerInfo.RacevalueLabel"
-						);
-						if (!playerRace.IsNull() && !playerRace.IsUndefined())
-						{
-							playerRace.SetTextHTML(playerInMenusPtr->race->GetName());
-						}
-					
-						RE::GFxValue args[4];
-						// Magicka (current, full, color).
-						float tempAndPermMod = 
-						(
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kTemporary,
-								RE::ActorValue::kMagicka
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kPermanent,
-								RE::ActorValue::kMagicka
-							) 	
-						);
-						// FULL:
-						// Companion player's recorded base amount + 
-						// their recorded increase so far +
-						// the current change while in the Stats Menu + 
-						// any temporary and permanent modifiers from gear, perks, etc.
-						// (applied to P1 until export when the menu closes).
-						float fullValue = 
-						(
-							data->hmsBasePointsList[1] + 
-							data->hmsPointIncreasesList[1] +
-							(
-								p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
-								data->p1HMSBaseAVsOnMenuEntry[1]
-							) + 
-							tempAndPermMod
-						);
-						// CURRENT:
-						// The max value above modified by the companion player's 
-						// current damage AV modifier.
-						float currentValue = 
-						(
-							fullValue + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
-							)
-						);
-			
-						args[0] = RE::GFxValue(0);
-						args[1] = RE::GFxValue(std::roundf(currentValue));
-						args[2] = RE::GFxValue(std::roundf(fullValue));
-						args[3] = RE::GFxValue
-						(
-							tempAndPermMod == 0.0f ? 0xFFFFFF : 
-							tempAndPermMod < 0.0f ? 0xFF0000 :
-							0x00FF00
-						);
-						base.Invoke("SetMeter", nullptr, args, 4);
-
-						// Health (current, full, color).
-						tempAndPermMod = 
-						(
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kTemporary,
-								RE::ActorValue::kHealth
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kPermanent,
-								RE::ActorValue::kHealth
-							) 	
-						);
-						fullValue = 
-						(
-							data->hmsBasePointsList[0] + 
-							data->hmsPointIncreasesList[0] +
-							(
-								p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
-								data->p1HMSBaseAVsOnMenuEntry[0]
-							) + 
-							tempAndPermMod
-						);
-						currentValue = 
-						(
-							fullValue + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
-							)
-						);
-						args[0] = RE::GFxValue(1);
-						args[1] = RE::GFxValue(std::roundf(currentValue));
-						args[2] = RE::GFxValue(std::roundf(fullValue));
-						args[3] = RE::GFxValue
-						(
-							tempAndPermMod == 0.0f ? 0xFFFFFF : 
-							tempAndPermMod < 0.0f ? 0xFF0000 :
-							0x00FF00
-						);
-						base.Invoke("SetMeter", nullptr, args, 4);
-
-						// Stamina (current, max, color).
-						tempAndPermMod = 
-						(
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kTemporary,
-								RE::ActorValue::kStamina
-							) + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kPermanent,
-								RE::ActorValue::kStamina
-							) 	
-						);
-						fullValue = 
-						(
-							data->hmsBasePointsList[2] + 
-							data->hmsPointIncreasesList[2] +
-							(
-								p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
-								data->p1HMSBaseAVsOnMenuEntry[2]
-							) + 
-							tempAndPermMod
-						);
-						currentValue = 
-						(
-							fullValue + 
-							playerInMenusPtr->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
-							)
-						);
-						args[0] = RE::GFxValue(2);
-						args[1] = RE::GFxValue(std::roundf(currentValue));
-						args[2] = RE::GFxValue(std::roundf(fullValue));
-						args[3] = RE::GFxValue
-						(
-							tempAndPermMod == 0.0f ? 0xFFFFFF : 
-							tempAndPermMod < 0.0f ? 0xFF0000 :
-							0x00FF00
-						);
-						base.Invoke("SetMeter", nullptr, args, 4);
-					}*/
-				}
-
-				// No need to handle cases where the menu is opening or closing below here.
-				if (!opening && !closing)
-				{
+					// No need to handle cases where the menu is opening or closing below here.
 					// Set as handled if the player's name or race name were modified back to P1's.
 					// Do not want any other handlers to re-apply P1's data 
 					// over the companion player's.

@@ -1580,15 +1580,22 @@ namespace ALYSLC
 			static void InstallHooks()
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_StatsMenu[0] };
+				_AdvanceMovie = vtbl.write_vfunc(0x05, AdvanceMovie);
+				INF("Installed AdvanceMovie() hook.");
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
 				INF("Installed ProcessMessage() hook.");
 			}
 
 		private:
+			static void AdvanceMovie
+			(
+				RE::StatsMenu* a_this, float a_interval, uint32_t a_currentTime
+			);
 			static RE::UI_MESSAGE_RESULTS ProcessMessage
 			(
 				RE::StatsMenu* a_this, RE::UIMessage& a_message
 			);
+			static inline REL::Relocation<decltype(AdvanceMovie)> _AdvanceMovie;
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 

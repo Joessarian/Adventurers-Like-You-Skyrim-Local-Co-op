@@ -5706,6 +5706,11 @@ namespace ALYSLC
 				coopActor.get()
 			);
 			coopActor->DrawWeaponMagicHands(a_shouldDraw);
+			// Compatibility with Cancel Attack SKSE. 
+			// Will stop the player from continuing to block once re-drawing weapons
+			// if an attack was cancelled via sheathing.
+			coopActor->actorState2.wantBlocking = 0;
+			coopActor->NotifyAnimationGraph("blockStop");
 		}
 		else
 		{
@@ -5823,6 +5828,8 @@ namespace ALYSLC
 					coopActor.get()
 				);
 				coopActor->DrawWeaponMagicHands(a_shouldDraw);
+				coopActor->actorState2.wantBlocking = 0;
+				coopActor->NotifyAnimationGraph("blockStop");
 			}
 		}
 	}

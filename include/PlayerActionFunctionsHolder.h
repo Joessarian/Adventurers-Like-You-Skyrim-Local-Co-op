@@ -172,8 +172,9 @@ namespace ALYSLC
 		bool CanAdjustCamera(const std::shared_ptr<CoopPlayer>& a_p);
 
 		// Can play power attack animation if the player is transformed,
-		// or is not mounted, has the unlocked right perks (if sprinting),
-		// has the correct LH/RH/2H weapon(s) equipped, and has enough stamina.
+		// or is not mounted, has enough stamina, has the unlocked right perks (if sprinting),
+		// is not already power attacking, has weapons drawn,
+		// and has the correct LH/RH/2H weapon(s) equipped.
 		bool CanPlayPowerAttackAnimation
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action
@@ -181,11 +182,6 @@ namespace ALYSLC
 
 		// Can this player rotate their forearms/hands/shoulders?
 		bool CanRotateArms(const std::shared_ptr<CoopPlayer>& a_p);
-
-		// Could power attack if the player is not already power attacking 
-		// or if the player has not drawn their weapons and is not transformed.
-		// Skips mounted, transformed, stamina, and weapon checks.
-		bool CouldPowerAttack(const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action);
 
 		// Can cycle equipment if not attacking/casting, not changing gear, 
 		// and the player does not have  their inventory copied over to P1.

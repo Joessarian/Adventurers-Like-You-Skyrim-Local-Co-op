@@ -1731,13 +1731,6 @@ namespace ALYSLC
 			rmm->isAutoGrabbing = false;
 		}
 
-		// Set the player's last position and facing angle when cycling nearby activation refrs.
-		inline void SetLastActivationCyclingOrientation()
-		{
-			lastActivationReqPos = coopActor->data.location;
-			lastActivationFacingAngle = coopActor->GetHeading(false);
-		}
-
 		//
 		// Member funcs
 		//
@@ -2268,6 +2261,7 @@ namespace ALYSLC
 		// REMOVE when all the new binds are ready.
 		bool tempInterruptedBind1 = false;
 		bool tempInterruptedBind2 = false;
+		bool tempInterruptedBind3 = false;
 
 	private:
 		// Helper funcs.

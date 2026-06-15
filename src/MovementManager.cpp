@@ -65,6 +65,9 @@ namespace ALYSLC
 		}
 
 		// Stop movement.
+		// Stop dash dodging.
+		StopDashDodge();
+		Util::NativeFunctions::ClearKeepOffsetFromActor(coopActor.get());
 		if (auto mountPtr = p->GetCurrentMount(); mountPtr)
 		{
 			Util::NativeFunctions::ClearKeepOffsetFromActor(mountPtr.get());
@@ -718,59 +721,17 @@ namespace ALYSLC
 			// or if dodge frame duration is up, stop dodging.
 			if (dodgeDurationExpired || startedAttackDuringDodge)
 			{
-				isDashDodging = isBackStepDodge = false;
+				// REMOVE when done debugging.
+				DBG
+				(
+					"{}, started attack: {}, expired: {}, transformed: {}.",
+					coopActor->GetName(), 
+					startedAttackDuringDodge,
+					dodgeDurationExpired, 
+					p->isTransformed
+				);
 
-				// Do not stop in mid-air.
-				if (!isParagliding) 
-				{
-					// Stop moving once the dodge stops.
-					if (!p->lsMoved)
-					{
-						SetDontMove(true);
-					}
-
-					// Stop sneak animation which played for the duration of the dodge.
-					if (!p->isTransformed)
-					{
-						p->pam->wantsToSneak = false;
-						bool succ = coopActor->NotifyAnimationGraph("SneakStop");
-						// REMOVE when done debugging.
-						DBG
-						(
-							"{}, started attack: {}, expired: {}, transformed: {}, succ: {}",
-							coopActor->GetName(), 
-							startedAttackDuringDodge,
-							dodgeDurationExpired, 
-							p->isTransformed, 
-							succ
-						);
-					}
-
-					// Set the state back to swimming to avoid dropping like a rock in the water
-					// after the dodge completes.
-					if (isSwimming)
-					{
-						charController->wantState = 
-						charController->context.currentState = 
-						RE::hkpCharacterStateType::kSwimming;
-					}
-
-					// Reset torso and character controller pitch.
-					charController->pitchAngle =
-					charController->rollAngle = 
-					dashDodgeTorsoPitchOffset = 
-					dashDodgeTorsoRollOffset = 0.0f;
-				}
-
-				// Remove AV cost action, if it still hasn't been processed for some reason.
-				p->pam->avcam->RemoveRequestedAction(AVCostAction::kDodge);
-				p->pam->avcam->RemoveStartedAction(AVCostAction::kDodge);
-
-				// Reset ghost flag to terminate I-frames.
-				if (auto actorBase = coopActor->GetActorBase(); actorBase)
-				{
-					actorBase->actorData.actorBaseFlags.reset(RE::ACTOR_BASE_DATA::Flag::kIsGhost);
-				}
+				StopDashDodge();
 			}
 			else if (auto actorBase = coopActor->GetActorBase(); actorBase)
 			{
@@ -1202,7 +1163,7 @@ namespace ALYSLC
 			(
 				std::lerp
 				(
-					0.25f * baseJumpAscentFramecount,
+					0.5f * baseJumpAscentFramecount,
 					2.0f * baseJumpAscentFramecount,
 					min(0.5f * jumpBindHeldFrameCount / baseJumpAscentFramecount, 1.0f)
 				)
@@ -3447,6 +3408,67 @@ namespace ALYSLC
 				// Not in range, so set both to false.
 				attemptDiscovery = inRangeOfUndiscoveredMarker = false;
 			}
+		}
+	}
+
+	void MovementManager::StopDashDodge()
+	{
+		// Stop dash dodging, re-enabling movement and rotation, stop sneaking,
+		// reset torso node angles, remove the requested dodge action, 
+		// and remove I-frame invicibility.
+
+		auto charController = coopActor->GetCharController();
+		if (!charController)
+		{
+			return;
+		}
+
+		isDashDodging = isBackStepDodge = false;
+
+		// Do not stop in mid-air.
+		if (!isParagliding) 
+		{
+			// Stop moving once the dodge stops.
+			if (!p->lsMoved)
+			{
+				SetDontMove(true);
+			}
+
+			// Stop sneak animation which played for the duration of the dodge.
+			if (!p->isTransformed)
+			{
+				p->pam->wantsToSneak = false;
+				bool succ = coopActor->NotifyAnimationGraph("SneakStop");
+				if (!succ)
+				{
+					DBG("ERR: {}: Failed to stop sneaking.", coopActor->GetName());
+				}
+			}
+
+			// Set the state back to swimming to avoid dropping like a rock in the water
+			// after the dodge completes.
+			if (isSwimming)
+			{
+				charController->wantState = 
+				charController->context.currentState = 
+				RE::hkpCharacterStateType::kSwimming;
+			}
+
+			// Reset torso and character controller pitch.
+			charController->pitchAngle =
+			charController->rollAngle = 
+			dashDodgeTorsoPitchOffset = 
+			dashDodgeTorsoRollOffset = 0.0f;
+		}
+
+		// Remove AV cost action, if it still hasn't been processed for some reason.
+		p->pam->avcam->RemoveRequestedAction(AVCostAction::kDodge);
+		p->pam->avcam->RemoveStartedAction(AVCostAction::kDodge);
+
+		// Reset ghost flag to terminate I-frames.
+		if (auto actorBase = coopActor->GetActorBase(); actorBase)
+		{
+			actorBase->actorData.actorBaseFlags.reset(RE::ACTOR_BASE_DATA::Flag::kIsGhost);
 		}
 	}
 

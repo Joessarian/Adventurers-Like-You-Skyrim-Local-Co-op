@@ -916,17 +916,17 @@ namespace ALYSLC
 
 		bool PowerAttackDual(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			return CouldPowerAttack(a_p, InputAction::kPowerAttackDual);
+			return CanPlayPowerAttackAnimation(a_p, InputAction::kPowerAttackDual);
 		}
 
 		bool PowerAttackLH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			return CouldPowerAttack(a_p, InputAction::kPowerAttackLH);
+			return CanPlayPowerAttackAnimation(a_p, InputAction::kPowerAttackLH);
 		}
 
 		bool PowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			return CouldPowerAttack(a_p, InputAction::kPowerAttackRH);
+			return CanPlayPowerAttackAnimation(a_p, InputAction::kPowerAttackRH);
 		}
 
 		bool RotateCam(const std::shared_ptr<CoopPlayer>& a_p)
@@ -939,7 +939,6 @@ namespace ALYSLC
 			// REMOVE when new Pick NPC Target bind is added.
 			bool bumperPressed = 
 			(
-				glob.cdh->GetInputState(a_p->deviceID, InputAction::kLShoulder).isPressed || 
 				glob.cdh->GetInputState(a_p->deviceID, InputAction::kRShoulder).isPressed
 			);
 			if (bumperPressed)
@@ -1031,28 +1030,16 @@ namespace ALYSLC
 					!a_p->isTransformed && 
 					!a_p->mm->isParagliding)
 				{
-					if (em->quickSlotItem)
+					if (a_p->coopActor->IsWeaponDrawn() &&
+						(em->HasRHMeleeWeapEquipped() || 
+						em->IsUnarmed() || 
+						em->Has2HMeleeWeapEquipped() ||
+						em->Has2HRangedWeapEquipped()))
 					{
-						// Use quick slot item if it is equipped.
-						pam->reqSpecialAction = SpecialActionType::kQuickItem;
-					}
-					else if (a_p->coopActor->IsWeaponDrawn())
-					{
-						if (em->HasRHMeleeWeapEquipped() || 
-							em->IsUnarmed() || 
-							em->Has2HMeleeWeapEquipped() ||
-							em->Has2HRangedWeapEquipped())
-						{
-							// Bash if the RH contains a weapon,
-							// if unarmed,
-							// or if a 2H weapon is equipped.
-							pam->reqSpecialAction = SpecialActionType::kBash;
-						}
-						else if (Dodge(a_p))
-						{
-							// Dodge otherwise if conditions are satisfied.
-							pam->reqSpecialAction = SpecialActionType::kDodge;
-						}
+						// Bash if the RH contains a weapon,
+						// if unarmed,
+						// or if a 2H weapon is equipped.
+						pam->reqSpecialAction = SpecialActionType::kBash;
 					}
 				}
 				
@@ -1131,13 +1118,7 @@ namespace ALYSLC
 				}
 				else if (a_p->coopActor->IsWeaponDrawn())
 				{
-					if ((em->quickSlotSpell) && 
-						(a_p->mm->isParagliding || a_p->coopActor->IsSwimming()))
-					{
-						// Quick slot cast while paragliding or swimming.
-						pam->reqSpecialAction = SpecialActionType::kQuickCast;
-					}
-					else if ((em->HasRHMeleeWeapEquipped() || 
+					if ((em->HasRHMeleeWeapEquipped() || 
 							 em->IsUnarmed() || 
 							 em->Has2HMeleeWeapEquipped() ||
 							 em->Has2HRangedWeapEquipped() ||
@@ -1167,11 +1148,6 @@ namespace ALYSLC
 					{
 						// Cast simultaneously with both hands if both have a spell/staff equipped.
 						pam->reqSpecialAction = SpecialActionType::kCastBothHands;
-					}
-					else if (em->quickSlotSpell)
-					{
-						// Quick slot cast otherwise.
-						pam->reqSpecialAction = SpecialActionType::kQuickCast;
 					}
 				}
 				else if (a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kGetUp)
@@ -1297,11 +1273,32 @@ namespace ALYSLC
 				return false;
 			}
 
+			// Can't adjust the camera when adjusting aim pitch, 
+			// using emotes, choosing a hotkeyed item to equip,
+			// when selecting targets using the right stick,
+			// or using any other bind that makes use of the right stick.
+
 			// If there is a focal player and this player is not the focal player,
 			// ignore requests to adjust the camera's rotation or zoom.
 			if (glob.cam->focalPlayerPID != -1 && a_p->playerID != glob.cam->focalPlayerPID)
 			{
 				return false;
+			}
+
+			// Do not rotate/adjust zoom when a non-camera adjustment bind is making use of the RS.
+			const auto inputMask = (1 << !InputAction::kRS);
+			for (const auto& action : a_p->pam->occurringPAs)
+			{
+				auto occurringActionParams = 
+				(
+					a_p->pam->paStatesList[!action - !InputAction::kFirstAction].paParams
+				);
+				if ((occurringActionParams.inputMask & inputMask) == inputMask &&
+					glob.paInfoHolder->DEF_ACTION_INDICES_TO_GROUPS.at(!action) != 
+					ActionGroup::kCamera)
+				{
+					return false;
+				}
 			}
 
 			// Can't adjust the camera if the player is trying to rotate their arms, 
@@ -1315,9 +1312,9 @@ namespace ALYSLC
 		)
 		{
 			// Can play power attack animation if the player is transformed,
-			// or is not mounted, has the unlocked right perks (if sprinting),
-			// has their weapons drawn, has the correct LH/RH/2H weapon(s) equipped, 
-			// and has enough stamina.
+			// or is not mounted, has enough stamina, has the unlocked right perks (if sprinting),
+			// is not already power attacking, has weapons drawn,
+			// and has the correct LH/RH/2H weapon(s) equipped.
 
 			if ((!a_p->isTransformed) && 
 				(a_p->coopActor->IsOnMount() || !HelperFuncs::EnoughOfAVToPerformPA(a_p, a_action)))
@@ -1325,7 +1322,8 @@ namespace ALYSLC
 				return false;
 			}
 
-			if (!a_p->coopActor->IsWeaponDrawn())
+			// Must not be already power attacking and must have weapons drawn.
+			if (a_p->pam->isPowerAttacking || !a_p->coopActor->IsWeaponDrawn())
 			{
 				return false;
 			}
@@ -1470,21 +1468,6 @@ namespace ALYSLC
 				CopyablePlayerDataTypes::kInventory
 			);
 			return !isAttacking && !isCasting && !inventoryCopiedToP1 && !a_p->isTransformed;
-		}
-
-		bool CouldPowerAttack(const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action)
-		{
-			// Could power attack if the player is not already power attacking 
-			// or if the player has not drawn their weapons and is not transformed.
-			// Skips mounted, transformed, stamina, and weapon checks.
-
-			// Return early if baseline check fails.
-			if (a_p->pam->isPowerAttacking)
-			{
-				return false;
-			}
-
-			return true;
 		}
 
 		bool PlayerCanOpenMenu(const std::shared_ptr<CoopPlayer>& a_p)
@@ -9247,11 +9230,6 @@ namespace ALYSLC
 					pam->CastStaffSpell(em->GetRHWeapon(), false, true);
 				}
 			}
-			else if (pam->reqSpecialAction == SpecialActionType::kQuickCast)
-			{
-				// Quick slot cast.
-				ProgressFuncs::QuickSlotCast(a_p);
-			}
 			else if (pam->reqSpecialAction == SpecialActionType::kCycleOrPlayEmoteIdle && 
 					 holdTime > Settings::fSecsDefMinHoldTime)
 			{
@@ -14446,11 +14424,6 @@ namespace ALYSLC
 					}
 				}
 			}
-			else if (reqAction == SpecialActionType::kQuickCast)
-			{
-				// Stop quick slot spell cast.
-				CleanupFuncs::QuickSlotCast(a_p);
-			}
 			else if (reqAction == SpecialActionType::kBash)
 			{
 				// Start bashing on release.
@@ -14815,16 +14788,6 @@ namespace ALYSLC
 				}
 
 				a_p->tm->rmm->AddReleasedRefr(a_p, handle, 0.0f);
-			}
-			else if (reqAction == SpecialActionType::kQuickItem)
-			{
-				// Use the player's quick slot item.
-				StartFuncs::QuickSlotItem(a_p);
-			}
-			else if (reqAction == SpecialActionType::kDodge)
-			{
-				// Start dodging.
-				StartFuncs::Dodge(a_p);
 			}
 			else
 			{

@@ -362,7 +362,8 @@ namespace ALYSLC
 				},
 				// AdjustAimPitch
 				{ 
-					InputAction::kPowerAttackRH,
+					InputAction::kRShoulder,
+					InputAction::kRThumb,
 					InputAction::kRS 
 				},
 				// AttackLH
@@ -592,7 +593,7 @@ namespace ALYSLC
 				},
 				// ResetAim
 				{
-					InputAction::kPowerAttackRH,
+					InputAction::kRShoulder,
 					InputAction::kRThumb
 				},
 				// ResetCamOrientation
@@ -820,7 +821,7 @@ namespace ALYSLC
 			// QuickSlotItem
 			PerfType::kOnRelease,
 			// ResetAim
-			PerfType::kOnRelease,
+			PerfType::kOnPress,
 			// ResetCamOrientation
 			PerfType::kOnRelease,
 			// RotateCam
@@ -1133,7 +1134,7 @@ namespace ALYSLC
 			// ResetAim
 			TriggerFlags
 			(
-				TriggerFlag::kDefault
+				TriggerFlag::kMinHoldTime
 			),
 			// ResetCamOrientation
 			TriggerFlags

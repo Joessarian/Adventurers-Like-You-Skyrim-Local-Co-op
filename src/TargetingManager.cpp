@@ -1492,10 +1492,23 @@ namespace ALYSLC
 			return;
 		}
 
+		const auto& paParam =
+		(
+			p->pam->paParamsList[!InputAction::kResetAim - !InputAction::kFirstAction]
+		);
 		bool shouldShowIndicator = 
 		(
-			p->pam->IsPerforming(InputAction::kAdjustAimPitch) ||
-			p->pam->GetSecondsSinceLastStop(InputAction::kResetAim) < 0.25f
+			(p->pam->IsPerforming(InputAction::kAdjustAimPitch)) ||
+			(
+				(
+					paParam.triggerFlags.all(TriggerFlag::kMinHoldTime) &&
+					p->pam->GetSecondsSinceLastStart(InputAction::kResetAim) < 0.25f
+				) ||
+				(
+					paParam.triggerFlags.none(TriggerFlag::kMinHoldTime) && 
+					p->pam->GetSecondsSinceLastStop(InputAction::kResetAim) < 0.25f
+				)
+			)
 		);
 		aimPitchIndicatorFadeInterpData->UpdateInterpolatedValue
 		(
@@ -6260,10 +6273,11 @@ namespace ALYSLC
 					const auto modFile2 = baseObj->GetFile(0);
 					DBG
 					(
-						"{}: Activation candidate {} ({}, 0x{:X}) from mod {} ({}).", 
+						"{}: Activation candidate {} ({}, 0x{:X}, 0x{:X}) from mod {} ({}).", 
 						coopActor->GetName(),
-						a_refr ? a_refr->GetName() : "NONE",
+						a_refr->GetName(),
 						Util::GetEditorID(baseObj),
+						a_refr->formID,
 						baseObj->formID,
 						modFile ? modFile->fileName : "NONE",
 						modFile2 ? modFile2->fileName : "NONE"
@@ -6463,6 +6477,8 @@ namespace ALYSLC
 						minSelectionFactor *= 2.0f;
 					}
 
+					/*DBG("Add {} (0x{:X}), factor {}.", 
+						a_refr->GetName(), a_refr->formID, minSelectionFactor);*/
 					nearbyReferences.insert
 					(
 						std::pair<float, RE::ObjectRefHandle>
@@ -6581,6 +6597,13 @@ namespace ALYSLC
 							{
 								// Save pick data refr handle.
 								crosshairPickRefrHandle = pickData->target;
+								/*DBG
+								(
+									"Add pick refr {} (0x{:X}), factor {}.", 
+									pickRefrPtr->GetName(),
+									pickRefrPtr->formID,
+									minSelectionFactor
+								);*/
 								nearbyReferences.insert
 								(
 									std::pair<float, RE::ObjectRefHandle>
@@ -6594,7 +6617,7 @@ namespace ALYSLC
 				}
 			}
 		}
-
+		
 		// Get next selectable refr in view of the camera and remove it from the map.
 		while (!nearbyReferences.empty())
 		{
@@ -6629,7 +6652,8 @@ namespace ALYSLC
 		}
 
 		// Update activation cycling orientation.
-		SetLastActivationCyclingOrientation();
+		lastActivationReqPos = coopActor->data.location;
+		lastActivationFacingAngle = lsAngle;
 		return selectedRefrHandle;
 	}
 
@@ -12883,11 +12907,21 @@ namespace ALYSLC
 		// Selects an activation lock on target in the player's left stick/facing direction,
 		// starting from the player.
 		
-		const auto& inputState = glob.cdh->GetInputState(deviceID, InputAction::kRShoulder);
-		if (inputState.isPressed)
+		const auto& inputStateRB = glob.cdh->GetInputState(deviceID, InputAction::kRShoulder);
+		const auto noAnalogStickMask =
+		(
+			p->pam->inputBitMask & ((1 << !InputAction::kButtonTotal) - 1)
+		);
+		if (inputStateRB.isPressed)
 		{
 			const auto inputMask = (1 << !InputAction::kRShoulder);
-			for (const auto& action : p->pam->occurringPAs)
+			// Lone action check.
+			if ((inputMask | noAnalogStickMask) != inputMask)
+			{
+				tempInterruptedBind1 = true;
+			}
+
+			/*for (const auto& action : p->pam->occurringPAs)
 			{
 				auto occurringActionParams = 
 				(
@@ -12898,14 +12932,14 @@ namespace ALYSLC
 					tempInterruptedBind1 = true;
 					break;
 				}
-			}
+			}*/
 
 			if (!tempInterruptedBind1 && p->rsMoved)
 			{
 				tempInterruptedBind1 = true;
 			}
 		}
-		else if (!inputState.justReleased)
+		else if (!inputStateRB.justReleased)
 		{
 			tempInterruptedBind1 = false;
 		}
@@ -12913,13 +12947,49 @@ namespace ALYSLC
 		auto canSelect = 
 		(
 			!tempInterruptedBind1 &&
-			inputState.justReleased &&
+			inputStateRB.justReleased &&
 			(p->pam->inputBitMask & ((1 << !InputAction::kButtonTotal) - 1)) == 0
 		);
 		if (canSelect)
 		{
-			// Choose a new activation target when tapped.
-			UpdateActivationTarget(false, false, true);
+			if (inputStateRB.heldTimeSecs > Settings::fSecsDefMinHoldTime)
+			{
+				if (Util::HandleIsValid(activationRefrHandle))
+				{
+					DBG("{}: {} is no longer selected.", 
+						coopActor->GetName(), activationRefrHandle.get()->GetName());
+					SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kGeneralNotification,
+						fmt::format
+						(
+							"P{}: {} is no longer selected",
+							playerID + 1, activationRefrHandle.get()->GetName()
+						),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection 
+						},
+						0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+
+					// Also deactivate the crosshair if the crosshair refr 
+					// is also the activation refr.
+					if (activationRefrHandle == crosshairRefrHandle)
+					{
+						DeactivateCrosshair();
+					}
+
+					// Clear current activation target when held and released.
+					ClearActivationTargetData();
+				}
+			}
+			else
+			{
+				// Choose a new activation target when tapped.
+				UpdateActivationTarget(false, false, true);
+			}
 		}
 
 		// TEMPORARY
@@ -12928,11 +12998,17 @@ namespace ALYSLC
 		// select a new aim target if pressing and releasing the RS without moving it.
 		// If the crosshair is active, hide it.
 
-		const auto& inputState2 = glob.cdh->GetInputState(deviceID, InputAction::kRThumb);
-		if (inputState2.isPressed)
+		const auto& inputStateRThumb = glob.cdh->GetInputState(deviceID, InputAction::kRThumb);
+		if (inputStateRThumb.isPressed)
 		{
 			const auto inputMask = (1 << !InputAction::kRThumb);
-			for (const auto& action : p->pam->occurringPAs)
+			// Lone action check.
+			if ((inputMask | noAnalogStickMask) != inputMask)
+			{
+				tempInterruptedBind2 = true;
+			}
+
+			/*for (const auto& action : p->pam->occurringPAs)
 			{
 				auto occurringActionParams = 
 				(
@@ -12943,9 +13019,9 @@ namespace ALYSLC
 					tempInterruptedBind2 = true;
 					break;
 				}
-			}
+			}*/
 		}
-		else if (!inputState2.justReleased)
+		else if (!inputStateRThumb.justReleased)
 		{
 			tempInterruptedBind2 = false;
 		}
@@ -12953,7 +13029,7 @@ namespace ALYSLC
 		canSelect = 
 		(
 			!tempInterruptedBind2 &&
-			inputState2.justReleased &&
+			inputStateRThumb.justReleased &&
 			(p->pam->inputBitMask & ((1 << !InputAction::kButtonTotal) - 1)) == 0 &&
 			!glob.cdh->GetAnalogStickState(deviceID, false).Moved()
 		);
@@ -12980,7 +13056,7 @@ namespace ALYSLC
 							CrosshairMessageType::kStealthState, 
 							CrosshairMessageType::kTargetSelection 
 						},
-						0.25f * Settings::fSecsBetweenDiffCrosshairMsgs
+						0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 					);
 				}
 				else
@@ -12999,7 +13075,7 @@ namespace ALYSLC
 							CrosshairMessageType::kStealthState, 
 							CrosshairMessageType::kTargetSelection 
 						},
-						0.25f * Settings::fSecsBetweenDiffCrosshairMsgs
+						0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 					);
 				}
 			}
@@ -13020,24 +13096,34 @@ namespace ALYSLC
 				p->pam->inputBitMask & 
 				(((1 << !InputAction::kInputTotal) - 1) & (~(1 << !InputAction::kLS)))
 			);
-			auto actionInputMask = (1 << !InputAction::kRS) | (1 << !InputAction::kRShoulder);
-			canSelect = (inputMask & actionInputMask) == actionInputMask;
-			if (canSelect)
+			const auto& inputStateRS = glob.cdh->GetInputState(deviceID, InputAction::kRS);
+			if (inputStateRB.isPressed && inputStateRS.isPressed)
 			{
+				const auto inputMask = (1 << !InputAction::kRS) | (1 << !InputAction::kRShoulder);
 				for (const auto& action : p->pam->occurringPAs)
 				{
 					auto occurringActionParams = 
 					(
 						p->pam->paStatesList[!action - !InputAction::kFirstAction].paParams
 					);
-					if ((occurringActionParams.inputMask & actionInputMask) == actionInputMask)
+					if ((occurringActionParams.inputMask & inputMask) == inputMask)
 					{
-						canSelect = false;
+						tempInterruptedBind3 = true;
 						break;
 					}
 				}
 			}
+			else if (inputStateRB.justReleased || inputStateRS.justReleased)
+			{
+				tempInterruptedBind3 = false;
+			}
 			
+			canSelect = 
+			(
+				!tempInterruptedBind3 &&
+				inputStateRB.isPressed && 
+				inputStateRS.isPressed
+			);
 			if (canSelect)
 			{
 				// Update as long as the right stick is not moving towards its centered position.

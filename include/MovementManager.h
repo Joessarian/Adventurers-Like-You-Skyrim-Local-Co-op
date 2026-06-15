@@ -517,6 +517,11 @@ namespace ALYSLC
 		// Check if P1 is entering a new undiscovered location 
 		// and attempt to discover it by unsetting the AI driven flag briefly.
 		void SetShouldPerformLocationDiscovery();
+
+		// Stop dash dodging, re-enabling movement and rotation, stop sneaking,
+		// reset torso node angles, remove the requested dodge action, 
+		// and remove I-frame invicibility.
+		void StopDashDodge();
 		
 		// Update aim pitch (torso) angle and position.
 		void UpdateAimPitch();
