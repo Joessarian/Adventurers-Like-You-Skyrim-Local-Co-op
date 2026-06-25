@@ -1150,10 +1150,6 @@ namespace ALYSLC
 		ReadFloatSetting(a_ini, "Movement", "fSneakRotMult", fSneakRotMult, 0.1f, 1.0f);
 		ReadFloatSetting(a_ini, "Movement", "fSprintingMovMult", fSprintingMovMult, 0.1f, 10.0f);
 		ReadFloatSetting(a_ini, "Movement", "fSprintingRotMult", fSprintingRotMult, 0.1f, 1.0f);
-		ReadFloatSetting
-		(
-			a_ini, "Movement", "fSecsAfterGatherToFall", fSecsAfterGatherToFall, 0.01f, 2.0f
-		);
 
 		// New Systems
 		ReadBoolSetting
@@ -1666,14 +1662,6 @@ namespace ALYSLC
 			(
 				a_ini, 
 				sectionName.data(),
-				"bSkyrimStyleCrosshair", 
-				vbSkyrimStyleCrosshair,
-				pIndex
-			);
-			ReadBoolSettingToIndex
-			(
-				a_ini, 
-				sectionName.data(),
 				"bEnableAimPitchIndicator", 
 				vbEnableAimPitchIndicator,
 				pIndex
@@ -1757,6 +1745,16 @@ namespace ALYSLC
 				(float&)vfPredictedProjectileTrajectoryCurveThickness[pIndex], 
 				1.0f, 
 				10.0f
+			);
+			
+			ReadUInt32Setting
+			(
+				a_ini,
+				sectionName.data(),
+				"uCrosshairStyle",
+				(uint32_t&)vuCrosshairStyle[pIndex],
+				0, 
+				!CrosshairStyle::kTotal - 1
 			);
 
 			uint32_t rgb = 

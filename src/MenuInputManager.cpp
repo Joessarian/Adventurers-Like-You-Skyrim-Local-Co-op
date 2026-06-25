@@ -569,8 +569,9 @@ namespace ALYSLC
 				// Special case (on hold):
 				// Preview the hotkey to set for the selected Favorites Menu entry.
 				if (openedMenuType == SupportedMenu::kFavorites && 
-					xMask == XINPUT_GAMEPAD_RIGHT_THUMB)
+					xMask == XINPUT_GAMEPAD_LEFT_THUMB)
 				{
+					DBG("Update hotkey preview index");
 					HotkeyFavoritedForm(false);
 				}
 
@@ -719,9 +720,10 @@ namespace ALYSLC
 					bindInfo.value = 0.0f;
 					// Special case:
 					// Set the previously previewed hotkey for the selected Favorites Menu entry.
-					if (openedMenuType == SupportedMenu::kFavorites && 
-						xMask == XINPUT_GAMEPAD_RIGHT_THUMB)
+					if ((openedMenuType == SupportedMenu::kFavorites) && 
+						(xMask == XINPUT_GAMEPAD_LEFT_THUMB || xMask == XMASK_RS))
 					{
+						DBG("Set hotkey index: {}", xMask);
 						HotkeyFavoritedForm(true);
 					}
 				}
@@ -1779,100 +1781,20 @@ namespace ALYSLC
 			return;
 		}
 
-		auto ue = RE::UserEvents::GetSingleton();
-		if (!ue)
-		{
-			return;
-		}
-
-		auto ui = RE::UI::GetSingleton();
-		if (!ui || !ui->IsMenuOpen(RE::FavoritesMenu::MENU_NAME))
-		{
-			return;
-		}
-
-		int32_t menuPID = glob.menuPID;
-		// Give P1 control if no player is in menus.
-		if (menuPID == -1) 
-		{
-			menuPID = 0;
-		}
-
-		const auto& rsData = glob.cdh->GetAnalogStickState
-		(
-			glob.coopPlayers[menuPID]->deviceID, false
-		);
-		if (rsData.normMag == 0.0f)
-		{
-			return;
-		}
-
-		// Get RS angle and pick hotkey slot to apply.
-		float realRSAng = atan2f(rsData.yComp, rsData.xComp);
-		realRSAng = Util::ConvertAngle(Util::NormalizeAng0To2Pi(realRSAng));
-		RE::BSFixedString hotkeyEvent = ""sv;
-		int32_t hotkeySlotToChange = -1;
-		if (realRSAng < PI / 8.0f || realRSAng > 15.0f * PI / 8.0f)
-		{
-			hotkeyEvent = ue->hotkey1;
-			hotkeySlotToChange = 0;
-		}
-		else if (realRSAng < 3.0f * PI / 8.0f)
-		{
-			hotkeyEvent = ue->hotkey2;
-			hotkeySlotToChange = 1;
-		}
-		else if (realRSAng < 5.0f * PI / 8.0f)
-		{
-			hotkeyEvent = ue->hotkey3;
-			hotkeySlotToChange = 2;
-		}
-		else if (realRSAng < 7.0f * PI / 8.0f)
-		{
-			hotkeyEvent = ue->hotkey4;
-			hotkeySlotToChange = 3;
-		}
-		else if (realRSAng < 9.0f * PI / 8.0f)
-		{
-			hotkeyEvent = ue->hotkey5;
-			hotkeySlotToChange = 4;
-		}
-		else if (realRSAng < 11.0f * PI / 8.0f)
-		{
-			hotkeyEvent = ue->hotkey6;
-			hotkeySlotToChange = 5;
-		}
-		else if (realRSAng < 13.0f * PI / 8.0f)
-		{
-			hotkeyEvent = ue->hotkey7;
-			hotkeySlotToChange = 6;
-		}
-		else
-		{
-			hotkeyEvent = ue->hotkey8;
-			hotkeySlotToChange = 7;
-		}
-
 		if (a_setHotkey)
 		{
-			if (hotkeyEvent == ""sv)
-			{
-				return;
-			}
-
-			// Hotkey the entry through an emulated keyboard input.
-			auto hotkeyCode = GetMappedKey(hotkeyEvent, RE::INPUT_DEVICE::kKeyboard);
-			if (hotkeyCode == 0xFF)
-			{
-				return;
-			}
-
 			taskInterface->AddUITask
 			(
-				[this, hotkeyEvent, hotkeyCode, hotkeySlotToChange, menuPID]() 
+				[this]() 
 				{
 					auto ui = RE::UI::GetSingleton(); 
 					if (!ui)
+					{
+						return;
+					}
+
+					auto ue = RE::UserEvents::GetSingleton();
+					if (!ue)
 					{
 						return;
 					}
@@ -1889,15 +1811,40 @@ namespace ALYSLC
 						return;
 					}
 
-					RE::GFxValue selectedIndex;
+					// Get entry for the item/spell and its text.
+					RE::GFxValue entry{ };
+					view->GetVariable
+					(
+						std::addressof(entry),
+						"_root.MenuHolder.Menu_mc.itemList.selectedEntry"
+					);
+
+					// Need a valid selected entry.
+					if (entry.IsNull() || entry.IsUndefined())
+					{
+						return;
+					}
+
+					RE::GFxValue selectedIndex{ };
 					view->GetVariable
 					(
 						std::addressof(selectedIndex),
 						"_root.MenuHolder.Menu_mc.itemList.selectedEntry.index"
 					);
+					
+					// Need a valid selected index.
+					if (selectedIndex.IsNull() || selectedIndex.IsUndefined())
+					{
+						return;
+					}
 
-					// Index in favorites list.
-					uint32_t index = static_cast<uint32_t>(selectedIndex.GetNumber());
+					const int32_t index = static_cast<int32_t>(selectedIndex.GetNumber());
+					if (index == -1)
+					{
+						return;
+					}
+					
+					const auto& p = glob.coopPlayers[glob.menuPID];
 					auto form = favoritesMenu->favorites[index].item;
 					// Must have a valid selected form.
 					if (!form)
@@ -1905,7 +1852,79 @@ namespace ALYSLC
 						return;
 					}
 
-					const auto& p = glob.coopPlayers[menuPID];
+					// Index must have a corresponding entry number.
+					const auto iter = favMenuIndexToEntryMap.find(index);
+					if (iter == favMenuIndexToEntryMap.end())
+					{
+						DBG
+						(
+							"{}'s favorited form {} "
+							"does not have an entry number corresponding to an index of {}.",
+							p->coopActor->GetName(), form->GetName(), index
+						);
+						return;
+					}
+
+					// Get entry number corresponding to index.
+					const uint32_t selectedEntryNum = favMenuIndexToEntryMap.at(index);
+					// Get current hotkey.
+					RE::GFxValue entryHotkey{ };
+					entry.GetMember("hotkey", std::addressof(entryHotkey));
+
+					// Entry needs to have a hotkey member.
+					if (entryHotkey.IsNull() || entryHotkey.IsUndefined())
+					{
+						return;
+					}
+
+					auto currentHotkey = static_cast<int32_t>(entryHotkey.GetSInt());
+					if (currentHotkey == -1)
+					{
+						return;
+					}
+					
+					int32_t hotkeySlotToChange = currentHotkey;
+					RE::BSFixedString hotkeyEvent = ""sv;
+					if (currentHotkey == 0)
+					{
+						hotkeyEvent = ue->hotkey1;
+					}
+					else if (currentHotkey == 1)
+					{
+						hotkeyEvent = ue->hotkey2;
+					}
+					else if (currentHotkey == 2)
+					{
+						hotkeyEvent = ue->hotkey3;
+					}
+					else if (currentHotkey == 3)
+					{
+						hotkeyEvent = ue->hotkey4;
+					}
+					else if (currentHotkey == 4)
+					{
+						hotkeyEvent = ue->hotkey5;
+					}
+					else if (currentHotkey == 5)
+					{
+						hotkeyEvent = ue->hotkey6;
+					}
+					else if (currentHotkey == 6)
+					{
+						hotkeyEvent = ue->hotkey7;
+					}
+					else
+					{
+						hotkeyEvent = ue->hotkey8;
+					}
+
+					// Hotkey the entry through an emulated keyboard input.
+					auto hotkeyCode = GetMappedKey(hotkeyEvent, RE::INPUT_DEVICE::kKeyboard);
+					if (hotkeyCode == 0xFF)
+					{
+						return;
+					}
+
 					// Press and release.
 					Util::SendButtonEvent
 					(
@@ -2012,17 +2031,18 @@ namespace ALYSLC
 		}
 		else
 		{
-			if (hotkeySlotToChange == -1)
-			{
-				return;
-			}
-
 			taskInterface->AddUITask
 			(
-				[this, hotkeySlotToChange, menuPID]() 
+				[this]() 
 				{
 					auto ui = RE::UI::GetSingleton(); 
 					if (!ui)
+					{
+						return;
+					}
+					
+					auto ue = RE::UserEvents::GetSingleton();
+					if (!ue)
 					{
 						return;
 					}
@@ -2035,6 +2055,74 @@ namespace ALYSLC
 
 					auto view = favoritesMenu->uiMovie; 
 					if (!view)
+					{
+						return;
+					}
+					
+					int32_t menuPID = glob.menuPID;
+					// Give P1 control if no player is in menus.
+					if (menuPID == -1) 
+					{
+						menuPID = 0;
+					}
+
+					const auto& rsData = glob.cdh->GetAnalogStickState
+					(
+						glob.coopPlayers[menuPID]->deviceID, false
+					);
+					// Keeping the stick offset or moving away from center.
+					if (rsData.normMag == 0.0f || rsData.normMag - rsData.prevNormMag <= -1E-2f)
+					{
+						return;
+					}
+
+					// Get RS angle and pick hotkey slot to apply.
+					float realRSAng = atan2f(rsData.yComp, rsData.xComp);
+					realRSAng = Util::ConvertAngle(Util::NormalizeAng0To2Pi(realRSAng));
+					RE::BSFixedString hotkeyEvent = ""sv;
+					int32_t hotkeySlotToChange = -1;
+					if (realRSAng < PI / 8.0f || realRSAng > 15.0f * PI / 8.0f)
+					{
+						hotkeyEvent = ue->hotkey1;
+						hotkeySlotToChange = 0;
+					}
+					else if (realRSAng < 3.0f * PI / 8.0f)
+					{
+						hotkeyEvent = ue->hotkey2;
+						hotkeySlotToChange = 1;
+					}
+					else if (realRSAng < 5.0f * PI / 8.0f)
+					{
+						hotkeyEvent = ue->hotkey3;
+						hotkeySlotToChange = 2;
+					}
+					else if (realRSAng < 7.0f * PI / 8.0f)
+					{
+						hotkeyEvent = ue->hotkey4;
+						hotkeySlotToChange = 3;
+					}
+					else if (realRSAng < 9.0f * PI / 8.0f)
+					{
+						hotkeyEvent = ue->hotkey5;
+						hotkeySlotToChange = 4;
+					}
+					else if (realRSAng < 11.0f * PI / 8.0f)
+					{
+						hotkeyEvent = ue->hotkey6;
+						hotkeySlotToChange = 5;
+					}
+					else if (realRSAng < 13.0f * PI / 8.0f)
+					{
+						hotkeyEvent = ue->hotkey7;
+						hotkeySlotToChange = 6;
+					}
+					else
+					{
+						hotkeyEvent = ue->hotkey8;
+						hotkeySlotToChange = 7;
+					}
+					
+					if (hotkeySlotToChange == -1)
 					{
 						return;
 					}
@@ -8017,7 +8105,8 @@ namespace ALYSLC
 						{
 							// Wants to trade with another player.
 							if (isRequestedMenu || 
-								currentReq.fromAction == InputAction::kTradeWithPlayer)
+								currentReq.fromAction == InputAction::kTradeWithPlayer || 
+								currentReq.fromAction == InputAction::kActivate)
 							{
 								setAsChosen = true;
 								DBG

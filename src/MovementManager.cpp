@@ -57,14 +57,13 @@ namespace ALYSLC
 	{
 		DBG("P{}", playerID + 1);
 
-		// Set P1 as motion driven when the manager is not active
+		// Make sure P1 can move and set P1 as motion driven when the manager is not active
 		// to restore normal movement.
 		if (p->isPlayer1)
 		{
 			Util::SetPlayerAIDriven(false);
 		}
 
-		// Stop movement.
 		// Stop dash dodging.
 		StopDashDodge();
 		Util::NativeFunctions::ClearKeepOffsetFromActor(coopActor.get());
@@ -75,6 +74,8 @@ namespace ALYSLC
 			Util::NativeFunctions::SetDontMove(mountPtr.get(), false);
 		}
 
+		// Allow movement.
+		SetForceDontMove(false);
 		// Reset pitch angle, speedmult.
 		coopActor->data.angle.x = 0.0f;
 		coopActor->SetActorValue(RE::ActorValue::kSpeedMult, 100.0f);
@@ -730,8 +731,13 @@ namespace ALYSLC
 					dodgeDurationExpired, 
 					p->isTransformed
 				);
-
+				
 				StopDashDodge();
+				// Stop moving once the dodge stops.
+				if (!p->lsMoved)
+				{
+					SetDontMove(true);
+				}
 			}
 			else if (auto actorBase = coopActor->GetActorBase(); actorBase)
 			{
@@ -1156,29 +1162,16 @@ namespace ALYSLC
 		);
 		// TODO:
 		// Tweaks, tweaks, and more tweaks.
-		const int32_t jumpAscentFramecount = max
+		const float jumpHoldTimeBonusVertSpeed = 
 		(
-			1, 
-			static_cast<uint32_t>
+			havokInitialJumpZVelocity * std::lerp
 			(
-				std::lerp
-				(
-					0.5f * baseJumpAscentFramecount,
-					2.0f * baseJumpAscentFramecount,
-					min(0.5f * jumpBindHeldFrameCount / baseJumpAscentFramecount, 1.0f)
-				)
+				0.0f,
+				1.0f,
+				min(0.5f * jumpBindHeldFrameCount / baseJumpAscentFramecount, 1.0f)
 			)
 		);
-		DBG
-		(
-			"{}: {} ({}) / {} ({}).", 
-			coopActor->GetName(), 
-			framesSinceStartingJump,
-			jumpBindHeldFrameCount,
-			jumpAscentFramecount,
-			baseJumpAscentFramecount
-		);
-		
+		const auto& lsData = glob.cdh->GetAnalogStickState(deviceID, true);
 		// Start jump. Play gather animation(s) and invert gravity for the player.
 		if (reqStartJump)
 		{
@@ -1257,7 +1250,6 @@ namespace ALYSLC
 			{
 				charController->flags.set(RE::CHARACTER_FLAGS::kJumping);
 				charController->context.currentState = RE::hkpCharacterStateType::kInAir;
-				const auto& lsData = glob.cdh->GetAnalogStickState(deviceID, true);
 				velBeforeJumpVect = RE::hkVector4
 				(
 					velBeforeJumpVect.quad.m128_f32[0] + 
@@ -1276,7 +1268,6 @@ namespace ALYSLC
 					velBeforeJumpVect.quad.m128_f32[1] + 
 					(
 						GAME_TO_HAVOK *
-						Settings::fJumpAdditionalLaunchSpeed *
 						lsData.normMag *
 						sinf
 						(
@@ -1293,8 +1284,7 @@ namespace ALYSLC
 					),
 					0.0f
 				);
-				// Invert gravity and set initial velocity.
-				charController->gravity = -Settings::fJumpingGravityMult;
+				// Set initial velocity.
 				charController->SetLinearVelocityImpl(velBeforeJumpVect);
 			}
 			charController->lock.Unlock();
@@ -1313,11 +1303,9 @@ namespace ALYSLC
 			// Abort jump if ragdolling.
 			if (coopActor->IsInRagdollState())
 			{
-				// Reset gravity and jump state variables,
-				// plus set fall start height and time.
+				// Reset jump state variables, plus set fall start height and time.
 				charController->lock.Lock();
 				charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
-				charController->gravity = 1.0f;
 				Util::AdjustFallState(charController, true);
 				charController->lock.Unlock();
 
@@ -1332,14 +1320,13 @@ namespace ALYSLC
 			}
 			else if (p->mm->isParagliding)
 			{
-				// Reset gravity and jump state variables.
+				// Reset jump state variables.
 				charController->lock.Lock();
 				{
 					charController->flags.reset
 					(
 						RE::CHARACTER_FLAGS::kJumping
 					);
-					charController->gravity = 1.0f;
 				}
 				charController->lock.Unlock();
 
@@ -1353,20 +1340,14 @@ namespace ALYSLC
 				return;
 			}
 
+			bool hitSurfaceBelow = false;
 			// Handle ascent to peak of the jump at which the player begins to fall.
+			// Apex is reached once the player's vertical velocity is 0 or negative (falling).
 			if (!isFallingWhileJumping)
 			{
-				isFallingWhileJumping = framesSinceStartingJump >= jumpAscentFramecount;
 				charController->lock.Lock();
 				{
-					// Zero gravity at apex.
-					charController->gravity = Util::InterpolateEaseIn
-					(
-						-Settings::fJumpingGravityMult,
-						0.0f,
-						static_cast<float>(framesSinceStartingJump) / jumpAscentFramecount,
-						2.0f
-					);
+					isFallingWhileJumping = charController->outVelocity.quad.m128_f32[2] <= 0.0f;
 				}
 				charController->lock.Unlock();
 				
@@ -1399,7 +1380,7 @@ namespace ALYSLC
 				}
 					
 				// Check if the player has landed, reset state, and return early.
-				bool canLand = 
+				hitSurfaceBelow =
 				(
 					(
 						charController->flags.all
@@ -1418,7 +1399,7 @@ namespace ALYSLC
 				// Have to check for a collidable surface under the player 
 				// with a single raycast, since the char controller flags and surface info
 				// sometimes indicate the player can land while they are still in midair.
-				if (canLand)
+				if (hitSurfaceBelow)
 				{
 					glm::vec4 start =
 					{
@@ -1429,31 +1410,202 @@ namespace ALYSLC
 					};
 					glm::vec4 end = 
 					(
-						start - glm::vec4(0.0f, 0.0f, 1.25f * coopActor->GetHeight(), 0.0f)
+						start - glm::vec4(0.0f, 0.0f, 1.01f * coopActor->GetHeight(), 0.0f)
 					);
-					auto result = Raycast::hkpCastRay
-					(
-						start, 
-						end, 
-						std::vector<RE::TESObjectREFR*>({ coopActor.get() }),
-						std::vector<RE::FormType>
-						(
-							{ RE::FormType::Activator, RE::FormType::TalkingActivator }
-						)
-					);
-					// No surface beneath the player, so they cannot land.
-					if (!result.hit)
+					Raycast::RayResult result{ };
+					hitSurfaceBelow = false;
+
+					// Cast a ray downward from each foot.
+					bool castFromFoot = false;
+					if (auto player3DPtr = Util::GetRefr3D(coopActor.get()); player3DPtr)
 					{
-						canLand = false;
+						const auto strings = RE::FixedStrings::GetSingleton();
+						if (strings)
+						{
+							// Continue early if the player's loaded 3D data is invalid.
+							auto loadedData = p->coopActor->loadedData;
+							if (loadedData)
+							{
+								// Continue early if the player's 3D is invalid.
+								auto data3DPtr = loadedData->data3D;
+								if (data3DPtr && data3DPtr->parent)
+								{
+									auto leftFoot = data3DPtr->GetObjectByName(strings->npcLFoot);
+									if (leftFoot)
+									{
+										castFromFoot = true;
+										// Cast slightly beyond the bottom surface of the foot,
+										// otherwise no hit will be recorded even when 
+										// the player's foot is visually in contact with a surface.
+										float dist = 2.0f * leftFoot->worldBound.radius;
+										if (dist == 0.0f)
+										{
+											dist = Util::GetRigidBodyCapsuleAxisLength(leftFoot);
+											if (dist == 0.0f)
+											{
+												dist = coopActor->GetScale() * 15.0f;
+											}
+										}
+
+										start = ToVec4(leftFoot->world.translate);
+										end = start + glm::vec4(0.0f, 0.0f, -dist, 0.0f); 
+										result = Raycast::hkpCastRay
+										(
+											start, 
+											end, 
+											std::vector<RE::TESObjectREFR*>({ coopActor.get() }),
+											std::vector<RE::FormType>
+											(
+												{ 
+													RE::FormType::Activator, 
+													RE::FormType::TalkingActivator 
+												}
+											)
+										);
+										hitSurfaceBelow = result.hit;
+
+										// REMOVE when done debugging
+										/*DBG
+										(
+											"{}: HIT FROM LEFT FOOT: {}. "
+											"Dist: {}, player scale: {}.",
+											coopActor->GetName(), 
+											hitSurfaceBelow, 
+											dist, 
+											coopActor->GetScale()
+										);
+										DebugAPI::QueueLine3D
+										(
+											start, 
+											end, 
+											hitSurfaceBelow ? 
+											Settings::vuCrosshairOuterOutlineRGBAValues[playerID] :
+											Settings::vuCrosshairInnerOutlineRGBAValues[playerID],
+											2.0f
+										);*/
+									}	
+									
+									// Only need to cast from other foot if there was no hit 
+									// when trying to raycast from the previous foot.
+									if (!hitSurfaceBelow)
+									{
+										auto rightFoot = data3DPtr->GetObjectByName
+										(
+											strings->npcRFoot
+										);
+										if (rightFoot)
+										{
+											castFromFoot = true;
+											float dist = 2.0f * rightFoot->worldBound.radius;
+											if (dist == 0.0f)
+											{
+												dist = 
+												(
+													Util::GetRigidBodyCapsuleAxisLength(rightFoot)
+												);
+												if (dist == 0.0f)
+												{
+													dist = coopActor->GetScale() * 15.0f;
+												}
+											}
+
+											start = ToVec4(rightFoot->world.translate);
+											end = start + glm::vec4(0.0f, 0.0f, -dist, 0.0f); 
+
+											result = Raycast::hkpCastRay
+											(
+												start, 
+												end, 
+												std::vector<RE::TESObjectREFR*>
+												(
+													{ coopActor.get() }
+												),
+												std::vector<RE::FormType>
+												(
+													{
+														RE::FormType::Activator, 
+														RE::FormType::TalkingActivator 
+													}
+												)
+											);
+											hitSurfaceBelow = result.hit;
+
+											// REMOVE when done debugging
+											/*DBG
+											(
+												"{}: HIT FROM RIGHT FOOT: {}. "
+												"Dist: {}, player scale: {}.",
+												coopActor->GetName(), 
+												hitSurfaceBelow, 
+												dist, 
+												coopActor->GetScale()
+											);
+											DebugAPI::QueueLine3D
+											(
+												start, 
+												end, 
+												hitSurfaceBelow ? 
+												Settings::vuCrosshairOuterOutlineRGBAValues
+												[playerID] :
+												Settings::vuCrosshairInnerOutlineRGBAValues
+												[playerID],
+												2.0f
+											);*/
+										}
+									}
+								}
+							}
+						}
 					}
+
+					// If we could not raycast from either foot,
+					// cast from the player's refr pos as a fallback.
+					if (!castFromFoot)
+					{
+						start =
+						{
+							coopActor->data.location.x,
+							coopActor->data.location.y,
+							coopActor->data.location.z,
+							0.0f
+						};
+						end = 
+						(
+							start - glm::vec4(0.0f, 0.0f, 0.01f * coopActor->GetHeight(), 0.0f)
+						);
+						result = Raycast::hkpCastRay
+						(
+							start, 
+							end, 
+							std::vector<RE::TESObjectREFR*>({ coopActor.get() }),
+							std::vector<RE::FormType>
+							(
+								{ RE::FormType::Activator, RE::FormType::TalkingActivator }
+							)
+						);
+						hitSurfaceBelow = result.hit;
+					}
+
+					// REMOVE when done debugging
+					/*if (hitSurfaceBelow)
+					{
+						const float surfaceNormalPitch = asinf(result.rayNormal.z);
+						DBG
+						(
+							"{}: Hit surface with normal pitch {}, surface pitch {}. Can land: {}",
+							coopActor->GetName(),
+							surfaceNormalPitch * TO_DEGREES,
+							(PI / 2.0f - surfaceNormalPitch) * TO_DEGREES,
+							hitSurfaceBelow
+						);
+					}*/
 				}
 
-				if (canLand)
+				if (hitSurfaceBelow)
 				{
 					// Reset jump state variables.
 					charController->lock.Lock();
 					charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
-					charController->gravity = 1.0f;
 					// Set fall start time and height.
 					Util::AdjustFallState(charController, true);
 					charController->lock.Unlock();
@@ -1482,22 +1634,7 @@ namespace ALYSLC
 					return;
 				}
 
-				// Continue falling.
-				charController->lock.Lock();
-				{
-					charController->gravity = Util::InterpolateEaseIn
-					(
-						0.0f, 
-						Settings::fJumpingGravityMult,
-						(
-							max(framesSinceStartingJump - jumpAscentFramecount, 0.0f) /
-							jumpAscentFramecount
-						),
-						2.0f
-					);
-				}
-				charController->lock.Unlock();
-				
+				// Continue falling and increment jump held frame count.
 				if (p->pam->AllButtonsPressedForAction(InputAction::kJump))
 				{
 					jumpBindHeldFrameCount++;
@@ -1505,6 +1642,71 @@ namespace ALYSLC
 
 				framesSinceStartingJump++;
 			}
+
+			// Continue falling.
+			charController->lock.Lock();
+			{
+				// No air resistance here.
+				// Not necessary as it makes a barely-tangible difference 
+				// at the expense of more computation.
+				// And set terminal velocity at 52 m/s. Why not?
+				float jumpYaw = Util::NormalizeAng0To2Pi
+				(
+					atan2f
+					(
+						charController->outVelocity.quad.m128_f32[1], 
+						charController->outVelocity.quad.m128_f32[0]
+					)
+				);
+				RE::hkVector4 vel
+				{
+					charController->outVelocity.quad.m128_f32[0],
+					charController->outVelocity.quad.m128_f32[1],
+					min
+					(
+						52.0f,
+						(
+							havokInitialJumpZVelocity + 
+							jumpHoldTimeBonusVertSpeed +
+							(
+								GAME_TO_HAVOK *
+								Settings::fJumpAdditionalLaunchSpeed
+							)
+						) - 
+						(
+							Settings::fG * 
+							Settings::fJumpingGravityMult *
+							Util::GetElapsedSeconds(p->jumpStartTP)
+						)
+					),
+					charController->outVelocity.quad.m128_f32[3],
+				};
+
+				// REMOVE when done debugging
+				DBG
+				(
+					"{}: Z Vel: {} ({} / {}). Bonuts: {}, XY speed: {}.", 
+					coopActor->GetName(), 
+					havokInitialJumpZVelocity + 
+					jumpHoldTimeBonusVertSpeed +
+					(
+						GAME_TO_HAVOK *
+						Settings::fJumpAdditionalLaunchSpeed
+					) - Settings::fG * 2.0f * Util::GetElapsedSeconds(p->jumpStartTP), 
+					jumpBindHeldFrameCount,
+					baseJumpAscentFramecount,
+					jumpHoldTimeBonusVertSpeed,
+					sqrtf
+					(
+						charController->outVelocity.quad.m128_f32[0] * 
+						charController->outVelocity.quad.m128_f32[0] + 
+						charController->outVelocity.quad.m128_f32[1] * 
+						charController->outVelocity.quad.m128_f32[1]
+					)
+				);
+				charController->SetLinearVelocityImpl(vel);
+			}
+			charController->lock.Unlock();
 		}
 	}
 
@@ -2355,11 +2557,11 @@ namespace ALYSLC
 					!isTDMDodging && 
 					!coopActor->IsOnMount() && 
 					!isSubmerged && 
+					!Util::IsAirborne(coopActor.get()) &&
 					!p->pam->isSprinting
 				) && 
 				(
-					(p->coopActor->IsWeaponDrawn()) || 
-					(glob.cam->IsRunning() && glob.cam->focalPlayerPID == playerID)
+					(p->coopActor->IsWeaponDrawn())
 				) && 
 				(
 					!coopActor->IsSneaking() || 
@@ -2376,6 +2578,14 @@ namespace ALYSLC
 					!ui ||
 					!ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) ||
 					glob.menuPID != playerID
+				) &&
+				(
+					(
+						!p->pam->IsPerforming(InputAction::kMoveCrosshair) &&
+						p->pam->GetSecondsSinceLastStop(InputAction::kMoveCrosshair) > 0.25f &&
+						Util::HandleIsValid(p->tm->selectedTargetActorHandle) &&
+						!p->tm->selectedTargetActorHandle.get()->IsDead()
+					)
 				)
 			};
 
@@ -2411,9 +2621,14 @@ namespace ALYSLC
 							)
 						) &&
 						(
-							!p->pam->IsPerforming(InputAction::kSprint) &&
-							targetActorPtr &&
-							Util::IsValidRefrForTargeting(targetActorPtr.get())
+							(!p->pam->IsPerforming(InputAction::kSprint)) &&
+							(
+								(p->tm->crosshairActive) || 
+								(
+									targetActorPtr &&
+									Util::IsValidRefrForTargeting(targetActorPtr.get())
+								)
+							)
 						)
 					)
 				) 
@@ -3109,9 +3324,7 @@ namespace ALYSLC
 				!isAirborneWhileJumping && 
 				!reqStartJump
 			);
-			if (canFreeze && 
-				charController && 
-				charController->context.currentState == RE::hkpCharacterStateType::kInAir) 
+			if (canFreeze && Util::IsAirborne(coopActor.get())) 
 			{
 				canFreeze = false;
 			}
@@ -3428,12 +3641,6 @@ namespace ALYSLC
 		// Do not stop in mid-air.
 		if (!isParagliding) 
 		{
-			// Stop moving once the dodge stops.
-			if (!p->lsMoved)
-			{
-				SetDontMove(true);
-			}
-
 			// Stop sneak animation which played for the duration of the dodge.
 			if (!p->isTransformed)
 			{
@@ -3537,19 +3744,11 @@ namespace ALYSLC
 		}
 		
 		// Default to pitching towards the current crosshair position,
-		// but if an aim correction target is selected,
-		// or if not facing the crosshair position and an actor is selected with the crosshair,
-		// aim at the targeted actor's torso.
+		// but if an aim correction target is selected, aim at the targeted actor's torso.
 		auto targetPos = p->tm->crosshairWorldPos;
 		if (usingAimCorrectionOrLinkedTarget)
 		{
 			targetPos = Util::GetTorsoPosition(aimCorrectionOrLinkedTargetPtr.get());
-		}
-		else if (p->tm->crosshairActive &&
-				 crosshairRefrValidity && 
-				 crosshairRefrPtr->As<RE::Actor>())
-		{
-			targetPos = Util::GetTorsoPosition(crosshairRefrPtr->As<RE::Actor>());
 		}
 
 		const float timeMult = RE::BSTimer::QGlobalTimeMultiplier();
@@ -4092,6 +4291,106 @@ namespace ALYSLC
 		attackSourceDir.Unitize();
 	}
 
+	void MovementManager::UpdateCurtailMomentumState()
+	{
+		// Update the player's curtail momentum flag, 
+		// which is set when the player should stop moving quickly,
+		// and unset when the player's movement speed reaches 0.
+		
+		const float movementSpeed = movementActorPtr->DoGetMovementSpeed();
+		// Update getup TP and flag.
+		bool wasGettingUp = isGettingUp;
+		auto knockState = coopActor->GetKnockState(); 
+		if (knockState == RE::KNOCK_STATE_ENUM::kGetUp)
+		{
+			isGettingUp = true;
+		}
+		else
+		{
+			// Curtail momentum:
+			// Seems as if there is some momentum carryover from before the player ragdolled,
+			// so if they were moving at a high rate of speed and then ragdolled,
+			// they'd shoot forward in their movement direction after fully getting up.
+			bool finishedGettingUp = wasGettingUp && knockState == RE::KNOCK_STATE_ENUM::kNormal;
+			// Stop instantly to prevent the player from slowly coming to a halt 
+			// from residual momentum when turning towards or away from a target 
+			// while attacking/bashing/blocking/casting.
+			bool turnToFaceTargetWhileStopped = 
+			{
+				(!p->lsMoved && movementSpeed != 0.0f) &&
+				(
+					p->pam->isAttacking || p->pam->isBlocking ||
+					p->pam->isBashing || p->pam->isInCastingAnim
+				)
+			};
+			// Also stop the player momentarily to dampen residual momentum 
+			// when turning to face a target.
+			bool stopWhenTurningToTarget = 
+			(
+				(movementYawTargetChanged) && (turnToTarget || faceCrosshairPos)
+			);
+			// Do not completely stop the player when they're performing a killmove.
+			// Otherwise, well, they won't perform the killmvoe.
+			bool canCurtailMomentum = 
+			(
+				(!coopActor->IsInKillMove() && !coopActor->IsOnMount()) && 
+				(finishedGettingUp || turnToFaceTargetWhileStopped || stopWhenTurningToTarget)
+			);
+			if (canCurtailMomentum)
+			{
+				if (finishedGettingUp)
+				{
+					p->lastGetupTP = SteadyClock::now();
+				}
+
+				shouldCurtailMomentum = true;
+			}
+
+			// REMOVE when done debugging.
+			/*DBG
+			(
+				"{}: Curtail: {}, start/stop moving: {}, {}, dont move set: {}, LS moved: {}, "
+				"movement speed: {}, attacking: {}, blocking: {}, bashing: {}, casting: {}, "
+				"movement yaw target changed: {}, turn: {}, face: {}, finished getting up: {}, "
+				"turn to face when stopped: {}, stop when turning: {}",
+				coopActor->GetName(), 
+				shouldCurtailMomentum,
+				shouldStartMoving,
+				shouldStopMoving,
+				dontMoveSet,
+				p->lsMoved,
+				movementSpeed,
+				p->pam->isAttacking,
+				p->pam->isBlocking,
+				p->pam->isBashing,
+				p->pam->isInCastingAnim,
+				movementYawTargetChanged, 
+				turnToTarget, 
+				faceCrosshairPos,
+				finishedGettingUp,
+				turnToFaceTargetWhileStopped,
+				stopWhenTurningToTarget
+			);*/
+
+			isGettingUp = false;
+		}
+		
+		bool allowRotation = false;
+		coopActor->GetGraphVariableBool("bAllowRotation", allowRotation);
+		// Do not curtail momentum when this flag is set and the player is not knocked down
+		// because doing so will stop the player from moving when performing
+		// directional power attacks.
+		if (allowRotation)
+		{
+			shouldCurtailMomentum = false;
+		}
+		else
+		{
+			// Freeze the player in place and wait until their reported movement speed is 0.
+			shouldCurtailMomentum &= movementSpeed > 0.0f;
+		}
+	}
+
 	void MovementManager::UpdateEncumbranceFactor()
 	{
 		// Set the player's encumbrance factor, which is their inventory weight
@@ -4215,7 +4514,6 @@ namespace ALYSLC
 		// Set movement actor (any mount if the player is mounted, player actor otherwise).
 		auto mountPtr = p->GetCurrentMount();
 		movementActorPtr = mountPtr ? mountPtr : coopActor;
-		const float movementSpeed = movementActorPtr->DoGetMovementSpeed();
 		// Ensure all sneak states sync up with the player's requested state.
 		if (!coopActor->IsOnMount() &&
 			!coopActor->IsSwimming() && 
@@ -4292,97 +4590,8 @@ namespace ALYSLC
 			playerRagdollTriggered = false;
 		}
 
-		// Update getup TP and flag.
-		bool wasGettingUp = isGettingUp;
-		auto knockState = coopActor->GetKnockState(); 
-		if (knockState == RE::KNOCK_STATE_ENUM::kGetUp)
-		{
-			isGettingUp = true;
-		}
-		else
-		{
-			// Curtail momentum:
-			// Seems as if there is some momentum carryover from before the player ragdolled,
-			// so if they were moving at a high rate of speed and then ragdolled,
-			// they'd shoot forward in their movement direction after fully getting up.
-			bool finishedGettingUp = wasGettingUp && knockState == RE::KNOCK_STATE_ENUM::kNormal;
-			// Stop instantly to prevent the player from slowly coming to a halt 
-			// from residual momentum when turning towards or away from a target 
-			// while attacking/bashing/blocking/casting.
-			bool turnToFaceTargetWhileStopped = 
-			{
-				(!p->lsMoved && movementSpeed != 0.0f) &&
-				(
-					p->pam->isAttacking || p->pam->isBlocking ||
-					p->pam->isBashing || p->pam->isInCastingAnim
-				)
-			};
-			// Also stop the player momentarily to dampen residual momentum 
-			// when turning to face a target.
-			bool stopWhenTurningToTarget = 
-			(
-				(movementYawTargetChanged) && (turnToTarget || faceCrosshairPos)
-			);
-			// Do not completely stop the player when they're performing a killmove.
-			// Otherwise, well, they won't perform the killmvoe.
-			bool canCurtailMomentum = 
-			(
-				(!coopActor->IsInKillMove() && !coopActor->IsOnMount()) && 
-				(finishedGettingUp || turnToFaceTargetWhileStopped || stopWhenTurningToTarget)
-			);
-			if (canCurtailMomentum)
-			{
-				if (finishedGettingUp)
-				{
-					p->lastGetupTP = SteadyClock::now();
-				}
-
-				shouldCurtailMomentum = true;
-			}
-
-			// REMOVE when done debugging.
-			/*DBG
-			(
-				"{}: Curtail: {}, start/stop moving: {}, {}, dont move set: {}, LS moved: {}, "
-				"movement speed: {}, attacking: {}, blocking: {}, bashing: {}, casting: {}, "
-				"movement yaw target changed: {}, turn: {}, face: {}, finished getting up: {}, "
-				"turn to face when stopped: {}, stop when turning: {}",
-				coopActor->GetName(), 
-				shouldCurtailMomentum,
-				shouldStartMoving,
-				shouldStopMoving,
-				dontMoveSet,
-				p->lsMoved,
-				movementSpeed,
-				p->pam->isAttacking,
-				p->pam->isBlocking,
-				p->pam->isBashing,
-				p->pam->isInCastingAnim,
-				movementYawTargetChanged, 
-				turnToTarget, 
-				faceCrosshairPos,
-				finishedGettingUp,
-				turnToFaceTargetWhileStopped,
-				stopWhenTurningToTarget
-			);*/
-
-			isGettingUp = false;
-		}
-		
-		bool allowRotation = false;
-		coopActor->GetGraphVariableBool("bAllowRotation", allowRotation);
-		// Do not curtail momentum when this flag is set and the player is not knocked down
-		// because doing so will stop the player from moving when performing
-		// directional power attacks.
-		if (allowRotation)
-		{
-			shouldCurtailMomentum = false;
-		}
-		else
-		{
-			// Freeze the player in place and wait until their reported movement speed is 0.
-			shouldCurtailMomentum &= movementSpeed > 0.0f;
-		}
+		// Update getup and curtail momentum state.
+		// UpdateCurtailMomentumState();
 
 		auto charController = movementActorPtr->GetCharController(); 
 		// Everything below requires a valid character controller first.
@@ -4651,6 +4860,7 @@ namespace ALYSLC
 		}
 
 		// Set start or stop movement flags.
+		const float movementSpeed = movementActorPtr->DoGetMovementSpeed();
 		bool isMoving = 
 		{
 			(movementSpeed > 0.0f) &&

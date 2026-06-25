@@ -49,9 +49,8 @@ namespace ALYSLC
 		// Without conditions:
 		// CycleSpellCategoryLH, CycleSpellCategoryRH, 
 		// CycleWeaponCategoryLH, CycleWeaponCategoryRH, 
-		// FaceTarget, GrabObject, 
-		// MoveCrosshair, QuickSlotCast, QuickSlotItem, 
-		// ResetAim, Shout
+		// FaceTarget, GrabObject, HotkeyEquip,
+		// MoveCrosshair, QuickSlotCast, QuickSlotItem, Shout
 
 		// Unique conditions.
 		_condFuncs[!InputAction::kActivate - paOffset] =
@@ -82,6 +81,8 @@ namespace ALYSLC
 		ConditionFuncs::GrabRotateYZ;
 		_condFuncs[!InputAction::kJump - paOffset] = 
 		ConditionFuncs::Jump;
+		_condFuncs[!InputAction::kResetAim - paOffset] = 
+		ConditionFuncs::ResetAim;
 		_condFuncs[!InputAction::kPowerAttackDual - paOffset] = 
 		ConditionFuncs::PowerAttackDual;
 		_condFuncs[!InputAction::kPowerAttackLH - paOffset] =
@@ -134,7 +135,6 @@ namespace ALYSLC
 		_condFuncs[!InputAction::kCycleVoiceSlotMagic - paOffset] =
 		_condFuncs[!InputAction::kCycleWeaponLH - paOffset] =
 		_condFuncs[!InputAction::kCycleWeaponRH - paOffset] =
-		_condFuncs[!InputAction::kHotkeyEquip - paOffset] = 
 		ConditionFuncs::CycleEquipment;
 		
 		// Menus that allow players to access their inventory or magic and equip items.
@@ -929,6 +929,19 @@ namespace ALYSLC
 			return CanPlayPowerAttackAnimation(a_p, InputAction::kPowerAttackRH);
 		}
 
+		bool ResetAim(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// Do not reset while adjusting aim pitch.
+			if (a_p->pam->IsPerforming(InputAction::kAdjustAimPitch))
+			{
+				return false;
+			}
+
+			// Must not be moving the RS either.
+			const auto& rsState = glob.cdh->GetAnalogStickState(a_p->deviceID, false);
+			return rsState.normMag == 0.0f && rsState.prevNormMag == 0.0f;
+		}
+
 		bool RotateCam(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			if (!CanAdjustCamera(a_p))
@@ -936,12 +949,21 @@ namespace ALYSLC
 				return false;
 			}
 
-			// REMOVE when new Pick NPC Target bind is added.
+			// REMOVE when new Pick NPC Target/Hide Crosshair bind is added.
 			bool bumperPressed = 
 			(
 				glob.cdh->GetInputState(a_p->deviceID, InputAction::kRShoulder).isPressed
 			);
 			if (bumperPressed)
+			{
+				return false;
+			}
+
+			bool stickPressed = 
+			(
+				glob.cdh->GetInputState(a_p->deviceID, InputAction::kRThumb).isPressed
+			);
+			if (stickPressed)
 			{
 				return false;
 			}
@@ -1242,7 +1264,8 @@ namespace ALYSLC
 				return false;
 			}
 
-			const auto& inputMask = 
+			return true;
+			/*const auto& inputMask = 
 			(
 				a_p->pam->paParamsList
 				[!InputAction::kZoomCam - !InputAction::kFirstAction].inputMask
@@ -1252,7 +1275,7 @@ namespace ALYSLC
 				a_p->deviceID, (inputMask & (1 << !InputAction::kLS)) == (1 << !InputAction::kLS)
 			);
 
-			return stickState.normMag > 0.0f;
+			return stickState.normMag > 0.0f;*/
 		}
 
 		//=========================================================================================
@@ -1281,6 +1304,17 @@ namespace ALYSLC
 			// If there is a focal player and this player is not the focal player,
 			// ignore requests to adjust the camera's rotation or zoom.
 			if (glob.cam->focalPlayerPID != -1 && a_p->playerID != glob.cam->focalPlayerPID)
+			{
+				return false;
+			}
+
+			// Do not adjust the camera when assigning hotkeys to items,
+			// in or outside of the Favorites Menu.
+			if ((a_p->pam->IsPerforming(InputAction::kHotkeyEquip)) ||
+				(
+					!Util::MenusOnlyAlwaysOpen() && 
+					a_p->pam->AllButtonsPressedForAction(InputAction::kHotkeyEquip)
+				))
 			{
 				return false;
 			}
@@ -6998,6 +7032,10 @@ namespace ALYSLC
 				{
 					a_p->tm->UpdateActivationTarget(false, true, true);
 				}
+				else
+				{
+					a_p->tm->ValidateActivationRefr(false);
+				}
 				
 				DBG
 				(
@@ -8743,6 +8781,12 @@ namespace ALYSLC
 				a_p->em->lastChosenHotkeyedForm = nullptr;
 			}
 
+			// Do nothing while temporary menus are open.
+			if (!Util::MenusOnlyAlwaysOpen())
+			{
+				return;
+			}
+
 			// Get the form from the selected hotkey slot.
 			RE::TESForm* selectedHotkeyedForm = nullptr;
 			auto hotkeySlot = HelperFuncs::GetSelectedHotkeySlot(a_p);
@@ -9941,13 +9985,14 @@ namespace ALYSLC
 				!glob.coopPlayers[targetPlayerPID]->isDowned &&
 				targetActorPtr != currentFocalPlayerPtr
 			);
-			// Can set a new lock-on target if not the focal player or the current target,
+			// Can set a new lock-on target if not in focal player mode 
+			// and the selected actor is not the focal player or the current target,
 			// and is either not a player or is a player that is not downed.
 			bool newLockOnTarget = 
 			(
 				(targetActorValidity) && 
+				(!currentFocalPlayerPtr) &&
 				(!newFocalPlayerTarget) &&
-				(targetActorPtr != currentFocalPlayerPtr) &&
 				(targetActorPtr != currentLockOnTargetPtr) &&
 				(targetPlayerPID == -1 || !glob.coopPlayers[targetPlayerPID]->isDowned)
 			);
@@ -9978,6 +10023,8 @@ namespace ALYSLC
 				else
 				{
 					glob.cam->focalPlayerPID = targetPlayerPID;
+					a_p->tm->ClearActivationTargetData();
+					a_p->tm->DeactivateCrosshair();
 					// Inform the player.
 					a_p->tm->SetCrosshairMessageRequest
 					(
@@ -10613,6 +10660,7 @@ namespace ALYSLC
 			glob.cam->ClearLockOnData();
 			glob.cam->SetWaitForToggle(true);
 			glob.cam->RequestStateChange(ManagerState::kPaused);
+
 			// Inform the players on how to switch back to the co-op camera.
 			a_p->tm->SetCrosshairMessageRequest
 			(
@@ -12113,6 +12161,7 @@ namespace ALYSLC
 				// after activation.
 				const auto activationRefrHandle = a_p->tm->activationRefrHandle;
 				const auto crosshairRefrHandle = a_p->tm->crosshairRefrHandle;
+				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(activationRefrHandle); 
 				DBG
 				(
 					"{}: On release: {}. Chose quick target: {}.", 
@@ -12156,6 +12205,47 @@ namespace ALYSLC
 					a_p->tm->rmm->IsManaged(activationRefrHandle, false))
 				{
 					a_p->tm->rmm->ClearRefr(activationRefrHandle);
+				}
+
+				// Open gift menu to transfer items to the targeted player
+				// if the activate bind was held long enough.
+				if (pIndex != -1 &&
+					pIndex != a_p->playerID &&
+					a_p->pam->GetPlayerActionInputHoldTime(InputAction::kActivate) >= 
+					Settings::fSecsBeforeAlternateActivation)
+				{
+					const auto& otherP = glob.coopPlayers[pIndex];
+					bool succ = glob.moarm->InsertRequest
+					(
+						a_p->playerID, 
+						InputAction::kActivate, 
+						SteadyClock::now(), 
+						RE::GiftMenu::MENU_NAME,
+						RE::ObjectRefHandle()
+					);
+					if (succ)
+					{
+						// Set player to gift items to.
+						glob.mim->gifteePlayerHandle = otherP->coopActor->GetHandle();
+						DBG("{}: Giving items to {}.", 
+							a_p->coopActor->GetName(), otherP->coopActor->GetName());
+						// Never open the Gift Menu with P1 as the target.
+						// Can still give P1 items by importing the companion player's
+						// inventory and then moving whatever items they decide to transfer
+						// over to P1's inventory chest while the menu is open.
+						Util::Papyrus::ShowGiftMenu
+						(
+							otherP->isPlayer1 ?
+							a_p->coopActor.get() :
+							otherP->coopActor.get(),
+							true,
+							nullptr,
+							true,
+							true
+						);
+					}
+
+					return;
 				}
 
 				// Get count.

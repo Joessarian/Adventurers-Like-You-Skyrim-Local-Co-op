@@ -1781,8 +1781,15 @@ namespace ALYSLC
 		// dependent on the player's indicator visibility setting.
 		void DrawPlayerIndicator();
 
+		// Draw a crosshair with four basic rectangular prongs.
+		void DrawRetroStyleCrosshair();
+
+		// Draw a crosshair that consists of concentric rings with 4 protruding arrows.
+		// Similar in appearance to the aim correction indicator.
+		void DrawRingShapedCrosshair();
+
 		// Draw a crosshair similar in style to the Skyrim's default crosshair.
-		void DrawSkyrimStyleCrosshair();
+		void DrawSkyrimStyleCrosshair(bool a_shouldInvert);
 
 		// Draw trajectories for projectiles that the player is attempting to release.
 		void DrawTrajectories();
@@ -1795,6 +1802,8 @@ namespace ALYSLC
 		// from frame to frame.
 		void DrawTrajectory
 		(
+			RE::BGSProjectile* a_baseProj,
+			RE::ObjectRefHandle a_projHandle,
 			const RE::NiPoint3& a_releasePos,
 			const RE::NiPoint3& a_targetPos,
 			const double& a_initialProjectedTimeToTarget,
@@ -1807,8 +1816,7 @@ namespace ALYSLC
 			const ProjectileTrajType& a_trajType,
 			const bool& a_canReachTarget,
 			bool a_isWeapMagProj,
-			bool&& a_capVelocity,
-			RE::ObjectRefHandle a_projHandle = RE::ObjectRefHandle()
+			bool&& a_capVelocity
 		);
 		
 		// Iterate through nearby refrs and get the closest selectable refr to the crosshair ray 
@@ -2313,7 +2321,7 @@ namespace ALYSLC
 			const float a_worldTargetingAngle,
 			const float a_fovRads,
 			float a_range,
-			float& a_factorOut,
+			float& a_angDistWeightOut,
 			bool& a_isInRangeAndFOVOut
 		);
 	};

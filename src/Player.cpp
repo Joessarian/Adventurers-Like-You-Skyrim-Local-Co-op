@@ -258,6 +258,7 @@ namespace ALYSLC
 				!ui->IsSavingAllowed(),
 				fullscreenMenuOpen
 			);
+
 			return ManagerState::kPaused;
 		}
 

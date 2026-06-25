@@ -1087,13 +1087,15 @@ namespace ALYSLC
 		kTotal
 	};
 
-	// TODO: Style of crosshair to draw.
+	// Style of crosshair to draw.
 	enum class CrosshairStyle : std::uint8_t
 	{
-		kRetro,
-		kSkyrimStyle,
-		kSkyrimStyleInverted,
-		kAimCorrection
+		kRetro,					// Four rectangular prongs.
+		kRing,					// Concentric rings with diagonal prongs when over an object.
+		kSkyrimStyle,			// Similar to Skyrim's crosshair.
+		kSkyrimStyleInverted,	// Similar to above, but with prongs porinting inward.
+
+		kTotal
 	};
 
 	// Credits to Ryan-rsm-McKenzie and his quick loot repo for

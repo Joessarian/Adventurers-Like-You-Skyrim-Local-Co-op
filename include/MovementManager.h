@@ -531,6 +531,11 @@ namespace ALYSLC
 		// using the cached default world rotation data.
 		void UpdateAttackSourceOrientationData(bool&& a_setDefaultDirAndPos);
 
+		// Update the player's curtail momentum flag, 
+		// which is set when the player should stop moving quickly,
+		// and unset when the player's movement speed reaches 0.
+		void UpdateCurtailMomentumState();
+
 		// Update the player's encumbrance factor (inventory weight / current carryweight).
 		void UpdateEncumbranceFactor();
 		

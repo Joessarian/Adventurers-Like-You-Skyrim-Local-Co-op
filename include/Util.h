@@ -318,6 +318,25 @@ namespace ALYSLC
 	{
 		return TohkVector4(glm::vec3(a_vec), std::move(a_normalize));
 	}
+	
+	inline RE::NiPoint2 ToNiPoint2(const RE::NiPoint3& a_pt, bool&& a_normalize = false)
+	{
+		if (a_normalize) 
+		{
+			if (float length = sqrtf(a_pt.x * a_pt.x + a_pt.y * a_pt.y); length == 0.0f) 
+			{
+				return RE::NiPoint2();
+			}
+			else
+			{
+				return RE::NiPoint2(a_pt.x, a_pt.y) / length;
+			}
+		}
+		else
+		{
+			return RE::NiPoint2(a_pt.x, a_pt.y);
+		}
+	}
 
 	inline RE::NiPoint3 ToNiPoint3(const RE::hkVector4& a_vec, bool&& a_normalize = false)
 	{
@@ -1258,6 +1277,55 @@ namespace ALYSLC
 				}
 			}
 
+			// Open the Gift Menu to give/take items to/from the given actor.
+			// Can filter out certain items, choose to show/hide stolen items,
+			// or choose to use/ignore favor points.
+			inline void ShowGiftMenu
+			(
+				RE::Actor* a_actor, 
+				bool a_givingGift, 
+				RE::BGSListForm* a_filterList = nullptr,
+				bool a_showStolenItems = false, 
+				bool a_useFavorPoints = true
+			)
+			{
+				if (a_actor)
+				{
+					auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+					if (!vm)
+					{
+						return;
+					}
+					const auto policy = vm->GetObjectHandlePolicy();
+					if (policy)
+					{
+						auto handle = policy->GetHandleForObject(*a_actor->formType, a_actor);
+						if (handle)
+						{
+							auto callback = 
+							(
+								RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor>()
+							);
+							auto args = RE::MakeFunctionArguments
+							(
+								std::move(a_givingGift),
+								std::move(a_filterList),
+								std::move(a_showStolenItems),
+								std::move(a_useFavorPoints)
+							);
+							vm->DispatchMethodCall
+							(
+								handle, 
+								"Actor",
+								"ShowGiftMenu",
+								args, 
+								callback
+							);
+						}
+					}
+				}
+			}
+
 			// Start combat between the given starting and target actors.
 			inline void StartCombat(RE::Actor* a_starting, RE::Actor* a_target) 
 			{
@@ -1465,6 +1533,27 @@ namespace ALYSLC
 		//===========================
 		//[Inline Utility Functions]:
 		//===========================
+
+		inline bool IsAirborne(RE::Actor* a_actor)
+		{
+			if (!a_actor)
+			{
+				return false;
+			}
+
+			auto charController = a_actor->GetCharController();
+			if (!charController)
+			{
+				return false;
+			}
+
+			return 
+			(
+				charController->context.currentState == RE::hkpCharacterStateType::kJumping || 
+				charController->context.currentState == RE::hkpCharacterStateType::kInAir || 
+				charController->context.currentState == RE::hkpCharacterStateType::kFlying
+			);
+		}
 
 		inline void SetActorBaseDataFlag
 		(

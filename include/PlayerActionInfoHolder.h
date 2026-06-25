@@ -536,7 +536,7 @@ namespace ALYSLC
 				},
 				// HotkeyEquip
 				{ 
-					InputAction::kRThumb,
+					InputAction::kLThumb,
 					InputAction::kRS
 				},
 				// Inventory
@@ -687,7 +687,7 @@ namespace ALYSLC
 				// ZoomCam
 				{
 					InputAction::kRThumb,
-					InputAction::kLS
+					InputAction::kRS
 				} 
 			}
 		);
@@ -1144,6 +1144,7 @@ namespace ALYSLC
 			// RotateCam
 			TriggerFlags
 			(
+				TriggerFlag::kBlockOnConditionFailure,
 				TriggerFlag::kDoNotUseCompActionsOrdering
 			),
 			// RotateLeftForearm
@@ -1242,7 +1243,8 @@ namespace ALYSLC
 			// ZoomCam
 			TriggerFlags
 			(
-				TriggerFlag::kDefault
+				TriggerFlag::kBlockOnConditionFailure,
+				TriggerFlag::kDoNotUseCompActionsOrdering
 			)
 		};
 

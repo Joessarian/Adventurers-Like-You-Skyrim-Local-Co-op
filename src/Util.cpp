@@ -5851,6 +5851,9 @@ namespace ALYSLC
 			RE::NiPoint3 lookingAtLoc = GetActorFocusPoint(a_observer->As<RE::Actor>());
 			// Keep slightly offset from the bounds.
 			auto bounds = GetVertCollPoints(lookingAtLoc, 10.0f);
+			// As a quick approximation and without needing to make use of the camera's frustum,
+			// don't check for LOS from a point above the camera's height.
+			bounds.first = min(glob.cam->GetCurrentPosition().z, bounds.first);
 			// Cap bounds' maximum offsets from the looking at position if they are unbound.
 			auto niCamPtr = GetNiCamera();
 			bool unboundedUp = bounds.first == FLT_MAX;

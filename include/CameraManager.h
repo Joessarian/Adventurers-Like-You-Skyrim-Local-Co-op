@@ -813,6 +813,8 @@ namespace ALYSLC
 			lockOnLOSCheckTP = SteadyClock::now();
 			lockOnLOSLostTP = SteadyClock::now();
 			noPlayersUnderExteriorRoofTP = SteadyClock::now();
+			shoulderOffsetChangedTP = SteadyClock::now();
+			shoulderOffsetMaintainedTP = SteadyClock::now();
 			underExteriorRoofZoomInTP = SteadyClock::now();
 			secsSinceLockOnTargetLOSChecked = 0.0f;
 			secsSinceLockOnTargetLOSLost = 0.0f;
@@ -970,10 +972,10 @@ namespace ALYSLC
 		// Members
 		//
 		
-		// XY offset from the listener in dialogue at which to base the target position.
-		RE::NiPoint2 dialogueCamXYOffset;
-		// XY offset from the focal player at which to base the target position.
-		RE::NiPoint2 focalPlayerCamXYOffset;
+		// XY offset (target/last set) from the focal player or listener in dialogue
+		// at which to base the target position.
+		RE::NiPoint2 camTargetXYOffset;
+		RE::NiPoint2 camXYOffset;
 		// Base position (before collision calculations).
 		RE::NiPoint3 camBaseTargetPos;
 		// Current focal player or dialogue target's focus point.
@@ -1028,6 +1030,12 @@ namespace ALYSLC
 		SteadyClock::time_point lockOnLOSLostTP;
 		// Last time at which no players were under an exterior roof.
 		SteadyClock::time_point noPlayersUnderExteriorRoofTP;
+		// Last time at which the camera shoulder offset direction was set 
+		// and switched to the other side.
+		SteadyClock::time_point shoulderOffsetChangedTP;
+		// Last time at which the camera shoulder offset direction was set 
+		// and not switched to the other side.
+		SteadyClock::time_point shoulderOffsetMaintainedTP;
 		// Last time at which the camera was signalled to zoom in under an exterior roof.
 		SteadyClock::time_point underExteriorRoofZoomInTP;
 		// Toggle camera POV mutex.
@@ -1093,6 +1101,8 @@ namespace ALYSLC
 		bool manualPositioningTimeFrozen;
 		// Is the camera moving to the dialogue starting target position?
 		bool movingToDialogueStartPos;
+		// In focal or dialogue mode, is the camera offset from the player's right shoulder?
+		bool shoulderOffsetRight;
 		// Should wait to toggle the co-op camera on again.
 		bool waitForToggle;
 		// Max pitch angular magnitude when in the auto-trail camera state.

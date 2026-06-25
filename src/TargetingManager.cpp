@@ -104,6 +104,12 @@ namespace ALYSLC
 			// Move crosshair back to its default position and hide.
 			DeactivateCrosshair();
 		}
+		else if (glob.cam->IsPaused())
+		{
+			// Drop all grabbed objects and stop handling released objects 
+			// when toggling off the co-op camera.
+			rmm->ClearAll();
+		}
 		else
 		{
 			rmm->ClearReleasedRefrs();
@@ -1685,54 +1691,23 @@ namespace ALYSLC
 			crosshairFadeInterpData->UpdateInterpolatedValue(aimMode == AimMode::kCrosshair);
 		}
 
-		if (Settings::vbSkyrimStyleCrosshair[playerID]) 
+		if (Settings::vuCrosshairStyle[playerID] == !CrosshairStyle::kRing)
 		{
-			// Draw a Skyrim-style pronged crosshair.
-			DrawSkyrimStyleCrosshair();
+			// Draw ring-shaped aim correction crosshair.
+			DrawRingShapedCrosshair();
+		}
+		else if (Settings::vuCrosshairStyle[playerID] == !CrosshairStyle::kRetro)
+		{
+			// Draw retro-styled crosshair.
+			DrawRetroStyleCrosshair();
 		}
 		else
 		{
-			bool selectedCamLockOnTarget = 
+			// Draw a Skyrim-style pronged crosshair.
+			DrawSkyrimStyleCrosshair
 			(
-				Util::HandleIsValid(glob.cam->camLockOnTargetHandle) &&
-				crosshairRefrHandle == glob.cam->camLockOnTargetHandle
+				Settings::vuCrosshairStyle[playerID] == !CrosshairStyle::kSkyrimStyleInverted
 			);
-			if (selectedCamLockOnTarget)
-			{
-				// Draw a retro-style crosshair with four lines for prongs.
-				// First, outer outline if the crosshair raycast check selected a valid object.
-				DrawCrosshairOutline
-				(
-					2.0f, Settings::vuOverlayRGBAValues[playerID]
-				);
-				// Second, inner outline.
-				DrawCrosshairOutline
-				(
-					1.0f, Settings::vuCrosshairOuterOutlineRGBAValues[playerID]
-				);
-				// Draw prong lines last.
-				DrawCrosshairLines();
-			}
-			else
-			{
-				// Draw a retro-style crosshair with four lines for prongs.
-				// First, outer outline if the crosshair raycast check selected a valid object.
-				if (validCrosshairRefrHit)
-				{
-					DrawCrosshairOutline
-					(
-						2.0f, Settings::vuCrosshairOuterOutlineRGBAValues[playerID]
-					);
-				}
-
-				// Second, inner outline.
-				DrawCrosshairOutline
-				(
-					1.0f, Settings::vuCrosshairInnerOutlineRGBAValues[playerID]
-				);
-				// Draw prong lines last.
-				DrawCrosshairLines();
-			}
 		}
 	}
 
@@ -1741,8 +1716,8 @@ namespace ALYSLC
 		// Draw the main four lines of the crosshair using the player's assigned crosshair color 
 		// and size params.
 
-		// No rotation for now.
-		float angToRotate = 0.0f;
+		const bool shouldRotate = Util::HandleIsValid(crosshairRefrHandle);
+		float angToRotate = shouldRotate ? PI / 4.0f : 0.0f;
 		float gapDelta = 0.0f;
 		// Animate the mode change rotation and contraction/expansion if enabled.
 		if (Settings::vbAnimatedCrosshair[playerID])
@@ -1761,7 +1736,7 @@ namespace ALYSLC
 		// unmodified contraction/expansion.
 		const float crosshairLength = 
 		(
-			crosshairSizeRatioInterpData->value *  Settings::vfCrosshairLength[playerID]
+			crosshairSizeRatioInterpData->value * Settings::vfCrosshairLength[playerID]
 		);
 		const float crosshairGap = 
 		(
@@ -1908,8 +1883,8 @@ namespace ALYSLC
 		// The higher the index, the further from the crosshair base lines
 		// the outline will be drawn.
 
-		// No rotation for now.
-		float angToRotate = 0.0f;
+		const bool shouldRotate = Util::HandleIsValid(crosshairRefrHandle);
+		float angToRotate = shouldRotate ? PI / 4.0f : 0.0f;
 		float gapDelta = 0.0f;
 		// Animate the rotation, contraction, and expansion, if enabled.
 		if (Settings::vbAnimatedCrosshair[playerID])
@@ -2070,14 +2045,6 @@ namespace ALYSLC
 			glob.cam->inDialogueCamState && 
 			Settings::bDialogueCamEnabled &&
 			!glob.cam->adjustedAfterReachingDialoguePos)
-		{
-			return;
-		}
-
-		// Skip drawing the indicator for players that are not receiving the focus of the camera.
-		if (glob.cam->IsRunning() && 
-			glob.cam->focalPlayerPID != -1 && 
-			playerID != glob.cam->focalPlayerPID)
 		{
 			return;
 		}
@@ -2300,6 +2267,13 @@ namespace ALYSLC
 					scalingFactor * GlobalCoopData::PLAYER_INDICATOR_UPPER_PIXEL_OFFSETS[0].y
 				);
 
+				// After calculating the new position,
+				// skip drawing the indicator if there is a focal player.
+				if (glob.cam->IsRunning() && glob.cam->focalPlayerPID != -1)
+				{
+					return;
+				}
+
 				// Scale offsets again.
 				for (auto& offset : upperPortionOffsets)
 				{
@@ -2406,6 +2380,12 @@ namespace ALYSLC
 		}
 		else
 		{
+			// Skip drawing the indicator if there is a focal player.
+			if (glob.cam->IsRunning() && glob.cam->focalPlayerPID != -1)
+			{
+				return;
+			}
+
 			// Fade in/out.
 			playerIndicatorFadeInterpData->UpdateInterpolatedValue(baseCanDrawOverlayElements);
 			// Default indicator orientation is bottom half facing down,
@@ -2570,12 +2550,364 @@ namespace ALYSLC
 		}
 	}
 
-	void TargetingManager::DrawSkyrimStyleCrosshair()
+	void TargetingManager::DrawRetroStyleCrosshair()
+	{
+		// Draw a crosshair with four basic rectangular prongs.
+		
+		// Draw a retro-style crosshair with four lines for prongs.
+		// First, outer outline.
+		DrawCrosshairOutline
+		(
+			2.0f, Settings::vuCrosshairOuterOutlineRGBAValues[playerID]
+		);
+		// Second, inner outline.
+		DrawCrosshairOutline
+		(
+			1.0f, Settings::vuCrosshairInnerOutlineRGBAValues[playerID]
+		);
+		// Draw prong lines last.
+		DrawCrosshairLines();
+	}
+
+	void TargetingManager::DrawRingShapedCrosshair()
+	{
+		// Draw a crosshair that consists of concentric rings with 4 protruding arrows.
+		// Similar in appearance to the aim correction indicator.
+		
+		const bool shouldRotate = Util::HandleIsValid(crosshairRefrHandle);
+		float angToRotate = shouldRotate ? PI / 4.0f : 0.0f;
+		float gapDelta = 0.0f;
+		// Animate the rotation, contraction, and expansion, if enabled.
+		if (Settings::vbAnimatedCrosshair[playerID])
+		{
+			UpdateAnimatedCrosshairInterpData();
+			angToRotate = crosshairRotationData->current;
+			gapDelta = crosshairSizeRatioInterpData->value * crosshairOscillationData->current;
+		}
+
+		// Center at the crosshair position.
+		const auto center = glm::vec3(crosshairScaleformPos.x, crosshairScaleformPos.y, 0.0f);
+		const float& crosshairLength = 
+		(
+			crosshairSizeRatioInterpData->value * Settings::vfCrosshairLength[playerID]
+		);
+		const float& crosshairThickness = Settings::vfCrosshairThickness[playerID];
+
+		float rotationRatio = (crosshairRotationData->current) / (PI / 4.0f);
+		// Four prongs ('+' when not facing the target, 'X' otherwise).
+		float rotAng1{ PI / 2.0f };
+		float rotAng2{ 0.0f };
+		float rotAng3{ -PI / 2.0f };
+		float rotAng4{ PI };
+		if (shouldRotate)
+		{
+			rotAng1 = { 3.0f * PI / 4.0f };
+			rotAng2 = { PI / 4.0f };
+			rotAng3 = { -PI / 4.0f };
+			rotAng4 = { 5.0f * PI / 4.0f };
+		}
+		
+		rotAng1 = 
+		{
+			Util::InterpolateSmootherStep(PI / 2.0f, 3.0f * PI / 4.0f, rotationRatio)
+		};
+		rotAng2 = 
+		{
+			Util::InterpolateSmootherStep(0.0f, PI / 4.0f, rotationRatio)
+		};
+		rotAng3 = 
+		{
+			Util::InterpolateSmootherStep(-PI / 2.0f, -PI / 4.0f, rotationRatio)
+		};
+		rotAng4 = 
+		{
+			Util::InterpolateSmootherStep(PI, 5.0f * PI / 4.0f, rotationRatio)
+		};
+
+		// Retract arrows when not on a target.
+		float radius = crosshairLength * rotationRatio;
+		if (radius != 0.0f)
+		{
+			auto arrowStartOffset = gapDelta + 3.0f * crosshairThickness;
+			// Outer.
+			uint8_t alpha = 
+			(
+				static_cast<uint8_t>
+				(
+					crosshairFadeInterpData->value * 
+					static_cast<float>
+					(
+						Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF
+					)
+				)
+			);
+			auto newCenter = 
+			(
+				center + arrowStartOffset * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f)
+			);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + radius * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f),
+				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+				crosshairThickness * 1.5f,
+				crosshairThickness * 3.0f,
+				0.0f
+			);
+			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + radius * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f),
+				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+				crosshairThickness * 1.5f,
+				crosshairThickness * 3.0f,
+				0.0f
+			);
+			newCenter = 
+			(
+				center + arrowStartOffset * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f)
+			);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + radius * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f),
+				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+				crosshairThickness * 1.5f,
+				crosshairThickness * 3.0f,
+				0.0f
+			);
+			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + radius * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f),
+				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+				crosshairThickness * 1.5f,
+				crosshairThickness * 3.0f,
+				0.0f
+			);
+
+			// Middle.
+			alpha = 
+			(
+				static_cast<uint8_t>
+				(
+					crosshairFadeInterpData->value * 
+					static_cast<float>
+					(
+						Settings::vuOverlayRGBAValues[playerID] & 0xFF
+					)
+				)
+			);
+			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + radius * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f),
+				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+				crosshairThickness * 1.25f,
+				crosshairThickness * 2.0f,
+				0.0f
+			);
+			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + radius * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f),
+				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+				crosshairThickness * 1.25f,
+				crosshairThickness * 2.0f,
+				0.0f
+			);
+			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + radius * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f),
+				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+				crosshairThickness * 1.25f,
+				crosshairThickness * 2.0f,
+				0.0f
+			);
+			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + radius * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f),
+				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+				crosshairThickness * 1.25f,
+				crosshairThickness * 2.0f,
+				0.0f
+			);
+
+			// Inner.
+			alpha = 
+			(
+				static_cast<uint8_t>
+				(
+					crosshairFadeInterpData->value * 
+					static_cast<float>
+					(
+						Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFF
+					)
+				)
+			);
+			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + 
+				0.75f * radius * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f),
+				(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+				crosshairThickness,
+				crosshairThickness,
+				0.0f
+			);
+			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + 0.75f * radius * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f),
+				(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+				crosshairThickness,
+				crosshairThickness,
+				0.0f
+			);
+			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + 0.75f * radius * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f),
+				(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+				crosshairThickness,
+				crosshairThickness,
+				0.0f
+			);
+			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + 0.75f * radius * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f),
+				(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+				crosshairThickness,
+				crosshairThickness,
+				0.0f
+			);
+		}
+
+		// Fewer segments to draw when the gap is small (no readily apparent loss in quality).
+		uint32_t numSegments = std::clamp(static_cast<int>(gapDelta * 3), 8, 48);
+		uint8_t alpha = 
+		(
+			static_cast<uint8_t>
+			(
+				crosshairFadeInterpData->value * 
+				static_cast<float>
+				(
+					Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF
+				)
+			)
+		);
+		DebugAPI::QueueCircle2D
+		(
+			center,
+			(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+			numSegments,
+			2.0f * crosshairThickness + gapDelta,
+			crosshairThickness,
+			0.0f
+		);
+		alpha = 
+		(
+			static_cast<uint8_t>
+			(
+				crosshairFadeInterpData->value * 
+				static_cast<float>
+				(
+					Settings::vuOverlayRGBAValues[playerID] & 0xFF
+				)
+			)
+		);
+		DebugAPI::QueueCircle2D
+		(
+			center,
+			(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+			numSegments,
+			crosshairThickness + gapDelta,
+			crosshairThickness,
+			0.0f
+		);
+		alpha = 
+		(
+			static_cast<uint8_t>
+			(
+				crosshairFadeInterpData->value * 
+				static_cast<float>
+				(
+					Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFF
+				)
+			)
+		);
+		DebugAPI::QueueCircle2D
+		(
+			center,
+			(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+			numSegments,
+			gapDelta,
+			crosshairThickness,
+			0.0f
+		);
+
+		alpha = 0xFF;
+		// Outline with two circles if near the edge of the screen for better visibility.
+		if (!Util::PointIsOnScreen(crosshairWorldPos, DebugAPI::screenResY / 25.0f))
+		{
+			alpha = 
+			(
+				static_cast<uint8_t>
+				(
+					crosshairFadeInterpData->value * 
+					static_cast<float>(Settings::vuOverlayRGBAValues[playerID] & 0xFF)
+				)
+			);
+			DebugAPI::QueueCircle2D
+			(
+				crosshairScaleformPos, 
+				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+				64, 
+				crosshairSizeRatioInterpData->value * 
+				(
+					2.0f * 
+					crosshairThickness + 
+					crosshairLength + 
+					Settings::vfCrosshairGapRadius[playerID]
+				) + gapDelta,
+				2.0f * crosshairThickness
+			);
+			DebugAPI::QueueCircle2D
+			(
+				crosshairScaleformPos, 
+				0xFFFFFF00 + alpha,
+				64, 
+				crosshairSizeRatioInterpData->value * 
+				(
+					4.0f * 
+					crosshairThickness + 
+					crosshairLength + 
+					Settings::vfCrosshairGapRadius[playerID]
+				) + gapDelta,
+				2.0f * crosshairThickness
+			);
+		}
+	}
+
+	void TargetingManager::DrawSkyrimStyleCrosshair(bool a_shouldInvert)
 	{
 		// Draw a Skyrim-style crosshair with a player-specific colorway.
 
-		// No rotation for now.
-		float angToRotate = 0.0f;
+		const bool shouldRotate = Util::HandleIsValid(crosshairRefrHandle);
+		float angToRotate = shouldRotate ? PI / 4.0f : 0.0f;
 		float gapDelta = 0.0f;
 		// Animate rotation, contraction, and expansion, if enabled.
 		if (Settings::vbAnimatedCrosshair[playerID])
@@ -2607,60 +2939,60 @@ namespace ALYSLC
 		for (auto& coord : baseProngOffsets)
 		{
 			// Invert along long axis for a spicier look.
-			coord.x = defaultLength - coord.x;
+			if (Settings::vuCrosshairStyle[playerID] == !CrosshairStyle::kSkyrimStyleInverted)
+			{
+				coord.x = defaultLength - coord.x;
+			}
+
 			coord *= scalingFactor;
 		}
 
 		// Draw outer, then inner outline of the prong, then the prong itself.
 		uint8_t alpha = 0xFF;
-		// Outer outline only drawn when the crosshair is over a valid object.
-		if (validCrosshairRefrHit)
+		// [Outer outline]
+		prongOffsets = baseProngOffsets;
+		for (auto& coord : prongOffsets)
 		{
-			// [Outer outline]
-			prongOffsets = baseProngOffsets;
-			for (auto& coord : prongOffsets)
+			coord.x += Settings::vfCrosshairGapRadius[playerID];
+			// Scale the base gap but not the gap delta to allow for 
+			// unmodified contraction/expansion.
+			coord *= crosshairSizeRatioInterpData->value;
+			coord.x += gapDelta;
+		}
+
+		// Four prongs.
+		for (uint8_t i = 0; i < 4; ++i)
+		{
+			// 90 degrees between each prong.
+			// Don't rotate the first prong.
+			if (i > 0)
 			{
-				coord.x += Settings::vfCrosshairGapRadius[playerID];
-				// Scale the base gap but not the gap delta to allow for 
-				// unmodified contraction/expansion.
-				coord *= crosshairSizeRatioInterpData->value;
-				coord.x += gapDelta;
+				DebugAPI::RotateOffsetPoints2D(prongOffsets, PI / 2.0f);
 			}
 
-			// Four prongs.
-			for (uint8_t i = 0; i < 4; ++i)
-			{
-				// 90 degrees between each prong.
-				// Don't rotate the first prong.
-				if (i > 0)
-				{
-					DebugAPI::RotateOffsetPoints2D(prongOffsets, PI / 2.0f);
-				}
-
-				prongRotatedOffsets = prongOffsets;
-				// Rotate through the additional face-target angle offset.
-				DebugAPI::RotateOffsetPoints2D(prongRotatedOffsets, angToRotate);
-				// Interped fade value or full alpha.
-				alpha = 
+			prongRotatedOffsets = prongOffsets;
+			// Rotate through the additional face-target angle offset.
+			DebugAPI::RotateOffsetPoints2D(prongRotatedOffsets, angToRotate);
+			// Interped fade value or full alpha.
+			alpha = 
+			(
+				static_cast<uint8_t>
 				(
-					static_cast<uint8_t>
+					crosshairFadeInterpData->value * 
+					static_cast<float>
 					(
-						crosshairFadeInterpData->value * 
-						static_cast<float>
-						(
-							Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF
-						)
+						Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF
 					)
-				);
-				DebugAPI::QueueShape2D
-				(
-					origin,
-					prongRotatedOffsets, 
-					(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
-					false, 
-					2.0f * crosshairThickness
-				);
-			}
+				)
+			);
+			DebugAPI::QueueShape2D
+			(
+				origin,
+				prongRotatedOffsets, 
+				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
+				false, 
+				2.0f * crosshairThickness
+			);
 		}
 
 		// [Inner outline]
@@ -2892,6 +3224,8 @@ namespace ALYSLC
 					
 					DrawTrajectory
 					(
+						baseProj,
+						RE::ObjectRefHandle(),
 						trajInfo->releasePos,
 						trajInfo->trajectoryEndPos,
 						trajInfo->initialTrajTimeToTarget,
@@ -2996,6 +3330,8 @@ namespace ALYSLC
 			);
 			DrawTrajectory
 			(
+				baseProj,
+				RE::ObjectRefHandle(),
 				trajInfo->releasePos,
 				trajInfo->trajectoryEndPos,
 				trajInfo->initialTrajTimeToTarget,
@@ -3094,6 +3430,8 @@ namespace ALYSLC
 			);
 			DrawTrajectory
 			(
+				baseProj,
+				RE::ObjectRefHandle(),
 				trajInfo->releasePos,
 				trajInfo->trajectoryEndPos,
 				trajInfo->initialTrajTimeToTarget,
@@ -3174,6 +3512,8 @@ namespace ALYSLC
 			);
 			DrawTrajectory
 			(
+				baseProj,
+				RE::ObjectRefHandle(),
 				trajInfo->releasePos,
 				trajInfo->trajectoryEndPos,
 				trajInfo->initialTrajTimeToTarget,
@@ -3259,6 +3599,8 @@ namespace ALYSLC
 			);
 			DrawTrajectory
 			(
+				baseProj,
+				RE::ObjectRefHandle(),
 				trajInfo->releasePos,
 				trajInfo->trajectoryEndPos,
 				trajInfo->initialTrajTimeToTarget,
@@ -3329,6 +3671,8 @@ namespace ALYSLC
 			firstRefrInfo->InitPreviewTrajectory(p);
 			DrawTrajectory
 			(
+				nullptr,
+				firstRefrInfo->refrHandle,
 				firstRefrInfo->releasePos,
 				firstRefrInfo->trajectoryEndPos,
 				firstRefrInfo->initialTimeToTarget,
@@ -3341,14 +3685,15 @@ namespace ALYSLC
 				firstRefrInfo->trajType,
 				firstRefrInfo->canReachTarget,
 				false,
-				true,
-				firstRefrInfo->refrHandle
+				true
 			);
 		}
 	}
 
 	void TargetingManager::DrawTrajectory
 	(
+		RE::BGSProjectile* a_baseProj,
+		RE::ObjectRefHandle a_projHandle,
 		const RE::NiPoint3& a_releasePos, 
 		const RE::NiPoint3& a_targetPos,
 		const double& a_initialProjectedTimeToTarget,
@@ -3361,8 +3706,7 @@ namespace ALYSLC
 		const ProjectileTrajType& a_trajType,
 		const bool& a_canReachTarget,
 		bool a_isWeapMagProj,
-		bool&& a_capVelocity,
-		RE::ObjectRefHandle a_projHandle
+		bool&& a_capVelocity
 	)
 	{
 		// Draw trajectory based on the given launch parameters.
@@ -3503,8 +3847,36 @@ namespace ALYSLC
 		uint32_t rgba = Settings::vuOverlayRGBAValues[p->playerID];
 		uint32_t alpha = static_cast<uint32_t>(0xFF * startingAlphaRatio);
 		
+		// Get the expected lifetime for the projectile before it potentially despawns.
+		float expectedLifetime = FLT_MAX;
+		if (a_baseProj)
+		{
+			if (a_baseProj->data.lifetime > 0.0f)
+			{
+				expectedLifetime = a_baseProj->data.lifetime;
+			}
+			else
+			{
+				expectedLifetime = a_baseProj->data.range / a_baseProj->data.speed;
+			}
+		}
+		
 		// Capped projectile trajectory flight time.
-		float totalFlightTime = a_initialProjectedTimeToTarget;
+		const float maxFlightTime = 
+		(
+			a_isWeapMagProj ? 
+			min(expectedLifetime, Settings::fMaxProjAirborneSecsToTarget) :
+			Settings::fMaxSecsBeforeClearingReleasedRefr
+		);
+		// Will not reach the target in time.
+		bool tooLongToReach = 
+		(
+			a_initialProjectedTimeToTarget == 0.0f ||
+			a_initialProjectedTimeToTarget >= maxFlightTime
+		);
+		// Do not draw the entire trajectory beyond a certain interval to improve performance.
+		float totalFlightTime = min(a_initialProjectedTimeToTarget, maxFlightTime);
+
 		// Cannot split the trajectory into two parts 
 		// if the projectile reaches the target in under two frames,
 		// so we'll start homing in right away, if this is a homing projectile.
@@ -3512,20 +3884,22 @@ namespace ALYSLC
 		(
 			a_initialProjectedTimeToTarget <= *g_deltaTimeRealTime * 2.0f
 		);
-		bool tooLongToReach = 
+		DBG
 		(
-			totalFlightTime == 0.0f ||
-			(
-				a_isWeapMagProj ? 
-				totalFlightTime >= Settings::fMaxProjAirborneSecsToTarget :
-				totalFlightTime >= Settings::fMaxSecsBeforeClearingReleasedRefr
-			)
+			"{}: {}, TTT: {}, too long to reach: {} ({}, {}), "
+			"less than 2 frames: {}, max flight time: {}, projected: {}.",
+			coopActor->GetName(),
+			a_baseProj ? 
+			Util::GetEditorID(a_baseProj) :
+			"NONE",
+			a_initialProjectedTimeToTarget,
+			tooLongToReach,
+			expectedLifetime,
+			Settings::fMaxProjAirborneSecsToTarget,
+			lessThanTwoFramesToReachTarget,
+			maxFlightTime,
+			totalFlightTime
 		);
-		// Do not draw the entire trajectory beyond a certain interval to improve performance.
-		if (tooLongToReach)
-		{
-			totalFlightTime = Settings::fMaxProjTrajectorySecsToTarget;
-		}
 
 		// Total number of time slices to split up the trajectory into.
 		const uint32_t totalTimeSlices = 50.0f;
@@ -3659,7 +4033,7 @@ namespace ALYSLC
 					// or if the projectile will reach the target position in under 2 frames.
 					bool passedHalfwayPoint = 
 					(
-						currentT - 0.5f * a_initialProjectedTimeToTarget > -0.1f * secsSlice ||
+						currentT - 0.5f * totalFlightTime > -0.1f * secsSlice ||
 						Util::GetXYDistance(a_releasePos, end) >=
 						0.5f * Util::GetXYDistance(a_releasePos, a_targetPos)
 					);
@@ -3688,6 +4062,14 @@ namespace ALYSLC
 					}
 					else
 					{
+						float timeToFullyHomeIn = totalFlightTime;
+						//if (tooLongToReach)
+						//{
+						//	// Home in completely at most a quarter way along the trajectory,
+						//	// in terms of time.
+						//	timeToFullyHomeIn = 0.25f * totalFlightTime;
+						//}
+
 						// Slowly turn to face.
 						float pitchDiff = Util::NormalizeAngToPi(pitchToTarget - lastSetPitch);
 						pitchToSet = Util::NormalizeAngToPi
@@ -3697,7 +4079,7 @@ namespace ALYSLC
 							(
 								0.0f, 
 								pitchDiff,
-								min(1.0f, currentT / (a_initialProjectedTimeToTarget))
+								min(1.0f, currentT / timeToFullyHomeIn)
 							)
 						);
 						float yawDiff = Util::NormalizeAngToPi(yawToTarget - lastSetYaw);
@@ -3708,7 +4090,7 @@ namespace ALYSLC
 							(
 								0.0f, 
 								yawDiff,
-								min(1.0f, currentT / (a_initialProjectedTimeToTarget))
+								min(1.0f, currentT / timeToFullyHomeIn)
 							)
 						);
 					}
@@ -3726,10 +4108,7 @@ namespace ALYSLC
 					// to minimize overshooting and jarring course correction.
 					float distSlowdownFactor = std::clamp
 					(
-						powf
-						(
-							start.GetDistance(a_targetPos) / (maxDistPerFrame + 0.01f), 5.0f
-						), 
+						powf(start.GetDistance(a_targetPos) / (maxDistPerFrame + 0.01f), 5.0f), 
 						0.1f,
 						1.0f
 					);
@@ -4860,6 +5239,8 @@ namespace ALYSLC
 		float computedAngDistWeight = FLT_MAX;
 		// Does this actor have the smallest angle/distance weight?
 		bool hasMinAngDistWeight = false;
+		// Is the actor's torso on screen?
+		bool isOnScreen = false;
 		// Is the actor in range and within the targeting angle's FOV window?
 		bool inRangeAndFOV = false;
 		// Another actor is in combat with this player.
@@ -4909,6 +5290,13 @@ namespace ALYSLC
 			if (!inCombatWithPlayer && isActivelyHostile)
 			{
 				inCombatWithPlayer = true;
+			}
+
+			// Skip non-actively-hostile, off-screen actors.
+			isOnScreen = Util::PointIsOnScreen(Util::GetTorsoPosition(actorPtr.get()));
+			if (!isOnScreen && !isActivelyHostile)
+			{
+				continue;
 			}
 
 			// Next, filter out targets based on spell target type, 
@@ -5015,7 +5403,7 @@ namespace ALYSLC
 			{
 				canAddP1 |= !glob.isInCoopCombat;
 			}
-
+			
 			if (canAddP1)
 			{
 				// Perform new closest actor in FOV check on P1.
@@ -5510,6 +5898,8 @@ namespace ALYSLC
 		// and no LOS checks are required.
 		std::multimap<float, RE::ObjectRefHandle> factorMap{ };
 		float angDistFactor = FLT_MAX;
+		// Is the actor's torso on screen?
+		bool isOnScreen = false;
 		// Is the actor in range and within the targeting angle's FOV window?
 		bool inRangeAndFOV = false;
 		if (a_asAimTarget)
@@ -5545,6 +5935,13 @@ namespace ALYSLC
 				(
 					actorPtr.get()
 				);
+				// Skip non-actively-hostile, off-screen actors.
+				isOnScreen = Util::PointIsOnScreen(Util::GetTorsoPosition(actorPtr.get()));
+				if (!isOnScreen && !isActivelyHostile)
+				{
+					continue;
+				}
+
 				// NOTE:
 				// For all 'IsRefrInRangeAndInFOV' calls in this function:
 				// 1. Add in the angle difference between targeting angle and angle to target
@@ -5636,6 +6033,7 @@ namespace ALYSLC
 					&screenTargetingAngle,
 					&worldTargetingAngle,
 					&maxCheckDist,
+					&isOnScreen,
 					&inRangeAndFOV,
 					&angDistFactor,
 					&factorMap
@@ -5662,6 +6060,12 @@ namespace ALYSLC
 						handle.get() == p->GetCurrentMount() ||
 						handle == a_currentTargetHandle ||
 						handle == coopActor->GetHandle()) 
+					{
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+					
+					isOnScreen = Util::PointIsOnScreen(Util::GetRefrPosition(a_refr));
+					if (!isOnScreen)
 					{
 						return RE::BSContainer::ForEachResult::kContinue;
 					}
@@ -5750,6 +6154,7 @@ namespace ALYSLC
 		// but maintain the current selection if LOS checks fail when using the right stick.
 		RE::ObjectRefHandle closestRefrHandle = RE::ObjectRefHandle();
 		bool choseLastOption = false;
+		const float playerPixelHeight = Util::GetBoundMaxOrMinEdgeDist(coopActor.get(), true, true);
 		for (auto iter = factorMap.begin(); iter != factorMap.end(); ++iter)
 		{
 			const auto& [factor, refrHandle] = *iter;
@@ -5781,16 +6186,64 @@ namespace ALYSLC
 				}
 			}
 
+			const float pixelHeight = Util::GetBoundMaxOrMinEdgeDist(refrPtr.get(), true, true);
 			bool hasLOS = Util::HasLOS
 			(
 				refrPtr.get(), coopActor.get(), true, false, crosshairWorldPos
 			);
+			const float refrToPlayerPixelHeightRatio = pixelHeight / playerPixelHeight;
+			const float refrToPlayerHeightRatio = 
+			(
+				refrPtr->GetHeight() == 0.0f ? 
+				1.0f :
+				coopActor->GetHeight() == 0.0f ?
+				1.0f :
+				refrPtr->GetHeight() / coopActor->GetHeight()
+			);
+			// Not beyond one cell diagonal beyond the camera's distance to the origin point,
+			// or larger than a tenth of the player's pixel height.
+			// First check allows for wider consideration as the camera zooms out.
+			// Second check allows for selection of larger NPCs even beyond the above range,
+			// think selecting a far away, and visible, dragon that is flying away from the player.
+			// Third factor still allows for selection of NPCs that are discernible enough, 
+			// pixel-wise, on the screen.
+			const bool inRange = 
+			(
+				fabsf
+				(
+					glob.cam->camTargetPos.GetDistance(glob.cam->camOriginPoint) - 
+					glob.cam->camOriginPoint.GetDistance(Util::GetRefrPosition(refrPtr.get()))
+				) <= 4096.0f * sqrtf(2.0f) ||
+				pixelHeight >= 0.2f * playerPixelHeight ||
+				pixelHeight > DebugAPI::screenResY / 60.0f
+			);
 			DBG
 			(
-				"{}: Considering {} (0x{:X}). Has LOS: {}, factor: {}", 
-				coopActor->GetName(), refrPtr->GetName(), refrPtr->formID, hasLOS, factor
+				"{}: Considering {} (0x{:X}). Has LOS: {}, factor: {}, pixel heights: {}, {} "
+				"({}, screen height: {}, ratio: {}), "
+				"world height ratio (player / refr): {}. Height factor: {}, "
+				"cam dist to origin, target dist to origin: {}, {}, diff: {}, YEE: {}.", 
+				coopActor->GetName(), 
+				refrPtr->GetName(),
+				refrPtr->formID,
+				hasLOS,
+				factor,
+				pixelHeight,
+				playerPixelHeight,
+				refrToPlayerPixelHeightRatio,
+				DebugAPI::screenResY,
+				pixelHeight / DebugAPI::screenResY,
+				refrToPlayerHeightRatio,
+				refrToPlayerHeightRatio >= 0.1f ?
+				refrToPlayerPixelHeightRatio > 0.1f :
+				refrToPlayerPixelHeightRatio > refrToPlayerHeightRatio,
+				glob.cam->camTargetPos.GetDistance(glob.cam->camOriginPoint),
+				glob.cam->camOriginPoint.GetDistance(Util::GetRefrPosition(refrPtr.get())),
+				glob.cam->camTargetPos.GetDistance(glob.cam->camOriginPoint) - 
+				glob.cam->camOriginPoint.GetDistance(Util::GetRefrPosition(refrPtr.get())),
+				inRange
 			);
-			if (hasLOS)
+			if (hasLOS && inRange)
 			{
 				closestRefrHandle = refrHandle;
 				choseLastOption = ++iter == factorMap.end();
@@ -11286,8 +11739,14 @@ namespace ALYSLC
 		// Update crosshair rotation and oscillation interpolation data
 		// to animate the crosshair.
 		
-		// No rotation for now.
-		float endPointAng = 0.0f;
+		float endPointAng = Util::HandleIsValid(crosshairRefrHandle) ? PI / 4.0f : 0.0f;
+		// Interpolation endpoint changed, signal state change.
+		if (crosshairRotationData->next != endPointAng)
+		{
+			crosshairRotationData->SetTimeSinceUpdate(0.0f);
+			crosshairRotationData->ShiftEndpoints(endPointAng);
+		}
+
 		crosshairRotationData->next = endPointAng;
 		if (crosshairRotationData->current != endPointAng)
 		{
@@ -11341,7 +11800,12 @@ namespace ALYSLC
 		// Do not oscillate when moving the crosshair and not near the edge of the screen.
 		if (p->pam->IsPerforming(InputAction::kMoveCrosshair) && !isNearEdgeOfScreen)
 		{
-			endPointGapDelta = 0.0f;
+			endPointGapDelta = 
+			(
+				Settings::vuCrosshairStyle[playerID] == !CrosshairStyle::kRing ? 
+				maxCrosshairGap : 
+				0.0f
+			);
 		}
 		else if (crosshairOscillationData->current == endPointGapDelta)
 		{
@@ -12257,7 +12721,8 @@ namespace ALYSLC
 			if (Util::HandleIsValid(crosshairRefrHandle) && 
 				Util::IsSelectableRefr(crosshairRefrHandle.get().get()))
 			{
-				if (RefrIsInActivationRange(crosshairRefrHandle))
+				if (RefrIsInActivationRange(crosshairRefrHandle) ||
+					GlobalCoopData::IsCoopPlayer(crosshairRefrHandle))
 				{
 					UpdateActivationTarget(true, false, true);
 					DBG
@@ -12921,18 +13386,21 @@ namespace ALYSLC
 				tempInterruptedBind1 = true;
 			}
 
-			/*for (const auto& action : p->pam->occurringPAs)
+			if (!tempInterruptedBind1)
 			{
-				auto occurringActionParams = 
-				(
-					p->pam->paStatesList[!action - !InputAction::kFirstAction].paParams
-				);
-				if ((occurringActionParams.inputMask & inputMask) == inputMask)
+				for (const auto& action : p->pam->occurringPAs)
 				{
-					tempInterruptedBind1 = true;
-					break;
+					auto occurringActionParams = 
+					(
+						p->pam->paStatesList[!action - !InputAction::kFirstAction].paParams
+					);
+					if ((occurringActionParams.inputMask & inputMask) == inputMask)
+					{
+						tempInterruptedBind1 = true;
+						break;
+					}
 				}
-			}*/
+			}
 
 			if (!tempInterruptedBind1 && p->rsMoved)
 			{
@@ -13008,18 +13476,26 @@ namespace ALYSLC
 				tempInterruptedBind2 = true;
 			}
 
-			/*for (const auto& action : p->pam->occurringPAs)
+			if (!tempInterruptedBind2)
 			{
-				auto occurringActionParams = 
-				(
-					p->pam->paStatesList[!action - !InputAction::kFirstAction].paParams
-				);
-				if ((occurringActionParams.inputMask & inputMask) == inputMask)
+				for (const auto& action : p->pam->occurringPAs)
 				{
-					tempInterruptedBind2 = true;
-					break;
+					auto occurringActionParams = 
+					(
+						p->pam->paStatesList[!action - !InputAction::kFirstAction].paParams
+					);
+					if ((occurringActionParams.inputMask & inputMask) == inputMask)
+					{
+						tempInterruptedBind2 = true;
+						break;
+					}
 				}
-			}*/
+			}
+
+			if (!tempInterruptedBind2 && p->rsMoved)
+			{
+				tempInterruptedBind2 = true;
+			}
 		}
 		else if (!inputStateRThumb.justReleased)
 		{
@@ -13052,9 +13528,7 @@ namespace ALYSLC
 							playerID + 1
 						),
 						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kNone
 						},
 						0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -13071,9 +13545,7 @@ namespace ALYSLC
 							playerID + 1
 						),
 						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kNone
 						},
 						0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -13145,7 +13617,8 @@ namespace ALYSLC
 		if (Util::HandleIsValid(activationRefrHandle))
 		{
 			// Clear if now in 'Free Aim' mode, if the refr is too far away from the player.
-			if (!RefrIsInActivationRange(activationRefrHandle))
+			if (!RefrIsInActivationRange(activationRefrHandle) &&
+				!GlobalCoopData::IsCoopPlayer(activationRefrHandle))
 			{
 				DBG
 				(
@@ -13161,9 +13634,18 @@ namespace ALYSLC
 			{
 				// If in range and selectable, set the activation target handle 
 				// to the crosshair refr handle.
-				if (Util::HandleIsValid(crosshairRefrHandle) && 
-					Util::IsSelectableRefr(crosshairRefrHandle.get().get()) &&
-					RefrIsInActivationRange(crosshairRefrHandle))
+				bool canSetAsActivationTarget = 
+				(
+					(
+						Util::HandleIsValid(crosshairRefrHandle) && 
+						Util::IsSelectableRefr(crosshairRefrHandle.get().get())
+					) &&
+					(
+						RefrIsInActivationRange(crosshairRefrHandle) ||
+						GlobalCoopData::IsCoopPlayer(activationRefrHandle)
+					)
+				);
+				if (canSetAsActivationTarget)
 				{
 					UpdateActivationTarget(true, false, false);
 					DBG
@@ -13670,10 +14152,38 @@ namespace ALYSLC
 					// Is another player.
 					if (GlobalCoopData::IsCoopPlayer(activationRefrPtr.get()))
 					{
-						activationMessage = fmt::format
-						(
-							"P{}: Player {}", playerID + 1,activationRefrPtr->GetDisplayFullName()
-						);
+						// Open gift menu to give players to this player after holding the bind
+						// for at least the minimum hold time.
+						if (p->pam->IsPerforming(InputAction::kActivate))
+						{
+							if (p->pam->JustStarted(InputAction::kActivate))
+							{
+								activationMessage = fmt::format
+								(
+									"P{}: Continue holding to give items to {}", 
+									playerID + 1, activationRefrPtr->GetDisplayFullName()
+								);
+							}
+							else
+							{
+								activationMessage = fmt::format
+								(
+									"P{}: Release to give items to {}",
+									playerID + 1, activationRefrPtr->GetDisplayFullName()
+								);
+
+								canActivateRefr = true;
+							}
+						}
+						else
+						{
+							activationMessage = fmt::format
+							(
+								"P{}: Player {}",
+								playerID + 1,
+								activationRefrPtr->GetDisplayFullName()
+							);
+						}
 					}
 					else
 					{
@@ -14274,7 +14784,7 @@ namespace ALYSLC
 		(
 			a_p->tm->aimCorrectionTargetHandle
 		);
-		if (a_p->tm->crosshairActive)
+		if (a_p->mm->faceCrosshairPos)
 		{
 			// For S.M.O.R.F/M.A.R.F-ing, attempt to place the other grabbed players
 			// between the player and the crosshair world position/target torso position
@@ -18190,31 +18700,6 @@ namespace ALYSLC
 			((targetActorPtr) || (a_p->tm->crosshairActive))
 		);
 
-		// REMOVE when done debugging.
-		DBG
-		(
-			"Aim correction: {}, selected: {}, linked ref: {}, crosshair refr: {}, "
-			"traj type: {}, set straight traj: {}, predict: {}, target actor: {}.",
-			Util::HandleIsValid(a_p->tm->aimCorrectionTargetHandle) ?
-			a_p->tm->aimCorrectionTargetHandle.get()->GetName() :
-			"NONE",
-			Util::HandleIsValid(a_p->tm->selectedTargetActorHandle) ?
-			a_p->tm->selectedTargetActorHandle.get()->GetName() :
-			"NONE",
-			Util::HandleIsValid(a_p->tm->aimTargetLinkedRefrHandle) ?
-			a_p->tm->aimTargetLinkedRefrHandle.get()->GetName() :
-			"NONE",
-			Util::HandleIsValid(a_p->tm->crosshairRefrHandle) ?
-			a_p->tm->crosshairRefrHandle.get()->GetName() :
-			"NONE",
-			!trajType,
-			a_setStraightTrajectory,
-			predictInterceptPos,
-			Util::HandleIsValid(targetRefrHandle) ? 
-			targetRefrHandle.get()->GetName() : 
-			"NONE"
-		);
-
 		if (predictInterceptPos) 
 		{
 			// XY and Z offsets from the release position to the trajectory end position.
@@ -18605,6 +19090,32 @@ namespace ALYSLC
 				releasePos.z + z
 			);
 		}
+
+		// REMOVE when done debugging.
+		DBG
+		(
+			"Aim correction: {}, selected: {}, linked ref: {}, crosshair refr: {}, "
+			"traj type: {}, set straight traj: {}, predict: {}, target actor: {}. TTT: {}.",
+			Util::HandleIsValid(a_p->tm->aimCorrectionTargetHandle) ?
+			a_p->tm->aimCorrectionTargetHandle.get()->GetName() :
+			"NONE",
+			Util::HandleIsValid(a_p->tm->selectedTargetActorHandle) ?
+			a_p->tm->selectedTargetActorHandle.get()->GetName() :
+			"NONE",
+			Util::HandleIsValid(a_p->tm->aimTargetLinkedRefrHandle) ?
+			a_p->tm->aimTargetLinkedRefrHandle.get()->GetName() :
+			"NONE",
+			Util::HandleIsValid(a_p->tm->crosshairRefrHandle) ?
+			a_p->tm->crosshairRefrHandle.get()->GetName() :
+			"NONE",
+			!trajType,
+			a_setStraightTrajectory,
+			predictInterceptPos,
+			Util::HandleIsValid(targetRefrHandle) ? 
+			targetRefrHandle.get()->GetName() : 
+			"NONE",
+			initialTrajTimeToTarget
+		);
 	}
 
 	void TargetingManager::ManagedProjectileHandler::Insert

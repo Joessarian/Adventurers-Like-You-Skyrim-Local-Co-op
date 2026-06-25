@@ -1406,19 +1406,6 @@
           }
         },
         {
-          "id": "fSecsAfterGatherToFall:Movement",
-          "text": "$ALYSLC_Movement_SecsAfterGatherToFall",
-          "type": "slider",
-          "help": "$ALYSLC_Movement_SecsAfterGatherToFall_HelpText",
-          "valueOptions": {
-            "sourceType" : "ModSettingFloat",
-            "min": 0.01,
-            "max": 2.0,
-            "step": 0.01,
-            "formatString": "{2}"
-          }
-        },
-        {
           "type": "header"
         }
       ]
@@ -2363,15 +2350,6 @@
           }
         },
         {
-          "id": "bSkyrimStyleCrosshair:Player1",
-          "text": "$ALYSLC_PlayerOptions_SkyrimStyleCrosshair",
-          "type": "toggle",
-          "help": "$ALYSLC_PlayerOptions_SkyrimStyleCrosshair_HelpText",
-          "valueOptions": {
-            "sourceType": "ModSettingBool"
-          }
-        },
-        {
           "id": "bFadeInactiveCrosshair:Player1",
           "text": "$ALYSLC_PlayerOptions_FadeInactiveCrosshair",
           "type": "toggle",
@@ -2423,6 +2401,21 @@
             "max": 10.0,
             "step": 0.5,
             "formatString": "{2}"
+          }
+        },
+        {
+          "id": "uCrosshairStyle:Player1",
+          "text": "$ALYSLC_PlayerOptions_CrosshairStyle",
+          "type": "stepper",
+          "help": "$ALYSLC_PlayerOptions_CrosshairStyle_HelpText",
+          "valueOptions": {
+            "options": [
+              "$ALYSLC_PlayerOptions_CrosshairStyle_Retro",
+              "$ALYSLC_PlayerOptions_CrosshairStyle_Ring",
+              "$ALYSLC_PlayerOptions_CrosshairStyle_SkyrimStyle",
+              "$ALYSLC_PlayerOptions_CrosshairStyle_SkyrimStyleInverted"
+            ],
+            "sourceType": "ModSettingInt"
           }
         },
         {
@@ -3121,15 +3114,6 @@
           }
         },
         {
-          "id": "bSkyrimStyleCrosshair:Player2",
-          "text": "$ALYSLC_PlayerOptions_SkyrimStyleCrosshair",
-          "type": "toggle",
-          "help": "$ALYSLC_PlayerOptions_SkyrimStyleCrosshair_HelpText",
-          "valueOptions": {
-            "sourceType": "ModSettingBool"
-          }
-        },
-        {
           "id": "bFadeInactiveCrosshair:Player2",
           "text": "$ALYSLC_PlayerOptions_FadeInactiveCrosshair",
           "type": "toggle",
@@ -3181,6 +3165,21 @@
             "max": 10.0,
             "step": 0.5,
             "formatString": "{2}"
+          }
+        },
+        {
+          "id": "uCrosshairStyle:Player2",
+          "text": "$ALYSLC_PlayerOptions_CrosshairStyle",
+          "type": "stepper",
+          "help": "$ALYSLC_PlayerOptions_CrosshairStyle_HelpText",
+          "valueOptions": {
+            "options": [
+              "$ALYSLC_PlayerOptions_CrosshairStyle_Retro",
+              "$ALYSLC_PlayerOptions_CrosshairStyle_Ring",
+              "$ALYSLC_PlayerOptions_CrosshairStyle_SkyrimStyle",
+              "$ALYSLC_PlayerOptions_CrosshairStyle_SkyrimStyleInverted"
+            ],
+            "sourceType": "ModSettingInt"
           }
         },
         {
@@ -3879,15 +3878,6 @@
           }
         },
         {
-          "id": "bSkyrimStyleCrosshair:Player3",
-          "text": "$ALYSLC_PlayerOptions_SkyrimStyleCrosshair",
-          "type": "toggle",
-          "help": "$ALYSLC_PlayerOptions_SkyrimStyleCrosshair_HelpText",
-          "valueOptions": {
-            "sourceType": "ModSettingBool"
-          }
-        },
-        {
           "id": "bFadeInactiveCrosshair:Player3",
           "text": "$ALYSLC_PlayerOptions_FadeInactiveCrosshair",
           "type": "toggle",
@@ -3939,6 +3929,21 @@
             "max": 10.0,
             "step": 0.5,
             "formatString": "{2}"
+          }
+        },
+        {
+          "id": "uCrosshairStyle:Player3",
+          "text": "$ALYSLC_PlayerOptions_CrosshairStyle",
+          "type": "stepper",
+          "help": "$ALYSLC_PlayerOptions_CrosshairStyle_HelpText",
+          "valueOptions": {
+            "options": [
+              "$ALYSLC_PlayerOptions_CrosshairStyle_Retro",
+              "$ALYSLC_PlayerOptions_CrosshairStyle_Ring",
+              "$ALYSLC_PlayerOptions_CrosshairStyle_SkyrimStyle",
+              "$ALYSLC_PlayerOptions_CrosshairStyle_SkyrimStyleInverted"
+            ],
+            "sourceType": "ModSettingInt"
           }
         },
         {
@@ -4637,15 +4642,6 @@
           }
         },
         {
-          "id": "bSkyrimStyleCrosshair:Player4",
-          "text": "$ALYSLC_PlayerOptions_SkyrimStyleCrosshair",
-          "type": "toggle",
-          "help": "$ALYSLC_PlayerOptions_SkyrimStyleCrosshair_HelpText",
-          "valueOptions": {
-            "sourceType": "ModSettingBool"
-          }
-        },
-        {
           "id": "bFadeInactiveCrosshair:Player4",
           "text": "$ALYSLC_PlayerOptions_FadeInactiveCrosshair",
           "type": "toggle",
@@ -4697,6 +4693,21 @@
             "max": 10.0,
             "step": 0.5,
             "formatString": "{2}"
+          }
+        },
+        {
+          "id": "uCrosshairStyle:Player4",
+          "text": "$ALYSLC_PlayerOptions_CrosshairStyle",
+          "type": "stepper",
+          "help": "$ALYSLC_PlayerOptions_CrosshairStyle_HelpText",
+          "valueOptions": {
+            "options": [
+              "$ALYSLC_PlayerOptions_CrosshairStyle_Retro",
+              "$ALYSLC_PlayerOptions_CrosshairStyle_Ring",
+              "$ALYSLC_PlayerOptions_CrosshairStyle_SkyrimStyle",
+              "$ALYSLC_PlayerOptions_CrosshairStyle_SkyrimStyleInverted"
+            ],
+            "sourceType": "ModSettingInt"
           }
         },
         {

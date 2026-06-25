@@ -27,7 +27,8 @@ namespace ALYSLC
 		camOriginPoint = 
 		camOriginPointDirection = 
 		camTargetPos = RE::NiPoint3();
-		dialogueCamXYOffset = RE::NiPoint2();
+		camTargetXYOffset = 
+		camXYOffset = RE::NiPoint2();
 		camMaxAnchorPointZCoord = camMinAnchorPointZCoord = 0.0f;
 		camMaxZoomOutDist = Settings::fMaxRaycastAndZoomOutDistance;
 		playerCam = RE::PlayerCamera::GetSingleton();
@@ -92,11 +93,12 @@ namespace ALYSLC
 		lockInteriorOrientationOnInit = false;
 		lockOnTargetInSight = false;
 		movingToDialogueStartPos = false;
+		shoulderOffsetRight = true;
 		waitForToggle = false;
 		// Positional offset floats.
 		avgPlayerHeight = 100.0f;
 		camRadialDistanceOffset = camSavedRadialDistanceOffset = 0.0f;
-		camMinTrailingDistance = 100.0f; 
+		camMinTrailingDistance = Settings::fCamMinTrailingDistance; 
 		camTargetRadialDistance = 
 		camTrueRadialDistance = 400.0f;
 		camBaseHeightOffset = camHeightOffset = 0.0f;
@@ -246,6 +248,18 @@ namespace ALYSLC
 				Settings::bCamInteriorCollisions && !exteriorCell	
 			)
 		);
+
+		// Reset focal player PID if the setting is now disabled 
+		// or if the focal player is downed.
+		bool shouldAutoResetFocalPlayer = 
+		(
+			(focalPlayerPID != -1) && 
+			(!Settings::bFocalPlayerMode || glob.coopPlayers[focalPlayerPID]->isDowned)
+		);
+		if (shouldAutoResetFocalPlayer) 
+		{
+			focalPlayerPID = -1;
+		}
 
 		// On state change, reset TPs, transition to new state.
 		if (camState != prevCamState)
@@ -1268,6 +1282,41 @@ namespace ALYSLC
 					radius = player3DPtr->worldBound.radius * 4.0f;
 				}
 
+				float dirYawDiff = 0.0f;
+				if (targetIsSpeaking || !Settings::bDialogueCamSwitchSpeakers)
+				{
+					dirYawDiff = 
+					(
+						dialogueP->analogStickParams[!AnalogStickParams::kLSCamRelAng] - 
+						Util::GetYawBetweenPositions
+						(
+							dialogueP->coopActor->data.location, speakerPos
+						)
+					);
+				}
+				else
+				{
+					dirYawDiff = 
+					(
+						dialogueP->analogStickParams[!AnalogStickParams::kLSCamRelAng] - 
+						Util::GetYawBetweenPositions
+						(
+							dialogueTargetPtr->data.location, speakerPos
+						)
+					);
+				}
+
+				bool prevOffsetRight = shoulderOffsetRight;
+				shoulderOffsetRight = Util::NormalizeAng0To2Pi(dirYawDiff) <= PI;
+				if (shoulderOffsetRight == prevOffsetRight)
+				{
+					shoulderOffsetMaintainedTP = SteadyClock::now();
+				}
+				else
+				{
+					shoulderOffsetChangedTP = SteadyClock::now();
+				}
+
 				auto playerHeadingDir = Util::RotationToDirectionVect
 				(
 					0.0f, Util::ConvertAngle
@@ -1275,27 +1324,28 @@ namespace ALYSLC
 						dialogueP->analogStickParams[!AnalogStickParams::kLSCamRelAng]
 					)
 				);
-				auto targetMovementOffsetXY =
+				camTargetXYOffset = ToNiPoint2
 				(
 					playerHeadingDir - 
 					(playerHeadingDir.Dot(listenerToSpeakerDir) * listenerToSpeakerDir)
 				);
-				targetMovementOffsetXY *= 
+				camTargetXYOffset *= 
 				(
 					adjustedAfterReachingDialoguePos ? 
 					Settings::fDialogueCamZoomedInMaxHorizontalOffset * 1.5f : 
 					Settings::fDialogueCamZoomedInMaxHorizontalOffset
 				);
-				dialogueCamXYOffset.x = Util::InterpolateSmootherStep
+
+				camXYOffset.x = Util::InterpolateSmootherStep
 				(
-					dialogueCamXYOffset.x, 
-					targetMovementOffsetXY.x,
+					camXYOffset.x, 
+					camTargetXYOffset.x,
 					camInterpFactor
 				);
-				dialogueCamXYOffset.y = Util::InterpolateSmootherStep
+				camXYOffset.y = Util::InterpolateSmootherStep
 				(
-					dialogueCamXYOffset.y, 
-					targetMovementOffsetXY.y,
+					camXYOffset.y, 
+					camTargetXYOffset.y,
 					camInterpFactor
 				);
 
@@ -1306,8 +1356,8 @@ namespace ALYSLC
 						dialogueP->coopActor->data.location +
 						RE::NiPoint3
 						(
-							dialogueCamXYOffset.x,
-							dialogueCamXYOffset.y,
+							camXYOffset.x,
+							camXYOffset.y,
 							dialogueP->coopActor->IsSneaking() ?
 							0.5f * dialogueP->coopActor->GetHeight() :
 							dialogueP->coopActor->GetHeight()
@@ -1321,8 +1371,8 @@ namespace ALYSLC
 						dialogueTargetPtr->data.location +
 						RE::NiPoint3
 						(
-							dialogueCamXYOffset.x,
-							dialogueCamXYOffset.y,
+							camXYOffset.x,
+							camXYOffset.y,
 							asActor && asActor->IsSneaking() ?
 							0.5f * asActor->GetHeight() :
 							asActor ? 
@@ -1432,18 +1482,19 @@ namespace ALYSLC
 					// which is almmost guaranteed to be valid,
 					// since it is offset from the player's position.
 					const auto& focalP = glob.coopPlayers[focalPlayerPID];
-					camRefrFocusPoint = 
-					(
-						focalP->coopActor->data.location +
-						RE::NiPoint3
+					camRefrFocusPoint = focalP->mm->coopActor->data.location;
+					if (!focalP->coopActor->IsOnMount())
+					{
+						camRefrFocusPoint += RE::NiPoint3
 						(
 							0.0f,
 							0.0f,
 							focalP->coopActor->IsSneaking() ?
 							0.5f * focalP->coopActor->GetHeight() :
 							focalP->coopActor->GetHeight()
-						)	
-					);
+						);
+					}
+
 					camBaseTargetPos = 
 					(
 						camRefrFocusPoint + RE::NiPoint3(0.0f, 0.0f, camHeightOffset)
@@ -1451,46 +1502,149 @@ namespace ALYSLC
 					camBaseTargetPos.z -= r * cosf(theta);
 					camBaseTargetPos.x -= r * cosf(phi) * sinf(theta);
 					camBaseTargetPos.y -= r * sinf(phi) * sinf(theta);
+					const bool faceCrosshairPos = 
+					(
+						focalP->tm->crosshairActive && focalP->mm->faceCrosshairPos
+					);
 
+					// OFFSET NEEDS WORK:
+
+					const auto biasAngle = 
+					(
+						faceCrosshairPos ?
+						Util::GetYawBetweenPositions
+						(
+							camTargetPos, 
+							focalP->tm->crosshairWorldPos
+						) :
+						focalP->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+					);
 					const auto camDir = Util::RotationToDirectionVect
 					(
 						0.0f, Util::ConvertAngle(camYaw)
 					);
-					auto playerHeadingDir = Util::RotationToDirectionVect
+					auto biasDir = Util::RotationToDirectionVect
 					(
-						0.0f, Util::ConvertAngle
+						0.0f, Util::ConvertAngle(biasAngle)
+					);
+
+					float dirYawDiff = biasAngle - camYaw;
+					bool shouldOffsetRight = Util::NormalizeAng0To2Pi(dirYawDiff) <= PI;
+					if (shoulderOffsetRight == shouldOffsetRight)
+					{
+						shoulderOffsetMaintainedTP = SteadyClock::now();
+					}
+					else
+					{
+						shoulderOffsetChangedTP = SteadyClock::now();
+					}
+
+					// Must move in the opposite direction compared 
+					// to the current offset direction
+					// for at least the switch cooldown interval.
+					// If not facing the crosshair, must also move at least 22.5 degrees 
+					// offset from moving directly forwards to switch shoulders.
+					// If facing the crosshair, the target must be offset at a smaller angle
+					// (2.5 degrees) from the camera's current yaw.
+					// Done to keep the crosshair target unblocked by the player's backside
+					// as much as possible.
+					const bool intervalElapsed = 
+					(
+						Util::GetElapsedSeconds(shoulderOffsetMaintainedTP) > 0.5f
+					);
+					const bool outsideDeadzone = 
+					(
+						faceCrosshairPos ? 
+						fabsf(Util::NormalizeAngToPi(dirYawDiff)) > PI / 72.0f : 
+						fabsf(Util::NormalizeAngToPi(dirYawDiff)) > PI / 8.0f
+					);
+					// Not set yet.
+					const bool setInitial = !outsideDeadzone && camTargetXYOffset.Length() == 0.0f;
+					const bool moving = focalP->lsMoved;
+					const bool notAiming = !focalP->pam->IsPerforming(InputAction::kMoveCrosshair);
+					if ((setInitial) || (outsideDeadzone && moving && notAiming))
+					{
+						// Offset to the right shoulder if not offset yet.
+						if (setInitial)
+						{
+							shoulderOffsetRight = true;
+							const auto camRight = Util::RotationToDirectionVect
+							(
+								0.0f,
+								Util::ConvertAngle(Util::NormalizeAng0To2Pi(camYaw + PI / 2.0f))
+							);
+							camTargetXYOffset = RE::NiPoint2(camRight.x, camRight.y);
+						}
+						else
+						{
+							shoulderOffsetRight = shouldOffsetRight;
+							camTargetXYOffset = ToNiPoint2
+							(
+								biasDir - 
+								biasDir.Dot(camDir) * camDir, false //true
+							);
+						}
+
+						camTargetXYOffset *= 
 						(
-							focalP->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+							Settings::fFocalCamBaseHorizontalOffset + 
+							focalP->coopActor->DoGetMovementSpeed() / 20.0f
+						);
+					}
+					
+					camXYOffset.x = Util::InterpolateSmootherStep
+					(
+						camXYOffset.x, 
+						camTargetXYOffset.x,
+						std::lerp
+						(
+							camInterpFactor,
+							1.0f,
+							min(1.0f, Util::GetElapsedSeconds(shoulderOffsetChangedTP) / 1.0f)
 						)
 					);
-					auto targetMovementOffsetXY =
+					camXYOffset.y = Util::InterpolateSmootherStep
 					(
-						playerHeadingDir - 
-						(playerHeadingDir.Dot(camDir) * camDir)
-					);
-					targetMovementOffsetXY *= 
-					(
-						Settings::fDialogueCamZoomedInMaxHorizontalOffset +
-						focalP->coopActor->DoGetMovementSpeed() / 10.0f
+						camXYOffset.y, 
+						camTargetXYOffset.y,
+						std::lerp
+						(
+							camInterpFactor,
+							1.0f,
+							min(1.0f, Util::GetElapsedSeconds(shoulderOffsetChangedTP) / 1.0f)
+						)
 					);
 
-					focalPlayerCamXYOffset.x = Util::InterpolateSmootherStep
+					/*DBG
 					(
-						focalPlayerCamXYOffset.x, 
-						targetMovementOffsetXY.x,
-						camInterpFactor
-					);
-					focalPlayerCamXYOffset.y = Util::InterpolateSmootherStep
-					(
-						focalPlayerCamXYOffset.y, 
-						targetMovementOffsetXY.y,
-						camInterpFactor
-					);
-					camBaseTargetPos.x += focalPlayerCamXYOffset.x;
-					camBaseTargetPos.y += focalPlayerCamXYOffset.y;
+						"Current offset: ({}, {}: {}), Target: ({}, {}: {}). {}. {}. {}. {}. "
+						"Diff: {} from {} - {}",
+						camXYOffset.x,
+						camXYOffset.y,
+						camXYOffset.Length(),
+						camTargetXYOffset.x,
+						camTargetXYOffset.y,
+						camTargetXYOffset.Length(),
+						outsideDeadzone ? "OUTSIDE DEADZONE" : "INSIDE DEADZONE", 
+						shouldOffsetRight ? "SHOULD RIGHT" : "SHOULD LEFT",
+						shoulderOffsetRight ? "CURRENT RIGHT" : "CURRENT LEFT",
+						setInitial ? "INIT" : "SET ALREADY",
+						Util::NormalizeAng0To2Pi(dirYawDiff),
+						biasAngle,
+						camYaw
+					);*/
+
+					camBaseTargetPos.x += camXYOffset.x;
+					camBaseTargetPos.y += camXYOffset.y;
+					camBaseTargetPos.z += Settings::fFocalCamBaseVerticalOffset;
 				}
 			}
-
+			
+			// Focus point from which the target position is based.
+			const RE::NiPoint3& focusPoint = 
+			(
+				focalPlayerPID == -1 ? camFocusPoint : camRefrFocusPoint
+			);
 			if (camCollisions && !movingToDialogueStartPos)
 			{
 				// [(Questionable?) Methods to the Madness Below]:
@@ -1526,18 +1680,6 @@ namespace ALYSLC
 					isColliding = true;
 				}
 			
-				// Reset focal player PID if the setting is now disabled 
-				// or if the focal player is downed.
-				bool shouldAutoResetFocalPlayer = 
-				(
-					(focalPlayerPID != -1) && 
-					(!Settings::bFocalPlayerMode || glob.coopPlayers[focalPlayerPID]->isDowned)
-				);
-				if (shouldAutoResetFocalPlayer) 
-				{
-					focalPlayerPID = -1;
-				}
-
 				//=================================================================================
 				// [Camera Collision Positions]:
 				//=================================================================================
@@ -1592,7 +1734,7 @@ namespace ALYSLC
 				glm::vec4 closestHitPos = lastSetTargetPos;
 				// Offset from the camera collision focus point,
 				// which should be within the traversable part of the world.
-				glm::vec4 castStartPos = ToVec4(camFocusPoint);
+				glm::vec4 castStartPos = ToVec4(focusPoint);
 				// Raycast result.
 				// Raycast hit position adjusted to avoid hit geometry.
 				glm::vec4 adjHitResultPos{ };
@@ -1620,6 +1762,17 @@ namespace ALYSLC
 				if (baseTargetPosVisible)
 				{
 					closestHitPos = baseTargetPos;
+				}
+				else if (focalPlayerPID != -1)
+				{
+					// Set directly to offset hit position if there is a focal player.
+					// Not necessary to raycast for visibility from the other active players.
+					closestHitPos = 
+					(
+						result.hitPos +
+						(result.rayNormal + endToStartDir) *
+						camTargetPosHullSize
+					);
 				}
 				else
 				{
@@ -1858,7 +2011,7 @@ namespace ALYSLC
 			}
 
 			// Save the final target position's radial distance for zoom calculations later.
-			camTrueRadialDistance = camTargetPos.GetDistance(camFocusPoint);
+			camTrueRadialDistance = camTargetPos.GetDistance(focusPoint);
 		}
 	}
 
@@ -2099,8 +2252,6 @@ namespace ALYSLC
 			if (validLockOnTarget)
 			{
 				// Draw lock-on indicator above the target's head.
-				auto fixedStrings = RE::FixedStrings::GetSingleton();
-				auto niCamPtr = Util::GetNiCamera();
 				RE::NiPoint3 lockOnIndicatorCenter
 				{
 					asActor ? 
@@ -2144,6 +2295,11 @@ namespace ALYSLC
 	void CameraManager::DrawLockOnIndicator(const float& a_centerX, const float& a_centerY)
 	{
 		// Draw the lock-on marker on the camera's lock-on target.
+
+		if (focalPlayerPID != -1)
+		{
+			return;
+		}
 
 		auto camTargetPtr = Util::GetRefrPtrFromHandle
 		(
@@ -2656,6 +2812,13 @@ namespace ALYSLC
 		bool normalKnockState = true;
 		// Only consider players that are not using furniture.
 		bool notUsingFurniture = true;
+		// Should turn the camera towards the focal player's crosshair target.
+		bool turnTowardsTarget = 
+		(
+			focalPlayerPID != -1 && 
+			Util::HandleIsValid(glob.coopPlayers[focalPlayerPID]->tm->selectedTargetActorHandle) &&
+			!glob.coopPlayers[focalPlayerPID]->tm->selectedTargetActorHandle.get()->IsDead()
+		);
 		// Number of players considered when determining the movement auto-rotate angle.
 		// Will divide into the total movement pitch accumulated.
 		uint32_t consideredPlayersCount = 0;
@@ -2690,18 +2853,24 @@ namespace ALYSLC
 				!Util::HandleIsValid(p->coopActor->GetOccupiedFurniture())
 			);
 			// Only add auto-rotate angle for this player if they have a char controller
-			// and are mounted or not using furniture and they are moving and not attacking.
+			// and are mounted or not using furniture and they are moving,
+			// not moving their crosshair, and are not the focal player 
+			// or the focal player is not facing the crosshair.
 			bool addToTotal =
 			(
 				(charController) &&
 				(normalKnockState) &&
 				(isMounted || notUsingFurniture) && 
 				(!p->coopActor->IsAnimationDriven()) &&
+				(!p->pam->IsPerforming(InputAction::kMoveCrosshair)) &&
 				(
-					movementActor->actorState1.movingBack ||
-					movementActor->actorState1.movingForward ||
-					movementActor->actorState1.movingLeft ||
-					movementActor->actorState1.movingRight
+					(p->playerID == focalPlayerPID && turnTowardsTarget) ||
+					(
+						movementActor->actorState1.movingBack ||
+						movementActor->actorState1.movingForward ||
+						movementActor->actorState1.movingLeft ||
+						movementActor->actorState1.movingRight
+					)
 				)
 			);
 			if (!addToTotal)
@@ -2712,82 +2881,94 @@ namespace ALYSLC
 			const auto& lsData = glob.cdh->GetAnalogStickState(p->deviceID, true);
 			if (a_computePitch)
 			{
-				auto velocity = Util::GetActorLinearVelocity(movementActor.get());
-				auto& currentState = charController->context.currentState;
-				// Velocity-based incline angle when in the air/flying/jumping.
-				if (currentState == RE::hkpCharacterStateType::kFlying ||
-					currentState == RE::hkpCharacterStateType::kInAir ||
-					currentState == RE::hkpCharacterStateType::kJumping)
+				if (turnTowardsTarget)
 				{
-					auto speed = velocity.Length();
-					auto velPitch = speed > 0.0f ? asinf(velocity.z / speed) : 0.0f;
-					// Divide by 2 to prevent too large of a swing in pitch.
-					autoRotateAngle = velPitch / 2.0f;
+					const auto& focalP = glob.coopPlayers[focalPlayerPID];
+					autoRotateAngle = Util::GetPitchBetweenPositions
+					(
+						Util::GetActorFocusPoint(focalP->coopActor.get()),
+						Util::GetActorFocusPoint(focalP->tm->selectedTargetActorHandle.get().get())
+					);
 				}
 				else
 				{
-					// Surface support-based incline angle 
-					// when on the ground/climbing/swimming.
-					auto normalZComp = 
-					(
-						charController->surfaceInfo.surfaceNormal.quad.m128_f32[2]
-					);
-					auto supportSurfaceIncline = fabsf(asinf(normalZComp) - PI / 2.0f);
-
-					// Supporting surface's normal must be pointing up.
-					// Flat or down indicates that the player is walking on a surface 
-					// that is parallel to their upright direction or above them, 
-					// and that's not possible, I think.
-					// Report an incline of 0 in that case.
-					if (charController->surfaceInfo.surfaceNormal.quad.m128_f32[2] > 0.0f) 
+					auto velocity = Util::GetActorLinearVelocity(movementActor.get());
+					auto& currentState = charController->context.currentState;
+					// Velocity-based incline angle when in the air/flying/jumping.
+					if (currentState == RE::hkpCharacterStateType::kFlying ||
+						currentState == RE::hkpCharacterStateType::kInAir ||
+						currentState == RE::hkpCharacterStateType::kJumping)
 					{
-						RE::NiPoint3 normal = ToNiPoint3
-						(
-							charController->surfaceInfo.surfaceNormal, true
-						);
-						RE::NiPoint3 camRight = Util::RotationToDirectionVect
-						(
-							0.0f, 
-							Util::ConvertAngle(Util::NormalizeAng0To2Pi(camYaw + PI / 2.0f))
-						);
-						RE::NiPoint3 camForwardXY = Util::RotationToDirectionVect
-						(
-							0.0f, Util::ConvertAngle(Util::NormalizeAng0To2Pi(camYaw))
-						);
-						float angNormalToForwardXY = acosf
-						(
-							std::clamp(normal.Dot(camForwardXY), -1.0f, 1.0f)
-						);
-						if (isnan(angNormalToForwardXY) || isinf(angNormalToForwardXY))
-						{
-							angNormalToForwardXY = PI / 2.0f;
-						}
-
-						supportSurfaceIncline = fabsf(angNormalToForwardXY - PI / 2.0f);
+						auto speed = velocity.Length();
+						auto velPitch = speed > 0.0f ? asinf(velocity.z / speed) : 0.0f;
+						// Divide by 2 to prevent too large of a swing in pitch.
+						autoRotateAngle = velPitch / 2.0f;
 					}
 					else
 					{
-						supportSurfaceIncline = 0.0f;
-					}
-							
-					// Moving uphill means the pitch must decrease to angle the camera
-					// upward towards the players.
-					if (velocity.z > 0.0f)
-					{
-						supportSurfaceIncline = -supportSurfaceIncline;
-					}
-					else if (velocity.z == 0.0f)
-					{
-						// If the player's z velocity is 0, set the incline to 0.
-						supportSurfaceIncline = 0.0f;
-					}
+						// Surface support-based incline angle 
+						// when on the ground/climbing/swimming.
+						auto normalZComp = 
+						(
+							charController->surfaceInfo.surfaceNormal.quad.m128_f32[2]
+						);
+						auto supportSurfaceIncline = fabsf(asinf(normalZComp) - PI / 2.0f);
 
-					autoRotateAngle = supportSurfaceIncline;
+						// Supporting surface's normal must be pointing up.
+						// Flat or down indicates that the player is walking on a surface 
+						// that is parallel to their upright direction or above them, 
+						// and that's not possible, I think.
+						// Report an incline of 0 in that case.
+						if (charController->surfaceInfo.surfaceNormal.quad.m128_f32[2] > 0.0f) 
+						{
+							RE::NiPoint3 normal = ToNiPoint3
+							(
+								charController->surfaceInfo.surfaceNormal, true
+							);
+							RE::NiPoint3 camRight = Util::RotationToDirectionVect
+							(
+								0.0f, 
+								Util::ConvertAngle(Util::NormalizeAng0To2Pi(camYaw + PI / 2.0f))
+							);
+							RE::NiPoint3 camForwardXY = Util::RotationToDirectionVect
+							(
+								0.0f, Util::ConvertAngle(Util::NormalizeAng0To2Pi(camYaw))
+							);
+							float angNormalToForwardXY = acosf
+							(
+								std::clamp(normal.Dot(camForwardXY), -1.0f, 1.0f)
+							);
+							if (isnan(angNormalToForwardXY) || isinf(angNormalToForwardXY))
+							{
+								angNormalToForwardXY = PI / 2.0f;
+							}
+
+							supportSurfaceIncline = fabsf(angNormalToForwardXY - PI / 2.0f);
+						}
+						else
+						{
+							supportSurfaceIncline = 0.0f;
+						}
+							
+						// Moving uphill means the pitch must decrease to angle the camera
+						// upward towards the players.
+						if (velocity.z > 0.0f)
+						{
+							supportSurfaceIncline = -supportSurfaceIncline;
+						}
+						else if (velocity.z == 0.0f)
+						{
+							// If the player's z velocity is 0, set the incline to 0.
+							supportSurfaceIncline = 0.0f;
+						}
+
+						autoRotateAngle = supportSurfaceIncline;
+					}
 				}
 			}
 			else
 			{
-				if (p->playerID == focalPlayerPID)
+				if (turnTowardsTarget)
 				{
 					autoRotateAngle = Util::NormalizeAngToPi
 					(
@@ -2814,24 +2995,32 @@ namespace ALYSLC
 				);
 				// Dependent on how committed the player is to moving 
 				// in their heading direction.
-				autoRotateAngle *= lsData.normMag;
+				autoRotateAngle *= (p->playerID == focalPlayerPID ? 1.0f : lsData.normMag);
 			}
 
-			// Should've been updated earlier, so we'll just grab the value now.
-			// Slow down rotation by an additional factor 
-			// based on how long it has been since this player started moving.
-			autoRotateAngleMult *= Util::InterpolateSmootherStep
-			(
-				0.0f,
-				movementAngleMultInterpData->value, 
-				std::clamp
+			// Set the average auto rotate pitch directly when facing the focal crosshair target.
+			if (a_computePitch && turnTowardsTarget)
+			{
+				avgAutoRotateAngle += autoRotateAngle;
+			}
+			else
+			{
+				// Should've been updated earlier, so we'll just grab the value now.
+				// Slow down rotation by an additional factor 
+				// based on how long it has been since this player started moving.
+				autoRotateAngleMult *= Util::InterpolateSmootherStep
 				(
-					Util::GetElapsedSeconds(p->lastMovementStartReqTP) / 1.5f, 
-					0.0f, 
-					1.0f
-				)
-			);
-			avgAutoRotateAngle += autoRotateAngle * autoRotateAngleMult;
+					0.0f,
+					movementAngleMultInterpData->value, 
+					std::clamp
+					(
+						Util::GetElapsedSeconds(p->lastMovementStartReqTP) / 1.5f, 
+						0.0f, 
+						1.0f
+					)
+				);
+				avgAutoRotateAngle += autoRotateAngle * autoRotateAngleMult;
+			}
 		}
 
 		// Four elevation change scenarios relative to the camera:
@@ -2840,7 +3029,7 @@ namespace ALYSLC
 		// 3. Up a slope towards the camera: pitch cam downward.
 		// 4. Down a slope towards the camera: pitch cam upward.
 		avgAutoRotateAngle /= max(1, consideredPlayersCount);
-		if (a_computePitch)
+		if (a_computePitch && !turnTowardsTarget)
 		{
 			float signAdjustment = 1.0f;
 			// Use camera origin position's path direction as the camera movement direction. 
@@ -3312,12 +3501,12 @@ namespace ALYSLC
 			playerCam->cameraRoot->world.translate : 
 			p1LookingAt
 		);
-		dialogueCamXYOffset =
-		focalPlayerCamXYOffset = RE::NiPoint2();
+		camTargetXYOffset =
+		camXYOffset = RE::NiPoint2();
 		
 		// Set radial distance equal to the node's distance from the origin point.
 		camRadialDistanceOffset = camSavedRadialDistanceOffset = 0.0f;
-		camMinTrailingDistance = 100.0f;
+		camMinTrailingDistance = Settings::fCamMinTrailingDistance;
 		camTargetRadialDistance = 
 		camTrueRadialDistance = camBaseTargetPos.GetDistance(camFocusPoint);
 		// Reset base height, zoom, and other offsets.
@@ -4254,7 +4443,8 @@ namespace ALYSLC
 		}
 
 		// Can still manually rotate the camera if there is no lock-on target
-		// or if the lock-on assistance is set to zoom only.
+		// or if the lock-on assistance is set to zoom only, or if there is a focal player.
+		bool isManuallyRotating = camAdjMode == CamAdjustmentMode::kRotate && rsMag != 0.0f;
 		auto camLockOnTargetPtr = Util::GetRefrPtrFromHandle(camLockOnTargetHandle);
 		if (isAutoTrailing || 
 			isManuallyPositioned || 
@@ -4262,7 +4452,7 @@ namespace ALYSLC
 			Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kZoom)
 		{
 			camMaxPitchAngMag = isAutoTrailing ? autoTrailPitchMax : PI / 2.0f;
-			if (camAdjMode == CamAdjustmentMode::kRotate && rsMag != 0.0f)
+			if (isManuallyRotating)
 			{
 				// Moving the RS left or right causes counterclockwise or
 				// clockwise rotation of the camera.
@@ -4300,59 +4490,87 @@ namespace ALYSLC
 		if (autoRotate)
 		{
 			UpdateAutoRotateAngleMult();
-			if (Settings::bAutoRotateCamPitch && !isColliding)
+			if (Settings::bAutoRotateCamPitch) //&& !isColliding)
 			{
 				movementPitchInterpData->IncrementTimeSinceUpdate(*g_deltaTimeRealTime);
-				if (movementPitchInterpData->secsSinceUpdate >= 
-					movementPitchInterpData->secsUpdateInterval)
-				{
-					// Sometimes becomes NAN, and must be reset. Temp solution.
-					movementPitchRunningTotal = 
-					(
-						isnan(movementPitchRunningTotal) ?
-						0.0f : 
-						movementPitchRunningTotal
-					);
-					auto movementPitch = 
-					(
-						numMovementPitchReadings != 0.0f ? 
-						movementPitchRunningTotal /
-						static_cast<float>(numMovementPitchReadings) : 
-						0.0f
-					);
-					SetMovementPitchRunningTotal(true);
-					float sign = movementPitch < 0.0f ? -1.0f : 1.0f;
-					// It (maybe) just works. 
-					// Used Desmos (https://www.desmos.com/calculator)
-					// to create a curve that smooths out the changes in camera pitch relative
-					// to average support surface/vertical velocity pitch.
-					movementPitch = 
-					(
-						(Settings::fAutoRotateCamPitchRateMult) *
-						(1.5f * tanf(0.4f * movementPitch - 0.1f) * cosf(movementPitch) + 0.15f)
-					);
-					// Pitch increments/decrements are smaller when approaching PI/2 
-					// in the direction of the average movement pitch. 
-					// Done to prevent over-adjustment when already at a steep pitch.
-					float proportionOfMaxPitch = 
-					(
-						(sign == 1.0f) ? 
-						1.0f - camBaseTargetPosPitch / (PI / 2.0f) : 
-						camBaseTargetPosPitch / (PI / 2.0f) + 1.0f
-					);
-					movementPitch *= proportionOfMaxPitch;
-					movementPitchInterpData->ShiftEndpoints(movementPitch);
-					movementPitchInterpData->SetTimeSinceUpdate(*g_deltaTimeRealTime);
-				}
-
-				SetMovementPitchRunningTotal(false);
-				float tRatio = min
+				// Will pitch towards the focal player's crosshair target NPC.
+				const auto& focalP = glob.coopPlayers[focalPlayerPID];
+				const bool pitchTowardsTarget =
 				(
-					movementPitchInterpData->secsSinceUpdate / 
-					movementPitchInterpData->secsUpdateInterval, 
-					1.0f
+					focalPlayerPID != -1 && 
+					Util::HandleIsValid(focalP->tm->selectedTargetActorHandle) &&
+					!focalP->tm->selectedTargetActorHandle.get()->IsDead() &&
+					!focalP->pam->IsPerforming(InputAction::kMoveCrosshair)
 				);
-				movementPitchInterpData->InterpolateSmootherStep(tRatio);
+				if (pitchTowardsTarget)
+				{
+					movementPitchInterpData->SetTimeSinceUpdate(0.0f);
+					numMovementPitchReadings = 0;
+					movementPitchRunningTotal = 0.0f;
+					const auto prev = movementPitchInterpData->current;
+					movementPitchInterpData->prev =
+					movementPitchInterpData->next =
+					movementPitchInterpData->current = Util::InterpolateSmootherStep
+					(
+						prev,
+						GetAutoRotateAngle(true),
+						camInterpFactor
+					);
+				}
+				else
+				{
+					if (movementPitchInterpData->secsSinceUpdate >= 
+						movementPitchInterpData->secsUpdateInterval)
+					{
+						// Sometimes becomes NAN, and must be reset. Temp solution.
+						movementPitchRunningTotal = 
+						(
+							isnan(movementPitchRunningTotal) ?
+							0.0f : 
+							movementPitchRunningTotal
+						);
+						auto movementPitch = 
+						(
+							numMovementPitchReadings != 0.0f ? 
+							movementPitchRunningTotal /
+							static_cast<float>(numMovementPitchReadings) : 
+							0.0f
+						);
+						SetMovementPitchRunningTotal(true);
+
+						float sign = movementPitch < 0.0f ? -1.0f : 1.0f;
+						// It (maybe) just works. 
+						// Used Desmos (https://www.desmos.com/calculator)
+						// to create a curve that smooths out the changes in camera pitch relative
+						// to average support surface/vertical velocity pitch.
+						movementPitch = 
+						(
+							(Settings::fAutoRotateCamPitchRateMult) *
+							(1.5f * tanf(0.4f * movementPitch - 0.1f) * cosf(movementPitch) + 0.15f)
+						);
+						// Pitch increments/decrements are smaller when approaching PI/2 
+						// in the direction of the average movement pitch. 
+						// Done to prevent over-adjustment when already at a steep pitch.
+						float proportionOfMaxPitch = 
+						(
+							(sign == 1.0f) ? 
+							1.0f - camBaseTargetPosPitch / (PI / 2.0f) : 
+							camBaseTargetPosPitch / (PI / 2.0f) + 1.0f
+						);
+						movementPitch *= proportionOfMaxPitch;
+						movementPitchInterpData->ShiftEndpoints(movementPitch);
+						movementPitchInterpData->SetTimeSinceUpdate(*g_deltaTimeRealTime);
+					}
+
+					SetMovementPitchRunningTotal(false);
+					float tRatio = min
+					(
+						movementPitchInterpData->secsSinceUpdate / 
+						movementPitchInterpData->secsUpdateInterval, 
+						1.0f
+					);
+					movementPitchInterpData->InterpolateSmootherStep(tRatio);
+				}
 			}
 
 			if (Settings::bAutoRotateCamYaw)
@@ -4931,11 +5149,11 @@ namespace ALYSLC
 		// Set the minimum trailing distance first.
 		if (focalPlayerPID == -1)
 		{
-			camMinTrailingDistance = 100.0f;
+			camMinTrailingDistance = Settings::fCamMinTrailingDistance;
 		}
 		else
 		{
-			camMinTrailingDistance = 200.0f;
+			camMinTrailingDistance = Settings::fFocalMinRadialDistance;
 		}
 
 		// No zoom when in manual positioning mode.
@@ -5019,8 +5237,21 @@ namespace ALYSLC
 						);
 					}
 
-					if ((camTrueRadialDistance < camTargetRadialDistance && stickY > 0.0f) ||
-						(camTrueRadialDistance > camTargetRadialDistance && stickY < 0.0f))
+					// Can zoom in/out if the camera is moving away from the surface 
+					// it is colliding with.
+					const float epsilon = 1E-3f;
+					const bool canZoom = 
+					(
+						(
+							stickY > 0.0f &&
+							camTrueRadialDistance <= camTargetRadialDistance + epsilon
+						) ||
+						(
+							stickY < 0.0f &&
+							camTrueRadialDistance >= camTargetRadialDistance - epsilon
+						)
+					);
+					if (canZoom)
 					{
 						// Do not exceed the max camera movement speed when zooming in/out.
 						camRadialDistanceOffset = max
@@ -5087,7 +5318,7 @@ namespace ALYSLC
 		(
 			(focalPlayerPID == -1) && (!inDialogueCamState || !Settings::bDialogueCamEnabled)
 		);
-		auto focusPoint = usePartyFocusPoint ? camFocusPoint :  camRefrFocusPoint;
+		auto focusPoint = usePartyFocusPoint ? camFocusPoint : camRefrFocusPoint;
 		auto dirFromFocus = camBaseTargetPos - focusPoint;
 		dirFromFocus.Unitize();
 		// Position from which to test for visibility of all players.
@@ -5397,6 +5628,39 @@ namespace ALYSLC
 			}
 		}
 		
+		/*DBG
+		(
+			"Target: {} from ({}, {}, {}) and prev {}. True: {}. Is colliding: {}. "
+			"Outside: {}, dalayed: {}, {}, offset: {}, max zoom out dist: {}, can adjust: {}. "
+			"Just started: {}, can zoom in: {}, can zoom out: {}, diff: {}, trying to zoom {}.",
+			camTargetRadialDistance, 
+			radialDistanceRangeMin,
+			radialDistanceRangeMid,
+			radialDistanceRangeMax,
+			prevRadialDistance,
+			camTrueRadialDistance,
+			isColliding,
+			outside,
+			delayedZoomInUnderExteriorRoof,
+			delayedZoomOutUnderExteriorRoof,
+			camRadialDistanceOffset,
+			camMaxZoomOutDist,
+			canAdjustZoom,
+			controlCamPID != -1 ? 
+			glob.coopPlayers[controlCamPID]->pam->JustStarted(InputAction::kZoomCam) : 
+			false,
+			(
+				stickY > 0.0f &&
+				camTrueRadialDistance >= camTargetRadialDistance
+			),
+			(
+				stickY < 0.0f &&
+				camTrueRadialDistance <= camTargetRadialDistance
+			),
+			camTrueRadialDistance - camTargetRadialDistance,
+			stickY >= 0.0f ? "IN" : "OUT"
+		);*/
+
 		// Interp from previous.
 		camTargetRadialDistance = Util::InterpolateSmootherStep
 		(

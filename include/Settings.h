@@ -332,10 +332,6 @@ namespace ALYSLC
 		static inline float fRangedAttackRotMult = 0.5f;
 		// Mounted rotation multiplier.
 		static inline float fRidingRotMult = 0.3f;
-		// Seconds before reverting gravity and playing fall
-		// animation for a jumping player. Directly influences jump height.
-		// Increase to jump higher.
-		static inline float fSecsAfterGatherToFall = 0.07f;
 		// Sneak rotation multiplier.
 		static inline float fSneakRotMult = 1.0f;
 		// Speedmult actor value multiplier when sprinting.
@@ -802,12 +798,6 @@ namespace ALYSLC
 		{
 			true, true, true, true
 		};
-		// [True]: Use Skyrim-style crosshair.
-		// [False]: Use generic four-prongs style.
-		static inline std::vector<bool> vbSkyrimStyleCrosshair = 
-		{
-			true, true, true, true 
-		};
 		// Draw aim pitch indicator when adjusting the player's torso rotation.
 		static inline std::vector<bool> vbEnableAimPitchIndicator = 
 		{
@@ -863,6 +853,17 @@ namespace ALYSLC
 		static inline std::vector<float> vfPredictedProjectileTrajectoryCurveThickness = 
 		{
 			2.0f, 2.0f, 2.0f, 2.0f
+		};
+		// 0: Retro (four bars for prongs)
+		// 1: Ring (circle with four arrows pointing outward)
+		// 2: Skyrim Style (same as vanilla crosshair in style)
+		// 3: Skyrim Style Inverted (prongs are flipped to point inward instead of outward)
+		static inline std::vector<uint32_t> vuCrosshairStyle = 
+		{
+			!CrosshairStyle::kRing, 
+			!CrosshairStyle::kRing,
+			!CrosshairStyle::kRing,
+			!CrosshairStyle::kRing 
 		};
 		// Crosshair body is the same color as the overlay.
 		// Blue, Green, Yellow, and Magenta by default.
@@ -937,6 +938,18 @@ namespace ALYSLC
 		// May also be compensating for some sub-par positioning code. Heh.
 		static inline const float fCamInterpFactor = 0.2f;
 		static inline const float fCamManualPosInterpFactor = 0.5f;
+		// Minimum distance the co-op camera will reach relative to the focus point.
+		static inline const float fCamMinTrailingDistance = 100.0f;
+		// Base horizontal offset is how far left/right relative to the focal player's head position
+		// that the camera will position itself before other factors are also applied.
+		static inline const float fFocalCamBaseHorizontalOffset = 25.0f;
+		// Base vertical offset is how far up/down relative to the focal player's head position
+		// that the camera will position itself before adding on any player-made height adjustments.
+		static inline const float fFocalCamBaseVerticalOffset = 0.0f;
+		// Radial offset is radially away from the focal player. 
+		// Acts as the minimum zoom distance the camera will reach from the player's focal point,
+		// which is the player's head position offset by the horizontal and vertical offsets above.
+		static inline const float fFocalMinRadialDistance = 200.0f;
 		// Max raycast distance for calculating the camera target position.
 		// Also max calculated auto-zoom delta at which to bail out of the loop 
 		// when attempting to keep all players in frame.
@@ -1027,6 +1040,10 @@ namespace ALYSLC
 		// Setting this value above 8 leads to choppier rotation,
 		// especially when facing a target.
 		static inline const float fBaseMTRotationMult = 8.0f;
+		// Seconds before reverting gravity and playing fall
+		// animation for a jumping player. 
+		// Used when determining the jump height bonus while the player holds the jump bind.
+		static inline const float fSecsAfterGatherToFall = 0.07f;
 		
 		//---------------------------------
 		//[New Systems and Player Actions]:

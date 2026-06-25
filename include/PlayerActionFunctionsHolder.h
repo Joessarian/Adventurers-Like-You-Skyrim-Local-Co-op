@@ -155,6 +155,7 @@ namespace ALYSLC
 		bool PowerAttackDual(const std::shared_ptr<CoopPlayer>& a_p);
 		bool PowerAttackLH(const std::shared_ptr<CoopPlayer>& a_p);
 		bool PowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p);
+		bool ResetAim(const std::shared_ptr<CoopPlayer>& a_p);
 		bool RotateCam(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Sheathe(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Sneak(const std::shared_ptr<CoopPlayer>& a_p);

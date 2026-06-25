@@ -2271,18 +2271,6 @@ namespace ALYSLC
 				pam->lastAnimEventID + 1
 			);
 
-			// Improves recovery speed for transition from dodge end to movement start.
-			if (Hash(a_event->tag) == "TKDodgeStop"_h || Hash(a_event->tag) == "TKDR_DodgeEnd"_h)
-			{
-				p->mm->SetDontMove(true);
-				p->coopActor->NotifyAnimationGraph("moveStop");
-				if (p->lsMoved)
-				{
-					p->mm->SetDontMove(false);
-					p->coopActor->NotifyAnimationGraph("moveStart");
-				}
-			}
-			
 			DBG("{}: {}", p->coopActor->GetName(), a_event->tag);
 			p->lastAnimEventTag = a_event->tag;
 
@@ -4278,6 +4266,21 @@ namespace ALYSLC
 					(
 						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f
 					);
+
+					// Update curtail momentum flag, getup TP, and flag.
+					p->mm->UpdateCurtailMomentumState();
+
+					// Once fully stopped, can toggle off curtail momentum flag 
+					// which cannot be unset by the movement manager if it is paused.
+					/*if (p->mm->shouldCurtailMomentum && 
+						!p->IsRunning() && 
+						p->coopActor->DoGetMovementSpeed() == 0.0f)
+					{
+						DBG("{}: Stop curtailing momentum.", p->coopActor->GetName());		
+						p->mm->ClearKeepOffsetFromActor();
+						p->mm->SetForceDontMove(false);				
+						p->mm->shouldCurtailMomentum = false;
+					}*/
 
 					// NOTE:
 					// Another annoying issue to work around:
@@ -7798,18 +7801,20 @@ namespace ALYSLC
 
 			// To hotkey an entry,
 			// P1 must be clicking in the RS and it must be displaced from center.
-			bool isRThumbPressedAndRSMoved = 
+			const auto& rsData = glob.cdh->GetAnalogStickState
+			(
+				glob.coopPlayers[0]->deviceID, false
+			);
+			bool isLThumbPressedAndRSMoved = 
 			{
-				buttonEvent->idCode == GAME_INPUT_CODE_RIGHT_THUMB &&
-				glob.cdh->GetAnalogStickState
-				(
-					glob.coopPlayers[0]->deviceID, false
-				).normMag > 0.0f
+				buttonEvent->idCode == GAME_INPUT_CODE_LEFT_THUMB &&
+				rsData.normMag >= 0.0f && 
+				rsData.prevNormMag != 0.0f
 			};
-			if (isRThumbPressedAndRSMoved)
+			if (isLThumbPressedAndRSMoved)
 			{
 				// Set on release, preview on hold.
-				glob.mim->HotkeyFavoritedForm(buttonEvent->value == 0.0f);
+				glob.mim->HotkeyFavoritedForm(buttonEvent->value == 0.0f || rsData.normMag == 0.0f);
 				blockInput = true;
 			}
 			
@@ -8115,7 +8120,7 @@ namespace ALYSLC
 				if (buttonEvent->value == 0.0f || buttonEvent->heldDownSecs == 0.0f)
 				{
 					coopP1->mm->ClearKeepOffsetFromActor();
-					coopP1->mm->SetForceDontMove(true);
+					coopP1->mm->SetForceDontMove(false);
 				}
 			}
 
@@ -10806,6 +10811,22 @@ namespace ALYSLC
 				(
 					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f
 				);
+				
+				// Update curtail momentum flag, getup TP, and flag.
+				coopP1->mm->UpdateCurtailMomentumState();
+
+				// Must allow P1 to move if curtail momentum was set 
+				// before P1's movement manager paused.
+				// Otherwise P1 will remain stuck in place.
+				/*if (coopP1->mm->shouldCurtailMomentum && 
+					!coopP1->IsRunning() && 
+					coopP1->coopActor->DoGetMovementSpeed() == 0.0f)
+				{
+					DBG("{}: Stop curtailing momentum.", coopP1->coopActor->GetName());		
+					coopP1->mm->ClearKeepOffsetFromActor();
+					coopP1->mm->SetForceDontMove(false);				
+					coopP1->mm->shouldCurtailMomentum = false;
+				}*/
 
 				// NOTE:
 				// Another annoying issue to work around:
@@ -13346,15 +13367,18 @@ namespace ALYSLC
 			const float& g = managedProjInfo->g;
 			const double& mu = managedProjInfo->mu;
 			const float& t = projectile->livingTime;
-			// Cap in-flight time.
+			// Capped projectile trajectory flight time.
+			const float maxFlightTime = min
+			(
+				expectedLifetime, Settings::fMaxProjAirborneSecsToTarget
+			);
+			// Will not reach the target in time.
 			const bool tooLongToReach = 
 			(
-				initialTimeToTargetSecs == 0.0f ||
-				initialTimeToTargetSecs >= min
-				(
-					expectedLifetime, Settings::fMaxProjAirborneSecsToTarget
-				)
+				initialTimeToTargetSecs == 0.0f || initialTimeToTargetSecs >= maxFlightTime
 			);
+			// New projected max flight time to the target.
+			float totalFlightTime = min(initialTimeToTargetSecs, maxFlightTime);
 			// Cannot split the trajectory into two parts 
 			// if the projectile reaches the target in under two frames,
 			// so we'll start homing in right away.
@@ -13362,7 +13386,26 @@ namespace ALYSLC
 			(
 				initialTimeToTargetSecs <= *g_deltaTimeRealTime * 2.0f
 			);
-
+			DBG
+			(
+				"{}: {} 0x{:X}, TTT: {}, too long to reach: {} ({}, {}), "
+				"less than 2 frames: {}, started homing in: {}, elapsed time: {}, "
+				"max flight time: {}, projected: {}.",
+				a_p->coopActor->GetName(),
+				projectile->GetBaseObject() ? 
+				Util::GetEditorID(projectile->GetBaseObject()) :
+				projectile->GetName(),
+				projectile->formID,
+				initialTimeToTargetSecs,
+				tooLongToReach,
+				expectedLifetime,
+				Settings::fMaxProjAirborneSecsToTarget,
+				lessThanTwoFramesToReachTarget,
+				managedProjInfo->startedHomingIn,
+				projectile->livingTime,
+				maxFlightTime,
+				totalFlightTime
+			);
 
 			// Release speed for fixed trajectory determined by projectile launch data.
 			const float& releaseSpeed = managedProjInfo->releaseSpeed;
@@ -13428,7 +13471,7 @@ namespace ALYSLC
 				// before homing in.
 				bool passedHalfwayPoint = 
 				(
-					projectile->livingTime - 0.5f * initialTimeToTargetSecs >= -epsilon ||
+					projectile->livingTime - 0.5f * totalFlightTime >= -epsilon ||
 					xy > Util::GetXYDistance(releasePos, managedProjInfo->trajectoryEndPos)
 				);
 				bool noTargetAndMovingCrosshair =
@@ -13441,13 +13484,10 @@ namespace ALYSLC
 				// and one of the above conditions is true.
 				bool shouldSetAsHoming =
 				(
-					(!managedProjInfo->startedHomingIn) && 
-					(
-						noTargetAndMovingCrosshair || 
-						passedHalfwayPoint || 
-						tooLongToReach ||
-						lessThanTwoFramesToReachTarget
-					)
+					noTargetAndMovingCrosshair || 
+					passedHalfwayPoint || 
+					tooLongToReach ||
+					lessThanTwoFramesToReachTarget
 				);
 				if (shouldSetAsHoming)
 				{
@@ -13528,7 +13568,6 @@ namespace ALYSLC
 			{
 				// First, check if the projectile has moved past the target.
 
-				
 				float secsSinceStartedHoming = Util::GetElapsedSeconds
 				(
 					managedProjInfo->startedHomingTP.value(), true
@@ -13547,22 +13586,20 @@ namespace ALYSLC
 					}
 				}
 
-				if (lessThanTwoFramesToReachTarget)
+				if (tooLongToReach || lessThanTwoFramesToReachTarget)
 				{
 					pitchToSet = pitchToTarget;
 					yawToSet = yawToTarget;
 				}
 				else 
 				{
-					float timeToFullyHomeIn = initialTimeToTargetSecs;
-					if (tooLongToReach)
-					{
-						// Home in completely at most 3 seconds post-launch.
-						timeToFullyHomeIn = min
-						(
-							3.0f, min(initialTimeToTargetSecs, expectedLifetime) * 0.75f
-						);
-					}
+					float timeToFullyHomeIn = totalFlightTime;
+					//if (tooLongToReach)
+					//{
+					//	// Home in completely at most a quarter way along the trajectory,
+					//	// in terms of time.
+					//	timeToFullyHomeIn = 0.25f * totalFlightTime;
+					//}
 					
 					// Turn gradually to face.
 					float pitchDiff = Util::NormalizeAngToPi(pitchToTarget - currentPitch);
@@ -16904,6 +16941,8 @@ namespace ALYSLC
 					false, menuName, p->coopActor->GetHandle(), nullptr
 				);
 				
+				// Clear out giftee player handle.
+				glob.mim->gifteePlayerHandle = RE::ActorHandle();
 				return _ProcessMessage(a_this, a_message);
 			}
 			
@@ -19050,10 +19089,15 @@ namespace ALYSLC
 			auto charController = p1->GetCharController();
 			const bool& canUseParaglider = 
 			{
-				ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider &&
-				p1 && 
-				charController && 
-				charController->context.currentState == RE::hkpCharacterStateType::kInAir
+				(
+					ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider &&
+					p1 && 
+					charController
+				) && 
+				( 
+					charController->context.currentState == RE::hkpCharacterStateType::kInAir ||
+					charController->context.currentState == RE::hkpCharacterStateType::kJumping
+				)
 			};
 
 			// 'Activate' event name and has P1 proxied bypass flag or the player has a paraglider.
@@ -19467,19 +19511,39 @@ namespace ALYSLC
 			{
 				return false;
 			}
+			
+			auto ue = RE::UserEvents::GetSingleton(); 
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (!ue || !p1)
+			{
+				return _CanProcess(a_this, a_event);
+			}
 
+			if (glob.coopSessionActive && 
+				glob.coopPlayers[0]->IsRunning() && 
+				ue &&
+				p1 && 
+				a_event->QUserEvent() == ue->readyWeapon)
+			{
+				// Compatibility with Cancel Attack SKSE. 
+				// Will stop the player from continuing to block once re-drawing weapons
+				// if an attack was cancelled by pressing Sheathe without P1 sheathing weapons.
+				// Example: Hitting 'Take All' while the QuickLoot menu is open.
+				p1->actorState2.wantBlocking = 0;
+				p1->NotifyAnimationGraph("blockStop");
+			}
+		
 			// Switch event name to match the corresponding event name in the gameplay context
 			// to allow P1 to perform gameplay actions while another player is controlling menus.
 			if (GlobalCoopData::IsP1UsingSingleplayerControlsInCoop() &&
 				glob.menuPID > 0 &&
 				!Util::MenusOnlyAlwaysOpen())
 			{
-				auto ue = RE::UserEvents::GetSingleton();
 				auto controlMap = RE::ControlMap::GetSingleton();
 				auto buttonEvent = a_event->AsButtonEvent();
 				auto idEvent = a_event->AsIDEvent();
 				bool p1OverrideHeld = Util::IsKeyPressed(GlobalCoopData::P1_OVERRIDE_KEY);
-				if (ue && controlMap && buttonEvent && idEvent && !p1OverrideHeld)
+				if (controlMap && buttonEvent && idEvent && !p1OverrideHeld)
 				{
 					auto p1GameplayContextEvent = 
 					(
@@ -19497,9 +19561,7 @@ namespace ALYSLC
 			}
 
 			// Ignore when not in co-op or not from a gamepad.
-			auto ue = RE::UserEvents::GetSingleton(); 
-			if (!ue ||
-				!glob.globalDataInit || 
+			if (!glob.globalDataInit || 
 				!glob.coopSessionActive || 
 				a_event->GetDevice() != RE::INPUT_DEVICE::kGamepad ||
 				!glob.coopPlayers[0]->IsRunning()) 
