@@ -1258,29 +1258,11 @@ namespace ALYSLC
 		);
 		auto diff = (screenHeadPos - screenTorsoPos);
 		// Cap the radius and modify thickness based on distance from the camera.
-		float radius = std::clamp
-		(
-			diff.Length(),
-			1.0f * Settings::vfCrosshairGapRadius[playerID], 
-			2.0f * Settings::vfCrosshairGapRadius[playerID]
-		);
+		float radius = min(diff.Length(), Settings::vfCrosshairGapRadius[playerID]);
 		const float thickness = 0.125f * radius;
 		const auto center = ToVec3(screenTorsoPos);
 		float gapDelta = 0.0f;
-		float rotationRatio = shouldFaceTarget ? 1.0f : 0.0f;
-		// Four prongs ('+' when not facing the target, 'X' otherwise).
-		float rotAng1{ PI / 2.0f };
-		float rotAng2{ 0.0f };
-		float rotAng3{ -PI / 2.0f };
-		float rotAng4{ PI };
-		if (shouldFaceTarget)
-		{
-			rotAng1 = { 3.0f * PI / 4.0f };
-			rotAng2 = { PI / 4.0f };
-			rotAng3 = { -PI / 4.0f };
-			rotAng4 = { 5.0f * PI / 4.0f };
-		}
-		
+		float rotationRatio = 0.0f;
 		// Animate for better visibility.
 		if ((aimCorrectionIndicatorOscillationData->interpToMax &&
 			aimCorrectionIndicatorOscillationData->value != 1.0f) ||
@@ -1302,25 +1284,33 @@ namespace ALYSLC
 
 		gapDelta = (aimCorrectionIndicatorOscillationData->value * radius);
 		aimCorrectionIndicatorRotationData->UpdateInterpolatedValue(shouldFaceTarget);
-
 		rotationRatio = aimCorrectionIndicatorRotationData->value;
-		rotAng1 = 
-		{
-			Util::InterpolateSmootherStep(PI / 2.0f, 3.0f * PI / 4.0f, rotationRatio)
-		};
-		rotAng2 = 
-		{
-			Util::InterpolateSmootherStep(0.0f, PI / 4.0f, rotationRatio)
-		};
-		rotAng3 = 
-		{
-			Util::InterpolateSmootherStep(-PI / 2.0f, -PI / 4.0f, rotationRatio)
-		};
-		rotAng4 = 
-		{
-			Util::InterpolateSmootherStep(PI, 5.0f * PI / 4.0f, rotationRatio)
-		};
 
+		// Four prongs ('+' when not facing the target, 'X' otherwise).
+		float rotAng1{ PI / 2.0f };
+		float rotAng2{ 0.0f };
+		float rotAng3{ -PI / 2.0f };
+		float rotAng4{ PI };
+		if (rotationRatio != 0.0f)
+		{
+			rotAng1 = 
+			{
+				Util::InterpolateSmootherStep(PI / 2.0f, 3.0f * PI / 4.0f, rotationRatio)
+			};
+			rotAng2 = 
+			{
+				Util::InterpolateSmootherStep(0.0f, PI / 4.0f, rotationRatio)
+			};
+			rotAng3 = 
+			{
+				Util::InterpolateSmootherStep(-PI / 2.0f, -PI / 4.0f, rotationRatio)
+			};
+			rotAng4 = 
+			{
+				Util::InterpolateSmootherStep(PI, 5.0f * PI / 4.0f, rotationRatio)
+			};
+		}
+		
 		// Retract arrows when not facing target.
 		radius *= rotationRatio;
 		if (radius != 0.0f)
@@ -1456,32 +1446,35 @@ namespace ALYSLC
 			);
 		}
 
+		const float oscRatio = aimCorrectionIndicatorOscillationData->value;
 		// Fewer segments to draw when the gap is small (no readily apparent loss in quality).
 		uint32_t numSegments = std::clamp(static_cast<int>(gapDelta * 3), 8, 48);
+		float thicknessRatio = (2.0f * oscRatio - 2.0f) + 2.0f;
 		DebugAPI::QueueCircle2D
 		(
 			center,
-			Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID],
+			Settings::vuCrosshairOuterOutlineRGBAValues[playerID],
 			numSegments,
-			2.0f * thickness + gapDelta,
+			(thicknessRatio * thickness) + gapDelta,
 			thickness,
 			0.0f
 		);
 		DebugAPI::QueueCircle2D
 		(
 			center,
-			Settings::vuOverlayRGBAValues[p->playerID],
+			Settings::vuOverlayRGBAValues[playerID],
 			numSegments,
 			thickness + gapDelta,
 			thickness,
 			0.0f
 		);
+		thicknessRatio = 2.0f * (1.0f - oscRatio);
 		DebugAPI::QueueCircle2D
 		(
 			center,
-			Settings::vuCrosshairInnerOutlineRGBAValues[p->playerID],
+			Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFF,
 			numSegments,
-			gapDelta,
+			(thicknessRatio * thickness) + gapDelta,
 			thickness,
 			0.0f
 		);
@@ -1716,13 +1709,17 @@ namespace ALYSLC
 		// Draw the main four lines of the crosshair using the player's assigned crosshair color 
 		// and size params.
 
-		const bool shouldRotate = Util::HandleIsValid(crosshairRefrHandle);
+		const bool shouldRotate = 
+		(
+			Util::HandleIsValid(crosshairRefrHandle) ||
+			p->mm->faceCrosshairPos ||
+			p->mm->turnToTarget
+		);;
 		float angToRotate = shouldRotate ? PI / 4.0f : 0.0f;
 		float gapDelta = 0.0f;
 		// Animate the mode change rotation and contraction/expansion if enabled.
 		if (Settings::vbAnimatedCrosshair[playerID])
 		{
-			UpdateAnimatedCrosshairInterpData();
 			angToRotate = crosshairRotationData->current;
 			gapDelta = crosshairOscillationData->current;
 		}
@@ -1883,13 +1880,17 @@ namespace ALYSLC
 		// The higher the index, the further from the crosshair base lines
 		// the outline will be drawn.
 
-		const bool shouldRotate = Util::HandleIsValid(crosshairRefrHandle);
+		const bool shouldRotate =
+		(
+			Util::HandleIsValid(crosshairRefrHandle) ||
+			p->mm->faceCrosshairPos ||
+			p->mm->turnToTarget
+		);
 		float angToRotate = shouldRotate ? PI / 4.0f : 0.0f;
 		float gapDelta = 0.0f;
 		// Animate the rotation, contraction, and expansion, if enabled.
 		if (Settings::vbAnimatedCrosshair[playerID])
 		{
-			UpdateAnimatedCrosshairInterpData();
 			angToRotate = crosshairRotationData->current;
 			gapDelta = crosshairOscillationData->current;
 		}
@@ -2556,6 +2557,13 @@ namespace ALYSLC
 		
 		// Draw a retro-style crosshair with four lines for prongs.
 		// First, outer outline.
+
+		// Only need to update the interp data once for all the outlines and inner lines.
+		if (Settings::vbAnimatedCrosshair[playerID])
+		{
+			UpdateAnimatedCrosshairInterpData();
+		}
+
 		DrawCrosshairOutline
 		(
 			2.0f, Settings::vuCrosshairOuterOutlineRGBAValues[playerID]
@@ -2574,229 +2582,46 @@ namespace ALYSLC
 		// Draw a crosshair that consists of concentric rings with 4 protruding arrows.
 		// Similar in appearance to the aim correction indicator.
 		
-		const bool shouldRotate = Util::HandleIsValid(crosshairRefrHandle);
-		float angToRotate = shouldRotate ? PI / 4.0f : 0.0f;
 		float gapDelta = 0.0f;
 		// Animate the rotation, contraction, and expansion, if enabled.
 		if (Settings::vbAnimatedCrosshair[playerID])
 		{
 			UpdateAnimatedCrosshairInterpData();
-			angToRotate = crosshairRotationData->current;
 			gapDelta = crosshairSizeRatioInterpData->value * crosshairOscillationData->current;
 		}
-
+		
+		const bool isRingCrosshair = Settings::vuCrosshairStyle[playerID] == !CrosshairStyle::kRing;
 		// Center at the crosshair position.
 		const auto center = glm::vec3(crosshairScaleformPos.x, crosshairScaleformPos.y, 0.0f);
 		const float& crosshairLength = 
 		(
-			crosshairSizeRatioInterpData->value * Settings::vfCrosshairLength[playerID]
+			crosshairSizeRatioInterpData->value * 
+			(
+				isRingCrosshair ? 
+				Settings::vfCrosshairLength[playerID] : 
+				Settings::vfCrosshairGapRadius[playerID]
+			)
 		);
-		const float& crosshairThickness = Settings::vfCrosshairThickness[playerID];
-
+		const float& crosshairThickness = 
+		(
+			Settings::vfCrosshairThickness[playerID]
+		);
+		// Scale back down to [0, 1].
 		float rotationRatio = (crosshairRotationData->current) / (PI / 4.0f);
-		// Four prongs ('+' when not facing the target, 'X' otherwise).
-		float rotAng1{ PI / 2.0f };
-		float rotAng2{ 0.0f };
-		float rotAng3{ -PI / 2.0f };
-		float rotAng4{ PI };
-		if (shouldRotate)
-		{
-			rotAng1 = { 3.0f * PI / 4.0f };
-			rotAng2 = { PI / 4.0f };
-			rotAng3 = { -PI / 4.0f };
-			rotAng4 = { 5.0f * PI / 4.0f };
-		}
-		
-		rotAng1 = 
-		{
-			Util::InterpolateSmootherStep(PI / 2.0f, 3.0f * PI / 4.0f, rotationRatio)
-		};
-		rotAng2 = 
-		{
-			Util::InterpolateSmootherStep(0.0f, PI / 4.0f, rotationRatio)
-		};
-		rotAng3 = 
-		{
-			Util::InterpolateSmootherStep(-PI / 2.0f, -PI / 4.0f, rotationRatio)
-		};
-		rotAng4 = 
-		{
-			Util::InterpolateSmootherStep(PI, 5.0f * PI / 4.0f, rotationRatio)
-		};
-
 		// Retract arrows when not on a target.
-		float radius = crosshairLength * rotationRatio;
-		if (radius != 0.0f)
-		{
-			auto arrowStartOffset = gapDelta + 3.0f * crosshairThickness;
-			// Outer.
-			uint8_t alpha = 
+		const float oscRatio = 
+		(
+			(crosshairOscillationData->current) / 
 			(
-				static_cast<uint8_t>
+				isRingCrosshair ? 
+				Settings::vfCrosshairGapRadius[playerID] :
+				max
 				(
-					crosshairFadeInterpData->value * 
-					static_cast<float>
-					(
-						Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF
-					)
+					Settings::vfCrosshairLength[playerID],
+					Settings::vfCrosshairGapRadius[playerID] * 2.0f
 				)
-			);
-			auto newCenter = 
-			(
-				center + arrowStartOffset * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f)
-			);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f),
-				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
-				crosshairThickness * 1.5f,
-				crosshairThickness * 3.0f,
-				0.0f
-			);
-			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f),
-				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
-				crosshairThickness * 1.5f,
-				crosshairThickness * 3.0f,
-				0.0f
-			);
-			newCenter = 
-			(
-				center + arrowStartOffset * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f)
-			);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f),
-				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
-				crosshairThickness * 1.5f,
-				crosshairThickness * 3.0f,
-				0.0f
-			);
-			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f),
-				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
-				crosshairThickness * 1.5f,
-				crosshairThickness * 3.0f,
-				0.0f
-			);
-
-			// Middle.
-			alpha = 
-			(
-				static_cast<uint8_t>
-				(
-					crosshairFadeInterpData->value * 
-					static_cast<float>
-					(
-						Settings::vuOverlayRGBAValues[playerID] & 0xFF
-					)
-				)
-			);
-			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f),
-				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha,
-				crosshairThickness * 1.25f,
-				crosshairThickness * 2.0f,
-				0.0f
-			);
-			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f),
-				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha,
-				crosshairThickness * 1.25f,
-				crosshairThickness * 2.0f,
-				0.0f
-			);
-			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f),
-				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha,
-				crosshairThickness * 1.25f,
-				crosshairThickness * 2.0f,
-				0.0f
-			);
-			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f),
-				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha,
-				crosshairThickness * 1.25f,
-				crosshairThickness * 2.0f,
-				0.0f
-			);
-
-			// Inner.
-			alpha = 
-			(
-				static_cast<uint8_t>
-				(
-					crosshairFadeInterpData->value * 
-					static_cast<float>
-					(
-						Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFF
-					)
-				)
-			);
-			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + 
-				0.75f * radius * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f),
-				(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
-				crosshairThickness,
-				crosshairThickness,
-				0.0f
-			);
-			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + 0.75f * radius * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f),
-				(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
-				crosshairThickness,
-				crosshairThickness,
-				0.0f
-			);
-			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + 0.75f * radius * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f),
-				(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
-				crosshairThickness,
-				crosshairThickness,
-				0.0f
-			);
-			newCenter = center + arrowStartOffset * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + 0.75f * radius * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f),
-				(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
-				crosshairThickness,
-				crosshairThickness,
-				0.0f
-			);
-		}
-
-		// Fewer segments to draw when the gap is small (no readily apparent loss in quality).
+			)
+		);
 		uint32_t numSegments = std::clamp(static_cast<int>(gapDelta * 3), 8, 48);
 		uint8_t alpha = 
 		(
@@ -2809,12 +2634,13 @@ namespace ALYSLC
 				)
 			)
 		);
+		float thicknessRatio = (rotationRatio * (2.0f * oscRatio - 2.0f) + 2.0f);
 		DebugAPI::QueueCircle2D
 		(
 			center,
 			(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
 			numSegments,
-			2.0f * crosshairThickness + gapDelta,
+			(thicknessRatio * crosshairThickness) + gapDelta,
 			crosshairThickness,
 			0.0f
 		);
@@ -2849,17 +2675,17 @@ namespace ALYSLC
 				)
 			)
 		);
+		thicknessRatio = (rotationRatio * (2.0f * (1.0f - oscRatio)));
 		DebugAPI::QueueCircle2D
 		(
 			center,
 			(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
 			numSegments,
-			gapDelta,
+			(thicknessRatio * crosshairThickness) + gapDelta,
 			crosshairThickness,
 			0.0f
 		);
 
-		alpha = 0xFF;
 		// Outline with two circles if near the edge of the screen for better visibility.
 		if (!Util::PointIsOnScreen(crosshairWorldPos, DebugAPI::screenResY / 25.0f))
 		{
@@ -2906,7 +2732,12 @@ namespace ALYSLC
 	{
 		// Draw a Skyrim-style crosshair with a player-specific colorway.
 
-		const bool shouldRotate = Util::HandleIsValid(crosshairRefrHandle);
+		const bool shouldRotate = 
+		(
+			Util::HandleIsValid(crosshairRefrHandle) ||
+			p->mm->faceCrosshairPos ||
+			p->mm->turnToTarget
+		);
 		float angToRotate = shouldRotate ? PI / 4.0f : 0.0f;
 		float gapDelta = 0.0f;
 		// Animate rotation, contraction, and expansion, if enabled.
@@ -3884,7 +3715,7 @@ namespace ALYSLC
 		(
 			a_initialProjectedTimeToTarget <= *g_deltaTimeRealTime * 2.0f
 		);
-		DBG
+		/*DBG
 		(
 			"{}: {}, TTT: {}, too long to reach: {} ({}, {}), "
 			"less than 2 frames: {}, max flight time: {}, projected: {}.",
@@ -3899,7 +3730,7 @@ namespace ALYSLC
 			lessThanTwoFramesToReachTarget,
 			maxFlightTime,
 			totalFlightTime
-		);
+		);*/
 
 		// Total number of time slices to split up the trajectory into.
 		const uint32_t totalTimeSlices = 50.0f;
@@ -11739,7 +11570,14 @@ namespace ALYSLC
 		// Update crosshair rotation and oscillation interpolation data
 		// to animate the crosshair.
 		
-		float endPointAng = Util::HandleIsValid(crosshairRefrHandle) ? PI / 4.0f : 0.0f;
+		float endPointAng =
+		(
+			Util::HandleIsValid(crosshairRefrHandle) ||
+			p->mm->faceCrosshairPos ||
+			p->mm->turnToTarget ?
+			PI / 4.0f : 
+			0.0f
+		);
 		// Interpolation endpoint changed, signal state change.
 		if (crosshairRotationData->next != endPointAng)
 		{
@@ -11769,7 +11607,13 @@ namespace ALYSLC
 		}
 
 		// Interpolated motion of crosshair expansion and contraction.
-		const float& crosshairLength = Settings::vfCrosshairLength[playerID];
+		const bool isRingCrosshair = Settings::vuCrosshairStyle[playerID] == !CrosshairStyle::kRing;
+		const float& crosshairLength = 
+		(
+			isRingCrosshair ? 
+			Settings::vfCrosshairGapRadius[playerID] : 
+			Settings::vfCrosshairLength[playerID]
+		);
 		const float& crosshairThickness = Settings::vfCrosshairThickness[playerID];
 		// Current interpolated gap.
 		const float currentCrosshairGap = 
@@ -11777,10 +11621,15 @@ namespace ALYSLC
 			Settings::vfCrosshairGapRadius[playerID] + crosshairOscillationData->current
 		);
 		// Crosshair gap at max expansion.
-		const float maxCrosshairGap = max
+		const float maxCrosshairGap = 
 		(
-			crosshairLength,
-			Settings::vfCrosshairGapRadius[playerID] * 2.0f
+			isRingCrosshair ? 
+			crosshairLength : 
+			max
+			(
+				crosshairLength,
+				Settings::vfCrosshairGapRadius[playerID] * 2.0f
+			)
 		);
 		// Includes inner outline, prong itself, and current interpolated gap.
 		float currentProngDistFromCenter = 
@@ -11798,7 +11647,9 @@ namespace ALYSLC
 		// New gap value to set.
 		float endPointGapDelta = crosshairOscillationData->next;
 		// Do not oscillate when moving the crosshair and not near the edge of the screen.
-		if (p->pam->IsPerforming(InputAction::kMoveCrosshair) && !isNearEdgeOfScreen)
+		if (p->pam->IsPerforming(InputAction::kMoveCrosshair) && 
+			!isNearEdgeOfScreen && 
+			!isRingCrosshair)
 		{
 			endPointGapDelta = 
 			(
@@ -12485,7 +12336,7 @@ namespace ALYSLC
 		// has selected a target with it, or the crosshair has faded out/re-centered
 		// depending on which option(s) the player has enabled,
 		// or if both fade and re-centering options are disabled.
-		bool noLongerResettingPosition = isAiming || Util::HandleIsValid(crosshairRefrHandle); 
+		bool noLongerResettingPosition = isAiming || Util::HandleIsValid(crosshairRefrHandle);
 		if (!noLongerResettingPosition)
 		{
 			const auto& canFade = Settings::vbFadeInactiveCrosshair[playerID];
@@ -12689,7 +12540,7 @@ namespace ALYSLC
 		// Update selection TP if the crosshair refr handle changed.
 		if ((crosshairRefrHandle != prevCrosshairRefrHandle) && (isAiming || choseLockOnAimTarget))
 		{
-			DBG
+			/*DBG
 			(
 				"{}: {} -> {}, chose lock on activation/aim target: {}, {}, is aiming: {}. "
 				"Activation target: {}",
@@ -12706,7 +12557,7 @@ namespace ALYSLC
 				Util::HandleIsValid(activationRefrHandle) ? 
 				activationRefrHandle.get()->GetName() : 
 				"NONE"
-			);
+			);*/
 			
 			// Remove previous activation target if it was selected 
 			// as the crosshair target.
@@ -12725,19 +12576,19 @@ namespace ALYSLC
 					GlobalCoopData::IsCoopPlayer(crosshairRefrHandle))
 				{
 					UpdateActivationTarget(true, false, true);
-					DBG
+					/*DBG
 					(
 						"{}: Crosshair refr {} is now selected as the activation target.",
 						coopActor->GetName(), crosshairRefrHandle.get()->GetName()
-					);
+					);*/
 				}
 				else
 				{
-					DBG
+					/*DBG
 					(
 						"{}: Crosshair refr {} is now selected.",
 						coopActor->GetName(), crosshairRefrHandle.get()->GetName()
-					);
+					);*/
 
 					// Play the activation shader anyways.
 					bool canActivate = CanActivateRefr(crosshairRefrHandle.get().get(), false);
@@ -19092,7 +18943,7 @@ namespace ALYSLC
 		}
 
 		// REMOVE when done debugging.
-		DBG
+		/*DBG
 		(
 			"Aim correction: {}, selected: {}, linked ref: {}, crosshair refr: {}, "
 			"traj type: {}, set straight traj: {}, predict: {}, target actor: {}. TTT: {}.",
@@ -19115,7 +18966,7 @@ namespace ALYSLC
 			targetRefrHandle.get()->GetName() : 
 			"NONE",
 			initialTrajTimeToTarget
-		);
+		);*/
 	}
 
 	void TargetingManager::ManagedProjectileHandler::Insert

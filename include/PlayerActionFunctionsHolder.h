@@ -162,6 +162,8 @@ namespace ALYSLC
 		bool SpecialAction(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Sprint(const std::shared_ptr<CoopPlayer>& a_p);
 		bool TeleportToPlayer(const std::shared_ptr<CoopPlayer>& a_p);
+		// REMOVE when this bind is removed completely.
+		bool TradeWithPlayer(const std::shared_ptr<CoopPlayer>& a_p);
 		bool ZoomCam(const std::shared_ptr<CoopPlayer>& a_p);
 
 		// Multiple use.

@@ -329,6 +329,7 @@ namespace ALYSLC
 		framesSinceStartingJump = 
 		framesToCompleteDashDodge =
 		jumpBindHeldFrameCount = 0;
+		jumpBaseAscentFramecount = 1;
 
 		// Reset time points used by this manager.
 		ResetTPs();
@@ -1146,20 +1147,20 @@ namespace ALYSLC
 		if (p->pam->JustStarted(InputAction::kJump))
 		{
 			jumpBindHeldFrameCount = 1;
+			// Number of frames to spend ascending to the apex of the jump.
+			// Not less than 1.
+			jumpBaseAscentFramecount = max
+			(
+				1, 
+				static_cast<uint32_t>
+				(
+					Settings::fSecsAfterGatherToFall * 
+					(1.0f / (*g_deltaTimeRealTime * RE::BSTimer::QGlobalTimeMultiplier())) + 0.5f
+				)
+			);
 		}
 
 		auto& currentHKPState = charController->context.currentState;
-		// Number of frames to spend ascending to the apex of the jump.
-		// Not less than 1.
-		const uint32_t baseJumpAscentFramecount = max
-		(
-			1, 
-			static_cast<uint32_t>
-			(
-				Settings::fSecsAfterGatherToFall * 
-				(1.0f / (*g_deltaTimeRealTime * RE::BSTimer::QGlobalTimeMultiplier())) + 0.5f
-			)
-		);
 		// TODO:
 		// Tweaks, tweaks, and more tweaks.
 		const float jumpHoldTimeBonusVertSpeed = 
@@ -1168,7 +1169,7 @@ namespace ALYSLC
 			(
 				0.0f,
 				1.0f,
-				min(0.5f * jumpBindHeldFrameCount / baseJumpAscentFramecount, 1.0f)
+				min(0.5f * jumpBindHeldFrameCount / jumpBaseAscentFramecount, 1.0f)
 			)
 		);
 		const auto& lsData = glob.cdh->GetAnalogStickState(deviceID, true);
@@ -1229,6 +1230,7 @@ namespace ALYSLC
 				reqStartJump = false;
 				sentJumpFallEvent = false;
 				p->jumpStartTP = SteadyClock::now();
+				jumpBaseAscentFramecount = 1;
 				jumpBindHeldFrameCount =
 				framesSinceStartingJump = 0;
 				return;
@@ -1314,6 +1316,7 @@ namespace ALYSLC
 				reqStartJump = false;
 				sentJumpFallEvent = false;
 				p->jumpStartTP = SteadyClock::now();
+				jumpBaseAscentFramecount = 1;
 				jumpBindHeldFrameCount = 
 				framesSinceStartingJump = 0;
 				return;
@@ -1335,6 +1338,7 @@ namespace ALYSLC
 				reqStartJump = false;
 				sentJumpFallEvent = false;
 				p->jumpStartTP = SteadyClock::now();
+				jumpBaseAscentFramecount = 1;
 				jumpBindHeldFrameCount =
 				framesSinceStartingJump = 0;
 				return;
@@ -1628,6 +1632,7 @@ namespace ALYSLC
 
 					// Update jump start TP on landing.
 					p->jumpStartTP = SteadyClock::now();
+					jumpBaseAscentFramecount = 1;
 					jumpBindHeldFrameCount = 
 					framesSinceStartingJump = 0;
 
@@ -1683,7 +1688,7 @@ namespace ALYSLC
 				};
 
 				// REMOVE when done debugging
-				DBG
+				/*DBG
 				(
 					"{}: Z Vel: {} ({} / {}). Bonuts: {}, XY speed: {}.", 
 					coopActor->GetName(), 
@@ -1694,7 +1699,7 @@ namespace ALYSLC
 						Settings::fJumpAdditionalLaunchSpeed
 					) - Settings::fG * 2.0f * Util::GetElapsedSeconds(p->jumpStartTP), 
 					jumpBindHeldFrameCount,
-					baseJumpAscentFramecount,
+					jumpBaseAscentFramecount,
 					jumpHoldTimeBonusVertSpeed,
 					sqrtf
 					(
@@ -1703,7 +1708,7 @@ namespace ALYSLC
 						charController->outVelocity.quad.m128_f32[1] * 
 						charController->outVelocity.quad.m128_f32[1]
 					)
-				);
+				);*/
 				charController->SetLinearVelocityImpl(vel);
 			}
 			charController->lock.Unlock();
@@ -2482,6 +2487,8 @@ namespace ALYSLC
 				coopActor->actorState1.knockState == RE::KNOCK_STATE_ENUM::kNormal
 			)
 		);
+		// Is the player airborne, whether from jumping or falling?
+		bool isAirborne = isAirborneWhileJumping || Util::IsAirborne(coopActor.get());
 		if (canModifyRotation)
 		{
 			// Target actor -- either crosshair-selected or downed player.
@@ -2544,9 +2551,11 @@ namespace ALYSLC
 			// 4. Not dodging.
 			// 5. Not mounted.
 			// 6. Not swimming.
-			// 7. Not sprinting and not sneak rolling.
-			// 8. No crosshair target or not trying to face grabbed/released target.
-			// 9. Not in dialogue.
+			// 7. Not airborne.
+			// 8. Not sprinting and not sneak rolling.
+			// 9. No crosshair target or not trying to face grabbed/released target.
+			// 10. Not in dialogue.
+			// 11. Not moving the crosshair, or didn't just stop, and targeting a living actor.
 			auto ui = RE::UI::GetSingleton();
 			faceCrosshairPos = 
 			{
@@ -2557,7 +2566,7 @@ namespace ALYSLC
 					!isTDMDodging && 
 					!coopActor->IsOnMount() && 
 					!isSubmerged && 
-					!Util::IsAirborne(coopActor.get()) &&
+					!isAirborne &&
 					!p->pam->isSprinting
 				) && 
 				(
@@ -3322,13 +3331,9 @@ namespace ALYSLC
 				shouldStopMoving && 
 				!p->pam->isAttacking && 
 				!isAirborneWhileJumping && 
-				!reqStartJump
+				!reqStartJump &&
+				!Util::IsAirborne(coopActor.get())
 			);
-			if (canFreeze && Util::IsAirborne(coopActor.get())) 
-			{
-				canFreeze = false;
-			}
-			
 			ClearKeepOffsetFromActor();
 			if (canFreeze)
 			{
@@ -4334,7 +4339,8 @@ namespace ALYSLC
 			bool canCurtailMomentum = 
 			(
 				(!coopActor->IsInKillMove() && !coopActor->IsOnMount()) && 
-				(finishedGettingUp || turnToFaceTargetWhileStopped || stopWhenTurningToTarget)
+				(finishedGettingUp || turnToFaceTargetWhileStopped || stopWhenTurningToTarget) &&
+				(!Util::IsAirborne(coopActor.get()))
 			);
 			if (canCurtailMomentum)
 			{

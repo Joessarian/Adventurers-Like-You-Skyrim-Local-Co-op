@@ -4270,18 +4270,6 @@ namespace ALYSLC
 					// Update curtail momentum flag, getup TP, and flag.
 					p->mm->UpdateCurtailMomentumState();
 
-					// Once fully stopped, can toggle off curtail momentum flag 
-					// which cannot be unset by the movement manager if it is paused.
-					/*if (p->mm->shouldCurtailMomentum && 
-						!p->IsRunning() && 
-						p->coopActor->DoGetMovementSpeed() == 0.0f)
-					{
-						DBG("{}: Stop curtailing momentum.", p->coopActor->GetName());		
-						p->mm->ClearKeepOffsetFromActor();
-						p->mm->SetForceDontMove(false);				
-						p->mm->shouldCurtailMomentum = false;
-					}*/
-
 					// NOTE:
 					// Another annoying issue to work around:
 					// Since movement speed does not update 
@@ -13386,7 +13374,7 @@ namespace ALYSLC
 			(
 				initialTimeToTargetSecs <= *g_deltaTimeRealTime * 2.0f
 			);
-			DBG
+			/*DBG
 			(
 				"{}: {} 0x{:X}, TTT: {}, too long to reach: {} ({}, {}), "
 				"less than 2 frames: {}, started homing in: {}, elapsed time: {}, "
@@ -13405,7 +13393,7 @@ namespace ALYSLC
 				projectile->livingTime,
 				maxFlightTime,
 				totalFlightTime
-			);
+			);*/
 
 			// Release speed for fixed trajectory determined by projectile launch data.
 			const float& releaseSpeed = managedProjInfo->releaseSpeed;

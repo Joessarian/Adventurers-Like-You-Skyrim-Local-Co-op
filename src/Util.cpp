@@ -360,26 +360,77 @@ namespace ALYSLC
 
 				return;
 			}
-			
-			DBG
-			(
-				"{}: Activate {} (0x{:X}). Secondary: {}.",
-				p->coopActor->GetName(),
-				a_object ? a_object->GetName() : "NONE",
-				a_object ? a_object->formID : 0xDEAD,
-				p->tm->performSecondaryActivationAction
-			);
-
-			// Activate to add to inventory/inventory chest.
-			Util::NativeFunctions::ActivateRefr
-			(
-				a_interactionTarget, 
-				a_activator,
-				a_arg2, 
-				a_object,
-				a_count, 
-				a_defaultProcessingOnly
-			);
+			else if (pIndex > 0 && 
+					 a_object && 
+					 a_object->As<RE::TESProduceForm>() && 
+					 a_object->As<RE::TESProduceForm>()->produceItem)
+			{
+				// SPECIAL CASE:
+				// Activating a harvestable plant with a companion player 
+				// removes the TESFlora/TESObjectTREE refr from the cell.
+				// However, it does not directly transfer the harvested ingredient 
+				// to the player's inventory:
+				// No AddObjectToContainer() call but a container changed event is sent 
+				// without the item appearing in the inventory afterward. 
+				// So we have to add it directly to the player's inventory after it is harvested. 
+				// More annoying quirks that took way too long to figure out.
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				const auto produce = a_object->As<RE::TESProduceForm>()->produceItem;
+				// Harvest and remove from P1 to show in the TrueHUD recent loot widget.
+				if (ALYSLC::TrueHUDCompat::g_installed)
+				{
+					Util::NativeFunctions::ActivateRefr
+					(
+						a_interactionTarget, 
+						p1,
+						a_arg2, 
+						a_object,
+						a_count, 
+						a_defaultProcessingOnly
+					);
+					p1->RemoveItem
+					(
+						produce, a_count, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
+					);
+				}
+				else
+				{
+					Util::NativeFunctions::ActivateRefr
+					(
+						a_interactionTarget, 
+						a_activator,
+						a_arg2, 
+						a_object,
+						a_count, 
+						a_defaultProcessingOnly
+					);
+				}
+				
+				p->coopActor->AddObjectToContainer(produce, nullptr, a_count, nullptr);
+				return;
+			}
+			else
+			{
+				// Activate to add to inventory/inventory chest.
+				bool succ = Util::NativeFunctions::ActivateRefr
+				(
+					a_interactionTarget, 
+					a_activator,
+					a_arg2, 
+					a_object,
+					a_count, 
+					a_defaultProcessingOnly
+				);
+				DBG
+				(
+					"{}: Activate {} (0x{:X}). Secondary: {}. SUCC: {}",
+					p->coopActor->GetName(),
+					a_object ? a_object->GetName() : "NONE",
+					a_object ? a_object->formID : 0xDEAD,
+					a_useSecondaryActivation,
+					succ
+				);
+			}
 
 			// Perform secondary activation if requested and the activating refr is a player.
 			if (a_useSecondaryActivation && a_object && ALYSLC::UseOrTakeCompat::g_installed)
@@ -578,7 +629,7 @@ namespace ALYSLC
 			auto baseObj = a_refr->GetBaseObject();
 			// Can always attempt to lockpick a locked item, search a corpse, or open a door,
 			// but steal/trespass alarm may sound.
-			DBG
+			/*DBG
 			(
 				"{}: {} is {}. IsAnOwner (tt, tf, ft, ff): {}, {}, {}, {}. "
 				"Actor owner: {}, form owner: {}, form faction: {}, "
@@ -606,7 +657,7 @@ namespace ALYSLC
 				owningFaction ? owningFaction->TracksCrimes() : false,
 				a_actor->WouldBeStealing(a_refr),
 				p1->WouldBeStealing(a_refr)
-			);
+			);*/
 			if ((a_refr->IsLocked() || a_refr->IsDead()) || 
 				(baseObj && baseObj->As<RE::TESObjectDOOR>()) ||
 				(baseObj && baseObj->As<RE::TESFurniture>()))

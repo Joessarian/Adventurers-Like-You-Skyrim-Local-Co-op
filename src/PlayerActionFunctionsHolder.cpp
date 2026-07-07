@@ -1257,6 +1257,12 @@ namespace ALYSLC
 			);
 		}
 
+		bool TradeWithPlayer(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// REMOVE when this bind is removed completely.
+			return false;
+		}
+
 		bool ZoomCam(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			if (!CanAdjustCamera(a_p))
@@ -5453,7 +5459,7 @@ namespace ALYSLC
 			auto extraCount = a_refrPtr->extraList.GetByType<RE::ExtraCount>();
 			if (extraCount)
 			{
-				count = extraCount->count;
+				count = extraCount->count != -1 ? extraCount->count : 1;
 			}
 
 			// Get base object to obtain this refr's form type.
@@ -12253,7 +12259,7 @@ namespace ALYSLC
 				auto extraCount = activationRefrPtr->extraList.GetByType<RE::ExtraCount>();
 				if (extraCount)
 				{
-					count = extraCount->count;
+					count = extraCount->count != -1 ? extraCount->count : 1;
 				}
 
 				// Get base object to get refr type and for use with the activate refr call.
@@ -12676,7 +12682,7 @@ namespace ALYSLC
 							Util::GetEditorID(baseObj),
 							activationRefrPtr->GetFormType(),
 							*baseObj->formType,
-							extraCount ? extraCount->count : -1,
+							count,
 							isActivator,
 							(bool)baseObj->As<RE::TESFurniture>(),
 							isBed,

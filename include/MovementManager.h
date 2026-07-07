@@ -723,6 +723,8 @@ namespace ALYSLC
 		uint32_t framesSinceStartingJump;
 		// Total frame count for the last/current dash dodge.
 		uint32_t framesToCompleteDashDodge;
+		// Number of frames to spend ascending to the apex of the jump.
+		uint32_t jumpBaseAscentFramecount;
 		// Frames the jump bind was held for since the jump started.
 		uint32_t jumpBindHeldFrameCount;
 	};
