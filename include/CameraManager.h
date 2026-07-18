@@ -933,7 +933,7 @@ namespace ALYSLC
 
 		// Toggle the co-op camera on or off.
 		void ToggleCoopCamera(bool a_enable);
-		
+
 		// Transition the camera back into third person.
 		// Used when the game automatically switches to a different camera state.
 		// Done with a small delay to avoid odd crashes 

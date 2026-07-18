@@ -520,6 +520,18 @@ namespace ALYSLC
 			);
 		}
 
+		// Is at least one of this action's inputs released?
+		inline const bool IsReleased(const InputAction& a_action)
+		{
+			return 
+			(
+				paStatesList[!a_action - !InputAction::kFirstAction].perfStage == 
+				PerfStage::kInputsReleased ||
+				paStatesList[!a_action - !InputAction::kFirstAction].perfStage == 
+				PerfStage::kSomeInputsReleased
+			);
+		}
+
 		// Is the player rotating their arms?
 		bool IsRotatingArms() 
 		{

@@ -2957,7 +2957,7 @@ namespace ALYSLC
 			{ 
 				CrosshairMessageType::kNone, 
 				CrosshairMessageType::kStealthState, 
-				CrosshairMessageType::kTargetSelection 
+				CrosshairMessageType::kTargetingState 
 			},
 			Settings::fSecsBetweenDiffCrosshairMsgs
 		);

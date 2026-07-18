@@ -391,7 +391,7 @@ namespace ALYSLC
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kActivationInfo,
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -855,7 +855,16 @@ namespace ALYSLC
 			// more stringent conditions commented out for now.
 			bool stateAllowsJump = 
 			(
-				charController->context.currentState == RE::hkpCharacterStateType::kOnGround
+				charController->context.currentState == RE::hkpCharacterStateType::kOnGround &&
+				charController->flags.none(RE::CHARACTER_FLAGS::kTryStep) &&
+				charController->flags.all
+				(
+					RE::CHARACTER_FLAGS::kCanJump, RE::CHARACTER_FLAGS::kSupport
+				) /*&&
+				charController->surfaceInfo.supportedState.all
+				(
+					RE::hkpSurfaceInfo::SupportedState::kSupported
+				)*/
 			);
 			if (!stateAllowsJump) 
 			{
@@ -2090,7 +2099,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -2649,7 +2658,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -3155,7 +3164,7 @@ namespace ALYSLC
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kHotkeySelection, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
 				);
@@ -3195,7 +3204,7 @@ namespace ALYSLC
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kHotkeySelection, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
 				);
@@ -3281,7 +3290,7 @@ namespace ALYSLC
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kHotkeySelection, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
 				);
@@ -3326,7 +3335,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -3345,7 +3354,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState,
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -3371,7 +3380,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -3390,7 +3399,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection,
 									CrosshairMessageType::kStealthState,
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -3409,7 +3418,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -3430,7 +3439,7 @@ namespace ALYSLC
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
@@ -3453,7 +3462,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
 							);
@@ -3471,7 +3480,7 @@ namespace ALYSLC
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
@@ -3491,7 +3500,7 @@ namespace ALYSLC
 								CrosshairMessageType::kNone,
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection
+								CrosshairMessageType::kTargetingState
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
 						);
@@ -3555,7 +3564,7 @@ namespace ALYSLC
 										CrosshairMessageType::kNone, 
 										CrosshairMessageType::kHotkeySelection, 
 										CrosshairMessageType::kStealthState, 
-										CrosshairMessageType::kTargetSelection 
+										CrosshairMessageType::kTargetingState 
 									},
 									max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 								);
@@ -3582,7 +3591,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -3602,7 +3611,7 @@ namespace ALYSLC
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
@@ -3622,7 +3631,7 @@ namespace ALYSLC
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
@@ -3649,7 +3658,7 @@ namespace ALYSLC
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kHotkeySelection,
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 					);
@@ -3666,7 +3675,7 @@ namespace ALYSLC
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kHotkeySelection, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
 					);
@@ -3693,7 +3702,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -3712,7 +3721,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -3738,7 +3747,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection,
 									CrosshairMessageType::kStealthState,
-									CrosshairMessageType::kTargetSelection
+									CrosshairMessageType::kTargetingState
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -3757,7 +3766,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone,
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -3776,7 +3785,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -3797,7 +3806,7 @@ namespace ALYSLC
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kHotkeySelection,
 								CrosshairMessageType::kStealthState,
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
@@ -3818,7 +3827,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection
+									CrosshairMessageType::kTargetingState
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -3836,7 +3845,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection,
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -3857,7 +3866,7 @@ namespace ALYSLC
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
@@ -3921,7 +3930,7 @@ namespace ALYSLC
 										CrosshairMessageType::kNone, 
 										CrosshairMessageType::kHotkeySelection, 
 										CrosshairMessageType::kStealthState, 
-										CrosshairMessageType::kTargetSelection 
+										CrosshairMessageType::kTargetingState 
 									},
 									max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 								);
@@ -3947,7 +3956,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -3967,7 +3976,7 @@ namespace ALYSLC
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
@@ -3987,7 +3996,7 @@ namespace ALYSLC
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
@@ -4014,7 +4023,7 @@ namespace ALYSLC
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kHotkeySelection, 
 							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 					);
@@ -4031,7 +4040,7 @@ namespace ALYSLC
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kHotkeySelection, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
 					);
@@ -4057,7 +4066,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -4076,7 +4085,7 @@ namespace ALYSLC
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
@@ -4101,7 +4110,7 @@ namespace ALYSLC
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
 						);
@@ -4122,7 +4131,7 @@ namespace ALYSLC
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kHotkeySelection, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 					);
@@ -4142,7 +4151,7 @@ namespace ALYSLC
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kHotkeySelection, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
 					);
@@ -4165,7 +4174,7 @@ namespace ALYSLC
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
@@ -4188,7 +4197,7 @@ namespace ALYSLC
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
 						);
@@ -4209,7 +4218,7 @@ namespace ALYSLC
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kHotkeySelection, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 					);
@@ -4229,7 +4238,7 @@ namespace ALYSLC
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kHotkeySelection, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
 					);
@@ -4790,7 +4799,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -6171,7 +6180,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -6185,7 +6194,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -6199,7 +6208,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -6319,7 +6328,7 @@ namespace ALYSLC
 							{ 
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kStealthState,
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							Settings::fSecsBetweenDiffCrosshairMsgs
 						);
@@ -6691,7 +6700,7 @@ namespace ALYSLC
 									{ 
 										CrosshairMessageType::kNone,
 										CrosshairMessageType::kStealthState,
-										CrosshairMessageType::kTargetSelection 
+										CrosshairMessageType::kTargetingState 
 									},
 									0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 								);
@@ -6720,7 +6729,7 @@ namespace ALYSLC
 										{ 
 											CrosshairMessageType::kNone,
 											CrosshairMessageType::kStealthState,
-											CrosshairMessageType::kTargetSelection 
+											CrosshairMessageType::kTargetingState 
 										},
 										0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 									);
@@ -6734,7 +6743,7 @@ namespace ALYSLC
 										{ 
 											CrosshairMessageType::kNone,
 											CrosshairMessageType::kStealthState,
-											CrosshairMessageType::kTargetSelection 
+											CrosshairMessageType::kTargetingState 
 										},
 										0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 									);
@@ -6755,7 +6764,7 @@ namespace ALYSLC
 								{ 
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 							);
@@ -6811,7 +6820,7 @@ namespace ALYSLC
 								{ 
 									CrosshairMessageType::kNone,
 									CrosshairMessageType::kStealthState,
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 							);
@@ -6840,7 +6849,7 @@ namespace ALYSLC
 									{ 
 										CrosshairMessageType::kNone,
 										CrosshairMessageType::kStealthState,
-										CrosshairMessageType::kTargetSelection 
+										CrosshairMessageType::kTargetingState 
 									},
 									0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 								);
@@ -6854,7 +6863,7 @@ namespace ALYSLC
 									{ 
 										CrosshairMessageType::kNone,
 										CrosshairMessageType::kStealthState,
-										CrosshairMessageType::kTargetSelection 
+										CrosshairMessageType::kTargetingState 
 									},
 									0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 								);
@@ -6874,7 +6883,7 @@ namespace ALYSLC
 							{ 
 								CrosshairMessageType::kNone,  
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 						);
@@ -7108,22 +7117,6 @@ namespace ALYSLC
 				}
 				else if (!a_p->pam->downedPlayerTarget->isRevived) 
 				{
-					// Continue reviving the cached downed player if they are not fully revived.
-					// Rotate to face downed player's torso.
-					float yawToTarget = Util::GetYawBetweenPositions
-					(
-						a_p->coopActor->data.location,
-						Util::GetTorsoPosition(a_p->pam->downedPlayerTarget->coopActor.get())
-					);
-					float angDiff = Util::NormalizeAngToPi
-					(
-						yawToTarget - a_p->coopActor->data.angle.z
-					);
-					a_p->coopActor->SetHeading
-					(
-						Util::NormalizeAng0To2Pi(a_p->coopActor->data.angle.z + angDiff)
-					);
-
 					// Will set the is revived flag to true 
 					// once the downed player is fully revived.
 					a_p->pam->RevivePlayer();
@@ -7277,7 +7270,7 @@ namespace ALYSLC
 							{ 
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kStealthState,
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							Settings::fSecsBetweenDiffCrosshairMsgs
 						);
@@ -7433,7 +7426,7 @@ namespace ALYSLC
 							{ 
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kStealthState,
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							Settings::fSecsBetweenDiffCrosshairMsgs
 						);
@@ -7575,7 +7568,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -7589,7 +7582,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -7633,7 +7626,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone,
 					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
@@ -7679,7 +7672,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone,
 					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
@@ -7727,7 +7720,7 @@ namespace ALYSLC
 					{
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -7746,7 +7739,7 @@ namespace ALYSLC
 					{
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -7795,7 +7788,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -7814,7 +7807,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -7856,7 +7849,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -7870,7 +7863,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -7917,7 +7910,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone, 
 					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
@@ -7963,7 +7956,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone, 
 					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
@@ -8011,7 +8004,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -8031,7 +8024,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -8050,7 +8043,7 @@ namespace ALYSLC
 					{
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -8100,7 +8093,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -8120,7 +8113,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -8139,7 +8132,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -8198,7 +8191,7 @@ namespace ALYSLC
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kEquippedItem,
 							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -8733,7 +8726,7 @@ namespace ALYSLC
 								CrosshairMessageType::kNone,
 								CrosshairMessageType::kEquippedItem,
 								CrosshairMessageType::kStealthState,
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							Settings::fSecsBetweenDiffCrosshairMsgs
 						);
@@ -8764,7 +8757,7 @@ namespace ALYSLC
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kEquippedItem,
 							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -8806,7 +8799,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
 				);
@@ -8830,7 +8823,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
 				);
@@ -8845,7 +8838,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
 				);
@@ -8938,7 +8931,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection
+						CrosshairMessageType::kTargetingState
 					},
 					0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -9110,7 +9103,7 @@ namespace ALYSLC
 								{ 
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kStealthState,
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								Settings::fSecsBetweenDiffCrosshairMsgs
 							);
@@ -9304,7 +9297,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -9333,7 +9326,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -9374,7 +9367,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -9396,7 +9389,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -9434,7 +9427,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -9503,7 +9496,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -9524,7 +9517,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -9553,7 +9546,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -9586,7 +9579,7 @@ namespace ALYSLC
 							{ 
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							Settings::fSecsBetweenDiffCrosshairMsgs
 						);
@@ -9651,7 +9644,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -9681,7 +9674,7 @@ namespace ALYSLC
 							{
 								CrosshairMessageType::kNone,
 								CrosshairMessageType::kStealthState,
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							Settings::fSecsBetweenDiffCrosshairMsgs
 						);
@@ -9707,7 +9700,7 @@ namespace ALYSLC
 							{ 
 								CrosshairMessageType::kNone,
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							Settings::fSecsBetweenDiffCrosshairMsgs
 						);
@@ -9759,7 +9752,7 @@ namespace ALYSLC
 								{
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								Settings::fSecsBetweenDiffCrosshairMsgs
 							);
@@ -9778,7 +9771,7 @@ namespace ALYSLC
 								{
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								Settings::fSecsBetweenDiffCrosshairMsgs
 							);
@@ -9830,7 +9823,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone,
 					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
@@ -9927,7 +9920,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -10021,7 +10014,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -10044,7 +10037,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -10067,7 +10060,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -10086,7 +10079,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -10109,7 +10102,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -10124,7 +10117,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -10156,7 +10149,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -10197,7 +10190,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -10222,7 +10215,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -10239,7 +10232,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -10371,7 +10364,7 @@ namespace ALYSLC
 									{
 										CrosshairMessageType::kNone,
 										CrosshairMessageType::kStealthState,
-										CrosshairMessageType::kTargetSelection 
+										CrosshairMessageType::kTargetingState 
 									},
 									Settings::fSecsBetweenDiffCrosshairMsgs
 								);
@@ -10390,7 +10383,7 @@ namespace ALYSLC
 									{
 										CrosshairMessageType::kNone,
 										CrosshairMessageType::kStealthState,
-										CrosshairMessageType::kTargetSelection 
+										CrosshairMessageType::kTargetingState 
 									},
 									Settings::fSecsBetweenDiffCrosshairMsgs
 								);
@@ -10446,7 +10439,7 @@ namespace ALYSLC
 								{ 
 									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								Settings::fSecsBetweenDiffCrosshairMsgs
 							);
@@ -10465,7 +10458,7 @@ namespace ALYSLC
 								{
 									CrosshairMessageType::kNone,
 									CrosshairMessageType::kStealthState,
-									CrosshairMessageType::kTargetSelection 
+									CrosshairMessageType::kTargetingState 
 								},
 								Settings::fSecsBetweenDiffCrosshairMsgs
 							);
@@ -10555,7 +10548,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone,
 					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
@@ -10619,7 +10612,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone, 
 					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
@@ -10651,7 +10644,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone,
 					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
@@ -10680,7 +10673,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone,
 					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs * 2.0f
 			);
@@ -10858,7 +10851,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection
+						CrosshairMessageType::kTargetingState
 					},
 					0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -11260,7 +11253,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection
+						CrosshairMessageType::kTargetingState
 					},
 					0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -11361,7 +11354,7 @@ namespace ALYSLC
 							{ 
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection
+								CrosshairMessageType::kTargetingState
 							},
 							Settings::fSecsBetweenDiffCrosshairMsgs
 						);
@@ -11387,7 +11380,7 @@ namespace ALYSLC
 							{ 
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection
+								CrosshairMessageType::kTargetingState
 							},
 							Settings::fSecsBetweenDiffCrosshairMsgs
 						);
@@ -11415,7 +11408,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection
+							CrosshairMessageType::kTargetingState
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -11434,7 +11427,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection
+						CrosshairMessageType::kTargetingState
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -11459,7 +11452,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone,
 					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
@@ -11499,7 +11492,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone,
 					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
@@ -11679,7 +11672,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -13392,7 +13385,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -13407,7 +13400,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection
+						CrosshairMessageType::kTargetingState
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -13445,7 +13438,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone, 
 					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);;
@@ -13485,7 +13478,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone, 
 					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
@@ -13542,7 +13535,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -13562,7 +13555,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -13620,7 +13613,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -13640,7 +13633,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection
+						CrosshairMessageType::kTargetingState
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -13690,7 +13683,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -13705,7 +13698,7 @@ namespace ALYSLC
 					{
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -13746,7 +13739,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone, 
 					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
@@ -13786,7 +13779,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone,
 					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
@@ -13874,7 +13867,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection
+						CrosshairMessageType::kTargetingState
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -13894,7 +13887,7 @@ namespace ALYSLC
 					{
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -13914,7 +13907,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -13981,7 +13974,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection
+							CrosshairMessageType::kTargetingState
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -14001,7 +13994,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -14022,7 +14015,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection
+						CrosshairMessageType::kTargetingState
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -14042,7 +14035,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -14244,7 +14237,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -14290,7 +14283,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -14315,7 +14308,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -14382,7 +14375,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection
+						CrosshairMessageType::kTargetingState
 					},
 					0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -14449,7 +14442,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection
+							CrosshairMessageType::kTargetingState
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -14565,7 +14558,7 @@ namespace ALYSLC
 								CrosshairMessageType::kNone, 
 								CrosshairMessageType::kActivationInfo, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							Settings::fSecsBetweenDiffCrosshairMsgs
 						);
@@ -14746,7 +14739,7 @@ namespace ALYSLC
 													CrosshairMessageType::kNone, 
 													CrosshairMessageType::kActivationInfo, 
 													CrosshairMessageType::kStealthState,
-													CrosshairMessageType::kTargetSelection 
+													CrosshairMessageType::kTargetingState 
 												},
 												Settings::fSecsBetweenDiffCrosshairMsgs
 											);
@@ -14802,7 +14795,7 @@ namespace ALYSLC
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kActivationInfo, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);

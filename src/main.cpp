@@ -42,7 +42,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		ALYSLC::RequiemCompat::CheckForRequiem(g_loadInterface);
 		ALYSLC::SkyrimsParagliderCompat::CheckForParaglider();
 		ALYSLC::TKDodgeCompat::CheckForTKDodge();
-		ALYSLC::TrueDirectionalMovementCompat::CheckForTrueDirectionalMovement(g_loadInterface);
+		ALYSLC::TrueDirectionalMovementCompat::RequestTrueDirectionalMovementAPIs(g_loadInterface);
 		ALYSLC::TrueHUDCompat::RequestTrueHUDAPIs(g_loadInterface);
 		ALYSLC::UseOrTakeCompat::CheckForUseOrTake();
 		// Import all settings after setting the plugin name to use

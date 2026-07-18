@@ -329,7 +329,6 @@ namespace ALYSLC
 		framesSinceStartingJump = 
 		framesToCompleteDashDodge =
 		jumpBindHeldFrameCount = 0;
-		jumpBaseAscentFramecount = 1;
 
 		// Reset time points used by this manager.
 		ResetTPs();
@@ -1147,32 +1146,76 @@ namespace ALYSLC
 		if (p->pam->JustStarted(InputAction::kJump))
 		{
 			jumpBindHeldFrameCount = 1;
-			// Number of frames to spend ascending to the apex of the jump.
-			// Not less than 1.
-			jumpBaseAscentFramecount = max
-			(
-				1, 
-				static_cast<uint32_t>
-				(
-					Settings::fSecsAfterGatherToFall * 
-					(1.0f / (*g_deltaTimeRealTime * RE::BSTimer::QGlobalTimeMultiplier())) + 0.5f
-				)
-			);
 		}
+		
 
 		auto& currentHKPState = charController->context.currentState;
 		// TODO:
 		// Tweaks, tweaks, and more tweaks.
-		const float jumpHoldTimeBonusVertSpeed = 
+		// Number of frames to spend ascending to the apex of the jump.
+		// Not less than 1.
+		const float baseJumpAscentFramecount = max
+		(
+			1, 
+			static_cast<uint32_t>
+			(
+				Settings::fSecsAfterGatherToFall * 
+				(1.0f / (*g_deltaTimeRealTime * RE::BSTimer::QGlobalTimeMultiplier())) + 0.5f
+			)
+		);
+		const float jumpHoldTimeVertSpeedOffset = 
 		(
 			havokInitialJumpZVelocity * std::lerp
 			(
-				0.0f,
-				1.0f,
-				min(0.5f * jumpBindHeldFrameCount / jumpBaseAscentFramecount, 1.0f)
+				-0.2f,
+				0.9f,
+				min(0.5f * jumpBindHeldFrameCount / baseJumpAscentFramecount, 1.0f)
 			)
 		);
 		const auto& lsData = glob.cdh->GetAnalogStickState(deviceID, true);
+		const float movementSpeed = coopActor->DoGetMovementSpeed();
+
+		// REMOVE when done debugging
+		/*DBG
+		(
+			"{}: {}: Z Vel: {} ({} / {}). Bonuts: {}, XY speed: {}. "
+			"Flags: 0b{:B}, supported state: {}, surface info: 0b{:B}.", 
+			coopActor->GetName(), 
+			p->pam->JustStarted(InputAction::kJump) ?
+			"START" : 
+			"CONTINUE",
+			max
+			(
+				-52.0f,
+				(
+					havokInitialJumpZVelocity + 
+					jumpHoldTimeVertSpeedOffset +
+					(
+						GAME_TO_HAVOK *
+						Settings::fJumpAdditionalLaunchSpeed
+					)
+				) - 
+				(
+					Settings::fG * 
+					Settings::fJumpingGravityMult *
+					Util::GetElapsedSeconds(p->jumpStartTP)
+				)
+			), 
+			jumpBindHeldFrameCount,
+			baseJumpAscentFramecount,
+			jumpHoldTimeVertSpeedOffset,
+			sqrtf
+			(
+				charController->outVelocity.quad.m128_f32[0] * 
+				charController->outVelocity.quad.m128_f32[0] + 
+				charController->outVelocity.quad.m128_f32[1] * 
+				charController->outVelocity.quad.m128_f32[1]
+			),
+			*charController->flags,
+			charController->context.currentState,
+			*charController->surfaceInfo.supportedState
+		);*/
+
 		// Start jump. Play gather animation(s) and invert gravity for the player.
 		if (reqStartJump)
 		{
@@ -1230,7 +1273,6 @@ namespace ALYSLC
 				reqStartJump = false;
 				sentJumpFallEvent = false;
 				p->jumpStartTP = SteadyClock::now();
-				jumpBaseAscentFramecount = 1;
 				jumpBindHeldFrameCount =
 				framesSinceStartingJump = 0;
 				return;
@@ -1238,7 +1280,7 @@ namespace ALYSLC
 
 			RE::hkVector4 velBeforeJumpVect{ };
 			charController->GetLinearVelocityImpl(velBeforeJumpVect);
-			if (velBeforeJumpVect.Length3() == 0.0f)
+			if (movementSpeed <= 10.0f)
 			{
 				coopActor->NotifyAnimationGraph("JumpStandingStart");
 			}
@@ -1316,7 +1358,6 @@ namespace ALYSLC
 				reqStartJump = false;
 				sentJumpFallEvent = false;
 				p->jumpStartTP = SteadyClock::now();
-				jumpBaseAscentFramecount = 1;
 				jumpBindHeldFrameCount = 
 				framesSinceStartingJump = 0;
 				return;
@@ -1338,12 +1379,12 @@ namespace ALYSLC
 				reqStartJump = false;
 				sentJumpFallEvent = false;
 				p->jumpStartTP = SteadyClock::now();
-				jumpBaseAscentFramecount = 1;
 				jumpBindHeldFrameCount =
 				framesSinceStartingJump = 0;
 				return;
 			}
 
+			// Check if the player has landed on a surface, and if so, reset state and return early.
 			bool hitSurfaceBelow = false;
 			// Handle ascent to peak of the jump at which the player begins to fall.
 			// Apex is reached once the player's vertical velocity is 0 or negative (falling).
@@ -1378,13 +1419,32 @@ namespace ALYSLC
 					// Set fall start time and height.
 					Util::AdjustFallState(charController, true);
 					charController->lock.Unlock();
+					if (movementSpeed <= 10.0f)
+					{
+						coopActor->NotifyAnimationGraph("JumpFall");
+					}
+					else
+					{
+						coopActor->NotifyAnimationGraph("JumpFallDirectional");
+					}
 
-					coopActor->NotifyAnimationGraph("JumpFall");
 					sentJumpFallEvent = true;
 				}
-					
+				
 				// Check if the player has landed, reset state, and return early.
-				hitSurfaceBelow =
+				// IMPORTANT:
+				// For some jump animation mods:
+				// P1 will not land and their character controller's velocity is not modifiable
+				// once their state is updated to grounded.
+				// They will start slowly falling a bit above the ground for a few seconds 
+				// before they finally touch the ground and land.
+				// And our raycast checks will not detect a hit because P1 is floating too high 
+				// above the ground when the game considers them grounded.
+				// 
+				// The other issue with relying solely on checking these flags for P1
+				// is that P1 can now quickly jump up slopes since the controller's flags 
+				// are set even when sliding on a slope.
+				bool controllerLanded =
 				(
 					(
 						charController->flags.all
@@ -1396,15 +1456,24 @@ namespace ALYSLC
 					(
 						charController->context.currentState == 
 						RE::hkpCharacterStateType::kOnGround &&
-						charController->surfaceInfo.supportedState.get() != 
-						RE::hkpSurfaceInfo::SupportedState::kUnsupported
+						charController->surfaceInfo.supportedState.get() == 
+						RE::hkpSurfaceInfo::SupportedState::kSupported
 					) 
 				);
+				hitSurfaceBelow = controllerLanded;
+
+				// NOTE:
+				// Raycast landing detection not necessary right now.
+				// May use in the future if implementing a fully custom jump action
+				// that does not rely on the character controller's state.
+				/*
 				// Have to check for a collidable surface under the player 
 				// with a single raycast, since the char controller flags and surface info
 				// sometimes indicate the player can land while they are still in midair.
-				if (hitSurfaceBelow)
+				float minZEndCoord = FLT_MAX;
+				if (hitSurfaceBelow && !p->isPlayer1)
 				{
+					hitSurfaceBelow = false;
 					glm::vec4 start =
 					{
 						coopActor->data.location.x,
@@ -1417,8 +1486,6 @@ namespace ALYSLC
 						start - glm::vec4(0.0f, 0.0f, 1.01f * coopActor->GetHeight(), 0.0f)
 					);
 					Raycast::RayResult result{ };
-					hitSurfaceBelow = false;
-
 					// Cast a ray downward from each foot.
 					bool castFromFoot = false;
 					if (auto player3DPtr = Util::GetRefr3D(coopActor.get()); player3DPtr)
@@ -1441,10 +1508,10 @@ namespace ALYSLC
 										// Cast slightly beyond the bottom surface of the foot,
 										// otherwise no hit will be recorded even when 
 										// the player's foot is visually in contact with a surface.
-										float dist = 2.0f * leftFoot->worldBound.radius;
+										float dist = Util::GetRigidBodyCapsuleAxisLength(leftFoot);
 										if (dist == 0.0f)
 										{
-											dist = Util::GetRigidBodyCapsuleAxisLength(leftFoot);
+											dist = 2.0f * leftFoot->worldBound.radius;
 											if (dist == 0.0f)
 											{
 												dist = coopActor->GetScale() * 15.0f;
@@ -1466,10 +1533,15 @@ namespace ALYSLC
 												}
 											)
 										);
+										//result = Raycast::CastRay(start, end, dist);
 										hitSurfaceBelow = result.hit;
+										if (end.z < minZEndCoord)
+										{
+											minZEndCoord = end.z;
+										}
 
 										// REMOVE when done debugging
-										/*DBG
+										DBG
 										(
 											"{}: HIT FROM LEFT FOOT: {}. "
 											"Dist: {}, player scale: {}.",
@@ -1482,11 +1554,33 @@ namespace ALYSLC
 										(
 											start, 
 											end, 
-											hitSurfaceBelow ? 
+											result.hit ? 
 											Settings::vuCrosshairOuterOutlineRGBAValues[playerID] :
 											Settings::vuCrosshairInnerOutlineRGBAValues[playerID],
 											2.0f
-										);*/
+										);
+										//DebugAPI::QueueCircle3D
+										//(
+										//	result.hit ? 
+										//	result.hitPos :
+										//	end,
+										//	ToVec3
+										//	(
+										//		Util::RotationToDirectionVect
+										//		(
+										//			-glob.cam->camPitch, 
+										//			Util::ConvertAngle(glob.cam->camYaw)
+										//		)
+										//	), 
+										//	result.hit ? 
+										//	Settings::vuCrosshairOuterOutlineRGBAValues
+										//	[playerID] :
+										//	Settings::vuCrosshairInnerOutlineRGBAValues
+										//	[playerID],
+										//	16,
+										//	dist,
+										//	2.0f
+										//);
 									}	
 									
 									// Only need to cast from other foot if there was no hit 
@@ -1500,13 +1594,13 @@ namespace ALYSLC
 										if (rightFoot)
 										{
 											castFromFoot = true;
-											float dist = 2.0f * rightFoot->worldBound.radius;
+											float dist = Util::GetRigidBodyCapsuleAxisLength
+											(
+												rightFoot
+											);
 											if (dist == 0.0f)
 											{
-												dist = 
-												(
-													Util::GetRigidBodyCapsuleAxisLength(rightFoot)
-												);
+												dist = 2.0f * rightFoot->worldBound.radius;
 												if (dist == 0.0f)
 												{
 													dist = coopActor->GetScale() * 15.0f;
@@ -1515,7 +1609,6 @@ namespace ALYSLC
 
 											start = ToVec4(rightFoot->world.translate);
 											end = start + glm::vec4(0.0f, 0.0f, -dist, 0.0f); 
-
 											result = Raycast::hkpCastRay
 											(
 												start, 
@@ -1532,10 +1625,15 @@ namespace ALYSLC
 													}
 												)
 											);
-											hitSurfaceBelow = result.hit;
+											//result = Raycast::CastRay(start, end, dist);
+											hitSurfaceBelow |= result.hit;
+											if (end.z < minZEndCoord)
+											{
+												minZEndCoord = end.z;
+											}
 
 											// REMOVE when done debugging
-											/*DBG
+											DBG
 											(
 												"{}: HIT FROM RIGHT FOOT: {}. "
 												"Dist: {}, player scale: {}.",
@@ -1548,13 +1646,35 @@ namespace ALYSLC
 											(
 												start, 
 												end, 
-												hitSurfaceBelow ? 
+												result.hit ? 
 												Settings::vuCrosshairOuterOutlineRGBAValues
 												[playerID] :
 												Settings::vuCrosshairInnerOutlineRGBAValues
 												[playerID],
 												2.0f
-											);*/
+											);
+											//DebugAPI::QueueCircle3D
+											//(
+											//	result.hit ? 
+											//	result.hitPos :
+											//	end, 
+											//	ToVec3
+											//	(
+											//		Util::RotationToDirectionVect
+											//		(
+											//			-glob.cam->camPitch, 
+											//			Util::ConvertAngle(glob.cam->camYaw)
+											//		)
+											//	), 
+											//	result.hit ? 
+											//	Settings::vuCrosshairOuterOutlineRGBAValues
+											//	[playerID] :
+											//	Settings::vuCrosshairInnerOutlineRGBAValues
+											//	[playerID],
+											//	16,
+											//	dist,
+											//	2.0f
+											//);
 										}
 									}
 								}
@@ -1564,19 +1684,24 @@ namespace ALYSLC
 
 					// If we could not raycast from either foot,
 					// cast from the player's refr pos as a fallback.
-					if (!castFromFoot)
+					if (!hitSurfaceBelow)
 					{
 						start =
 						{
 							coopActor->data.location.x,
 							coopActor->data.location.y,
-							coopActor->data.location.z,
+							coopActor->data.location.z + coopActor->GetHeight() * 0.5f,
 							0.0f
 						};
 						end = 
-						(
-							start - glm::vec4(0.0f, 0.0f, 0.01f * coopActor->GetHeight(), 0.0f)
-						);
+						{
+							start.x,
+							start.y,
+							castFromFoot ?
+							minZEndCoord : 
+							coopActor->data.location.z - 0.025f * coopActor->GetHeight(),
+							0.0f
+						};
 						result = Raycast::hkpCastRay
 						(
 							start, 
@@ -1587,11 +1712,22 @@ namespace ALYSLC
 								{ RE::FormType::Activator, RE::FormType::TalkingActivator }
 							)
 						);
-						hitSurfaceBelow = result.hit;
+						hitSurfaceBelow |= result.hit;
+						DebugAPI::QueueLine3D
+						(
+							start, 
+							end, 
+							result.hit ? 
+							Settings::vuCrosshairOuterOutlineRGBAValues
+							[playerID] :
+							Settings::vuCrosshairInnerOutlineRGBAValues
+							[playerID],
+							2.0f
+						);
 					}
 
 					// REMOVE when done debugging
-					/*if (hitSurfaceBelow)
+					if (hitSurfaceBelow)
 					{
 						const float surfaceNormalPitch = asinf(result.rayNormal.z);
 						DBG
@@ -1602,8 +1738,9 @@ namespace ALYSLC
 							(PI / 2.0f - surfaceNormalPitch) * TO_DEGREES,
 							hitSurfaceBelow
 						);
-					}*/
+					}
 				}
+				*/
 
 				if (hitSurfaceBelow)
 				{
@@ -1620,7 +1757,27 @@ namespace ALYSLC
 					// Have to manually trigger the landing animation 
 					// to minimize occurrences of the hovering bug.
 					// No more 'Surf's up, dude!'.
-					coopActor->NotifyAnimationGraph("JumpLand");
+					if (p->isPlayer1)
+					{
+						RE::hkVector4 velUponLanding{ };
+						charController->GetLinearVelocityImpl(velUponLanding);
+						// Replicate the idle tree condition in the CK.
+						if (velUponLanding.quad.m128_f32[2] > 1E-3F)
+						{
+							coopActor->NotifyAnimationGraph("JumpLandEnd");
+						}
+						else
+						{
+							coopActor->NotifyAnimationGraph("JumpLand");
+						}
+					}
+					else
+					{
+						// Game will automatically play either the hard landing animation 
+						// or the soft blended landing animation for P2-P4.
+						coopActor->NotifyAnimationGraph("JumpLandEnd");
+					}
+					
 					charController->lock.Lock();
 					{
 						charController->surfaceInfo.surfaceNormal = RE::hkVector4(0.0f);
@@ -1632,7 +1789,6 @@ namespace ALYSLC
 
 					// Update jump start TP on landing.
 					p->jumpStartTP = SteadyClock::now();
-					jumpBaseAscentFramecount = 1;
 					jumpBindHeldFrameCount = 
 					framesSinceStartingJump = 0;
 
@@ -1667,12 +1823,12 @@ namespace ALYSLC
 				{
 					charController->outVelocity.quad.m128_f32[0],
 					charController->outVelocity.quad.m128_f32[1],
-					min
+					max
 					(
-						52.0f,
+						-52.0f,
 						(
 							havokInitialJumpZVelocity + 
-							jumpHoldTimeBonusVertSpeed +
+							jumpHoldTimeVertSpeedOffset +
 							(
 								GAME_TO_HAVOK *
 								Settings::fJumpAdditionalLaunchSpeed
@@ -1687,32 +1843,19 @@ namespace ALYSLC
 					charController->outVelocity.quad.m128_f32[3],
 				};
 
-				// REMOVE when done debugging
-				/*DBG
-				(
-					"{}: Z Vel: {} ({} / {}). Bonuts: {}, XY speed: {}.", 
-					coopActor->GetName(), 
-					havokInitialJumpZVelocity + 
-					jumpHoldTimeBonusVertSpeed +
-					(
-						GAME_TO_HAVOK *
-						Settings::fJumpAdditionalLaunchSpeed
-					) - Settings::fG * 2.0f * Util::GetElapsedSeconds(p->jumpStartTP), 
-					jumpBindHeldFrameCount,
-					jumpBaseAscentFramecount,
-					jumpHoldTimeBonusVertSpeed,
-					sqrtf
-					(
-						charController->outVelocity.quad.m128_f32[0] * 
-						charController->outVelocity.quad.m128_f32[0] + 
-						charController->outVelocity.quad.m128_f32[1] * 
-						charController->outVelocity.quad.m128_f32[1]
-					)
-				);*/
 				charController->SetLinearVelocityImpl(vel);
 			}
 			charController->lock.Unlock();
 		}
+
+		/*DBG
+		(
+			"{}: Movement speed: {}, ls mag: {}. Frame {} since start.",
+			coopActor->GetName(), 
+			coopActor->DoGetMovementSpeed(),
+			lsData.normMag,
+			framesSinceStartingJump
+		);*/
 	}
 
 	void MovementManager::PerformMagicalParaglide()
@@ -2329,7 +2472,16 @@ namespace ALYSLC
 
 		// Don't set while in dialogue.
 		auto currentProc = coopActor->currentProcess; 
-		if (!currentProc || !currentProc->high || p->pam->isInDialogue)
+		if (!currentProc || !currentProc->high)
+		{
+			return;
+		}
+
+		// Do not look at a target if the camera was zoomed out while in dialogue mode.
+		if (p->pam->isInDialogue && 
+			Settings::bDialogueCamEnabled &&
+			glob.cam->IsRunning() &&
+			glob.cam->adjustedAfterReachingDialoguePos)
 		{
 			return;
 		}
@@ -2567,10 +2719,14 @@ namespace ALYSLC
 					!coopActor->IsOnMount() && 
 					!isSubmerged && 
 					!isAirborne &&
-					!p->pam->isSprinting
+					!p->pam->isJumping &&
+					!p->pam->isSprinting && 
+					!coopActor->IsSprinting() && 
+					!p->pam->IsPerforming(InputAction::kSprint) &&
+					!coopActor->IsSwimming()
 				) && 
 				(
-					(p->coopActor->IsWeaponDrawn())
+					p->coopActor->IsWeaponDrawn()
 				) && 
 				(
 					!coopActor->IsSneaking() || 
@@ -2673,18 +2829,16 @@ namespace ALYSLC
 				(
 					movementActorPtr->data.location, targetLocation
 				);
-				float minDistToSlowRotation = Util::GetXYDistance
-				(
-					coopActor->data.location, movementActorPtr->data.location
-				) * 0.1f;
-				// Default radius at which to start slowing rotation.
 				float radius = Settings::fTargetAttackSourceDistToSlowRotation;
+				// Default radius at which to start slowing rotation.
 				// Slow down when within the player actor's bounds.
 				auto player3DPtr = Util::GetRefr3D(coopActor.get()); 
 				if (player3DPtr) 
 				{
 					radius = player3DPtr->worldBound.radius;
 				}
+				
+				float minDistToSlowRotation = radius * 0.1f;
 				rotMult *= Util::InterpolateEaseInEaseOut
 				(
 					0.0f, 
@@ -2692,7 +2846,7 @@ namespace ALYSLC
 					(
 						min
 						(
-							xyDistToTarget - minDistToSlowRotation, radius
+							max(0.0f, xyDistToTarget - minDistToSlowRotation), radius
 						) / 
 						max
 						(
@@ -2701,7 +2855,6 @@ namespace ALYSLC
 					), 
 					3.0f
 				);
-				
 				bool isAimingWithRangedWeapon = 
 				{
 					coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowDrawn
@@ -3172,8 +3325,16 @@ namespace ALYSLC
 					);
 				}
 
-				movementActorPtr->SetHeading(newYaw);
-				midHighProc->rotationSpeed.z = 0.0f;
+				if (Settings::bUseMidHighProcRotMod)
+				{
+					midHighProc->rotationSpeed.z = rawYawOffset * (1.0f / *g_deltaTimeRealTime);
+				}
+				else
+				{
+					movementActorPtr->SetHeading(newYaw);
+					midHighProc->rotationSpeed.z = 0.0f;
+				}
+
 				// Move to interaction package entry position which was set during activation.
 				// Slow down when nearing the interaction position.
 				KeepOffsetFromActor
@@ -3308,18 +3469,25 @@ namespace ALYSLC
 			ClearKeepOffsetFromActor();
 			SetDontMove(true);
 			// Can still rotate.
-			float newYaw = Util::NormalizeAng0To2Pi
-			(
-				movementActorPtr->data.angle.z + rawYawOffset
-			);
-			movementActorPtr->SetHeading(newYaw);
-			midHighProc->rotationSpeed.z = 0.0f;
+			if (Settings::bUseMidHighProcRotMod)
+			{
+				midHighProc->rotationSpeed.z = rawYawOffset * (1.0f / *g_deltaTimeRealTime);
+			}
+			else
+			{
+				float newYaw = Util::NormalizeAng0To2Pi
+				(
+					movementActorPtr->data.angle.z + rawYawOffset
+				);
+				movementActorPtr->SetHeading(newYaw);
+				midHighProc->rotationSpeed.z = 0.0f;
+			}
 		}
-		else if (shouldStopMoving || lsMag == 0.0f)
+		else if (shouldStopMoving || p->isRevivingPlayer || lsMag == 0.0f)
 		{
 			// SetDontMove() freezes actors in midair, 
-			// so only set the don't move flag when not paragliding, on the ground, 
-			// and not trying to jump.
+			// so only set the don't move flag when not paragliding,
+			// not reviving, not attacking, on the ground, and not trying to jump.
 			RE::bhkCharacterController* charController
 			{
 				movementActorPtr ? 
@@ -3329,6 +3497,7 @@ namespace ALYSLC
 			bool canFreeze = 
 			(
 				shouldStopMoving && 
+				!p->isRevivingPlayer &&
 				!p->pam->isAttacking && 
 				!isAirborneWhileJumping && 
 				!reqStartJump &&
@@ -3357,33 +3526,62 @@ namespace ALYSLC
 			if (!p->pam->actionPreventsMovement)
 			{
 				// Manually rotate to avoid slow motion shifting when the rotation offset is small.
-				midHighProc->rotationSpeed.z = 0.0f;
-				movementActorPtr->SetHeading
-				(
-					Util::NormalizeAng0To2Pi
+				// Mid proc rotation multiplier does not affect the player's rotation
+				// when animation driven.
+				if (Settings::bUseMidHighProcRotMod &&
+					!p->isRevivingPlayer && 
+					!p->coopActor->IsAnimationDriven())
+				{
+					midHighProc->rotationSpeed.z = rawYawOffset * (1.0f / *g_deltaTimeRealTime);
+				}
+				else if (p->isRevivingPlayer && p->pam->JustStarted(InputAction::kActivate))
+				{
+					// Only turn to face initially since the player will jitter a lot
+					// if modifying rotation directly while in the revive animation.
+					// Rotate to face downed player's torso.
+					midHighProc->rotationSpeed.z = 0.0f;
+					float yawToTarget = Util::GetYawBetweenPositions
 					(
-						movementActorPtr->data.angle.z + rawYawOffset
-					)
-				);
+						p->coopActor->data.location,
+						Util::GetTorsoPosition(p->pam->downedPlayerTarget->coopActor.get())
+					);
+					float angDiff = Util::NormalizeAngToPi
+					(
+						yawToTarget - p->coopActor->data.angle.z
+					);
+					p->coopActor->SetHeading
+					(
+						Util::NormalizeAng0To2Pi(p->coopActor->data.angle.z + angDiff)
+					);
+				}
+				else if (!p->isRevivingPlayer)
+				{
+					midHighProc->rotationSpeed.z = 0.0f;
+					movementActorPtr->SetHeading
+					(
+						Util::NormalizeAng0To2Pi
+						(
+							movementActorPtr->data.angle.z + rawYawOffset
+						)
+					);
+				}
 
 				// P1 will rotate automatically towards/away from the dialogue NPC 
 				// when Alternate Conversation Camera is active.
 				// Set rotation to the last LS angle to prevent this.
+				// Cannot use the mid high proc multiplier since ACC overrides it.
 				auto ui = RE::UI::GetSingleton();
-				if (p->isPlayer1 &&
+				bool isP1InACCDialogue = 
+				(
+					p->isPlayer1 &&
 					ALYSLC::AlternateConversationCameraCompat::g_installed &&
 					ui &&
 					ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) &&
-					glob.menuPID == 0 && 
-					!p->lsMoved)
+					glob.menuPID <= 0
+				);
+				if (isP1InACCDialogue)
 				{
-					/*DBG
-					(
-						"P1 angle: {}, yaw offset: {}, LS angle: {}.",
-						TO_DEGREES * movementActorPtr->data.angle.z,
-						TO_DEGREES * rawYawOffset,
-						TO_DEGREES * p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
-					);*/
+					midHighProc->rotationSpeed.z = 0.0f;
 					movementActorPtr->SetHeading
 					(
 						p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
@@ -3437,15 +3635,24 @@ namespace ALYSLC
 				// Do this when attacking, paragliding, or shield charging.
 				bool allowRotation = false;
 				coopActor->GetGraphVariableBool("bAllowRotation", allowRotation);
-				bool useMidHighProcRot =
+
+				auto ui = RE::UI::GetSingleton();
+				bool isP1InACCDialogue = 
 				(
-					(midHighProc) && 
-					(
-						(allowRotation && p->pam->isAttacking && !p->pam->isInCastingAnim) ||
-						(isParagliding) ||
-						(p->pam->IsPerformingAllOf(InputAction::kSprint, InputAction::kBlock))
-					)
+					p->isPlayer1 &&
+					ALYSLC::AlternateConversationCameraCompat::g_installed &&
+					ui &&
+					ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) &&
+					glob.menuPID <= 0
 				);
+				bool useMidHighProcRot = 
+				(
+					(Settings::bUseMidHighProcRotMod && !isP1InACCDialogue) ||
+					(allowRotation && p->pam->isAttacking && !p->pam->isInCastingAnim) ||
+					(isParagliding) ||
+					(p->pam->IsPerformingAllOf(InputAction::kSprint, InputAction::kBlock))
+				);
+
 				if (useMidHighProcRot)
 				{
 					midHighProc->rotationSpeed.z = rawYawOffset * (1.0f / *g_deltaTimeRealTime);
@@ -4324,8 +4531,10 @@ namespace ALYSLC
 			{
 				(!p->lsMoved && movementSpeed != 0.0f) &&
 				(
-					p->pam->isAttacking || p->pam->isBlocking ||
-					p->pam->isBashing || p->pam->isInCastingAnim
+					p->pam->isAttacking || 
+					p->pam->isBlocking ||
+					p->pam->isBashing ||
+					p->pam->isInCastingAnim
 				)
 			};
 			// Also stop the player momentarily to dampen residual momentum 
@@ -4483,6 +4692,15 @@ namespace ALYSLC
 			return;
 		}
 		
+		// Fixes switch to stuttering strafing animations with poor blending, 
+		// the cause of which hasn't been identified.
+		// The problem can persist across saves.
+		coopActor->boolFlags.set
+		(
+			//RE::Actor::BOOL_FLAGS::kForceAnimGraphUpdate//,
+			RE::Actor::BOOL_FLAGS::kForceOneAnimgraphUpdate
+		);
+
 		// NOTE:
 		// Unused for now unless the new method for enabling discovery proves to be broken.
 		// Check if P1 should have their AI driven flag cleared, 

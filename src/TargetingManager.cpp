@@ -1259,7 +1259,7 @@ namespace ALYSLC
 		auto diff = (screenHeadPos - screenTorsoPos);
 		// Cap the radius and modify thickness based on distance from the camera.
 		float radius = min(diff.Length(), Settings::vfCrosshairGapRadius[playerID]);
-		const float thickness = 0.125f * radius;
+		const float thickness = Settings::vfCrosshairThickness[playerID];
 		const auto center = ToVec3(screenTorsoPos);
 		float gapDelta = 0.0f;
 		float rotationRatio = 0.0f;
@@ -4280,7 +4280,18 @@ namespace ALYSLC
 			) / 
 			(1.0f + powf(distanceFromReleasePos / 1000.0f, 5.0f))
 		);
-		bool inRange = distanceTraversed < a_maxRange;
+		// Beam and flame projectiles move in a straight line, 
+		// so we just need to check their range against the straight line distance 
+		// from the release position to the target position.
+		bool inRange = 
+		(
+			a_baseProj && a_baseProj->data.types.any
+			(
+				RE::BGSProjectileData::Type::kBeam, RE::BGSProjectileData::Type::kFlamethrower
+			) ? 
+			a_releasePos.GetDistance(a_targetPos) < a_maxRange :
+			distanceTraversed < a_maxRange
+		);
 		if (a_trajType == ProjectileTrajType::kAimDirection)
 		{
 			// If there was a hit on the frame before reaching the target position,
@@ -5334,6 +5345,299 @@ namespace ALYSLC
 			glob.cdh->GetAnalogStickState(deviceID, true).prevNormMag
 		);
 		return closestActorInFOVHandle;
+	}
+
+	const RE::BSFixedString TargetingManager::GetCrosshairSelectionMessage(bool a_stealthState)
+	{
+		// Get the crosshair selection text message to display.
+		// If sneaking, return a string that gives info on detection,
+		// in addition to the selected NPC, if any.
+		// Return the empty string if the crosshair is not on a selectable entity.
+
+		RE::BSFixedString msg = ""sv;
+		auto selectedTargetActorPtr = Util::GetActorPtrFromHandle
+		(
+			aimMode == AimMode::kTwinStick ? 
+			aimCorrectionTargetHandle : 
+			selectedTargetActorHandle
+		); 
+		if (a_stealthState)
+		{
+			if (!coopActor->IsSneaking())
+			{
+				return msg;
+			}
+
+			const bool checkSelectedTarget = 
+			(
+				selectedTargetActorPtr &&
+				selectedTargetActorPtr.get() && 
+				!selectedTargetActorPtr->IsDead()
+			);
+			// Set sneak info text to indicate the player's hidden percent,
+			// which is determined by their remaining stealth points:
+			// 
+			// player's total stealth points - 
+			// max(all aggro'd actors' stealth point decrements)
+				
+			// If a particular target actor is selected, 
+			// show their individual detection level of the player as well.
+			if (checkSelectedTarget)
+			{
+				float targetDetectionPct = static_cast<uint8_t>
+				(
+					Util::GetDetectionPercent(coopActor.get(), selectedTargetActorPtr.get())
+				);
+				uint32_t targetDetectionPctRGB = GetDetectionLvlRGB(targetDetectionPct, false);
+				// Set sneak info text to indicate the currently selected/aim correction
+				// target's  detection level of the player 
+				// and the overall detection percentage of the player
+				// for all relevant high process actors.
+				// Passive actors' names are displayed in white,
+				// pacifiable actors' names are displayed in pink,
+				// and enemy actors' names are displayed in red.
+				msg = fmt::format
+				(
+					"P{}: Detected by <font color=\"#{:X}\">{}</font> "
+					"(<font color=\"#{:X}\">{}%</font>), overall "
+					"(<font color=\"#{:X}\">{}%</font>)",
+					playerID + 1,
+					!selectedTargetActorPtr->IsHostileToActor(coopActor.get()) ? 
+					0xFFFFFF : 
+					Util::CanStopCombatWithActor(selectedTargetActorPtr.get()) ?
+					0xFFBBBB :
+					0xFF0000,
+					selectedTargetActorPtr->GetDisplayFullName(),
+					targetDetectionPctRGB, 
+					targetDetectionPct,
+					detectionPctRGB,
+					detectionPct
+				);
+			}
+			else
+			{
+				// Detection percent reported accounts for all relevant actors 
+				// in the high process.
+				msg = fmt::format
+				(
+					"P{}: Detected (<font color=\"#{:X}\">{}%</font>)",
+					playerID + 1, detectionPctRGB, detectionPct
+				);
+			}
+		}
+		else
+		{
+			if (selectedTargetActorPtr && !selectedTargetActorPtr->IsDead())
+			{
+				// Alive actor. Show name and level.
+				// Passive actors' names are displayed in white,
+				// pacifiable actors' names are displayed in pink,
+				// and enemy actors' names are displayed in red.
+				auto levelRGB = GetLevelDifferenceRGB
+				(
+					aimMode == AimMode::kTwinStick ? 
+					aimCorrectionTargetHandle : 
+					selectedTargetActorHandle
+				);
+				msg = fmt::format
+				(
+					"P{}: {} <font color=\"#{:X}\">L{}</font> <font color=\"#{:X}\">{}</font>",
+					playerID + 1, crosshairActive ? "Facing" : "Targeting",
+					levelRGB, selectedTargetActorPtr->GetLevel(),
+					!selectedTargetActorPtr->IsHostileToActor(coopActor.get()) ? 
+					0xFFFFFF : 
+					Util::CanStopCombatWithActor(selectedTargetActorPtr.get()) ?
+					0xFFBBBB :
+					0xFF0000,
+					selectedTargetActorPtr->GetDisplayFullName()
+				);
+			}
+			else
+			{
+				auto selectedRefrPtr = 
+				(
+					Util::HandleIsValid(activationRefrHandle) ? 
+					Util::GetRefrPtrFromHandle(activationRefrHandle) : 
+					Util::HandleIsValid(crosshairRefrHandle) ? 
+					Util::GetRefrPtrFromHandle(crosshairRefrHandle) : 
+					RE::TESObjectREFRPtr()
+				);
+				if (selectedRefrPtr)
+				{
+					// Notify the player that they should sneak to activate.
+					bool isOffLimits = Util::ActivationIsOffLimits
+					(
+						coopActor.get(), selectedRefrPtr.get()
+					); 
+					bool shouldSneakToActivate = isOffLimits && !coopActor->IsSneaking();
+					// Get activation text for the crosshair refr.
+					bool hasActivationText = false;
+					auto baseObj = selectedRefrPtr->GetObjectReference();
+					msg = Util::GetActivationText
+					(
+						coopActor.get(),
+						baseObj, 
+						selectedRefrPtr.get(),
+						hasActivationText
+					);
+					if (hasActivationText && baseObj)
+					{
+						bool isBook = baseObj->IsBook();
+						bool isNote = baseObj->IsNote();
+						bool wouldPickupBookNote = 
+						(
+							(isBook || isNote) &&
+							(
+								!GlobalCoopData::CanControlMenus(playerID)
+							)
+						);
+						if (shouldSneakToActivate)
+						{
+							if (wouldPickupBookNote)
+							{
+								msg = fmt::format
+								(
+									"P{}: Sneak to <font color=\"#FF0000\">Steal</font> {}", 
+									playerID + 1, selectedRefrPtr->GetName()
+								);
+							}
+							else
+							{
+								msg = fmt::format
+								(
+									"P{}: Sneak to {}", p->playerID + 1, msg
+								);
+							}
+						}
+						else
+						{
+							if (wouldPickupBookNote)
+							{
+								if (isOffLimits)
+								{
+									msg = fmt::format
+									(
+										"P{}: <font color=\"#FF0000\">Steal</font> {}", 
+										playerID + 1,
+										selectedRefrPtr->GetName()
+									);
+								}
+								else
+								{
+									msg = fmt::format
+									(
+										"P{}: Take {}", playerID + 1, selectedRefrPtr->GetName()
+									);
+								}
+							}
+							else
+							{
+								msg = fmt::format
+								(
+									"P{}: {}", p->playerID + 1, msg
+								);
+							}
+						}
+					}
+					else
+					{
+						if (shouldSneakToActivate)
+						{
+							msg = fmt::format
+							(
+								"P{}: Sneak to "
+								"<font color=\"#FF0000\">interact</font> with {}",
+								p->playerID + 1, msg
+							);
+						}
+						else
+						{
+							if (isOffLimits)
+							{
+								msg = fmt::format
+								(
+									"P{}: <font color=\"#FF0000\">Interact</font> with {}", 
+									p->playerID + 1, msg
+								);
+							}
+							else
+							{
+								msg = fmt::format
+								(
+									"P{}: Interact with {}", p->playerID + 1, msg
+								);
+							}
+						}
+					}
+
+					int32_t value = -1;
+					float weight = 0.0f;
+					auto asActor = selectedRefrPtr->As<RE::Actor>();
+					if ((asActor && asActor->IsDead()) || 
+						(!asActor && selectedRefrPtr->GetContainer()))
+					{
+						// Get total weight and value in the container.
+						Util::GetWeightAndValueInRefr(selectedRefrPtr.get(), weight, value);
+					}
+					else if (baseObj)
+					{
+						// Get weight and value for this individual refr.
+						value = baseObj->GetGoldValue();
+						weight = selectedRefrPtr->GetWeight();
+					}
+
+					if (value >= 0)
+					{
+						float inventoryWeight = 
+						(
+							p->isPlayer1 ? 
+							coopActor->GetWeightInContainer() :
+							p->em->inventoryChest->GetWeightInContainer()
+						);
+						const auto invChanges = 
+						(
+							p->isPlayer1 ? 
+							coopActor->GetInventoryChanges() :
+							p->em->inventoryChest->GetInventoryChanges()
+						);
+						if (invChanges)
+						{
+							inventoryWeight = invChanges->totalWeight;
+						}
+
+						const float carryweight = coopActor->GetTotalCarryWeight();
+						float remainingCarryweight = carryweight - inventoryWeight;
+						std::string weightValue = fmt::format
+						(
+							", <font color=\"#{:X}\">Value: </font>"
+							"<font face=\"$EverywhereBoldFont\">{}</font>, "
+							"<font color=\"#{:X}\">Weight: </font>"
+							"<font face=\"$EverywhereBoldFont\">{:.0f}</font>, "
+							"<font color=\"#{:X}\">Space: </font>"
+							"<font face=\"$EverywhereBoldFont\">"
+							"<font color=\"#{:X}\">{:.0f}</font>"
+							"</font>",
+							0xBBA53D,
+							value,
+							0x999999,
+							weight,
+							0x804a00,
+							remainingCarryweight - weight <= 0.0f ? 
+							0xFF0000 : 
+							0xFFFFFF,
+							remainingCarryweight,
+							carryweight
+						);
+						msg = fmt::format
+						(
+							"{}", std::string(msg) + weightValue
+						);
+					}
+				}
+			}
+		}
+
+		return msg;
 	}
 
 	uint32_t TargetingManager::GetDetectionLvlRGB
@@ -7268,7 +7572,7 @@ namespace ALYSLC
 					CrosshairMessageType::kNone,
 					CrosshairMessageType::kEquippedItem,
 					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
@@ -7568,7 +7872,7 @@ namespace ALYSLC
 								CrosshairMessageType::kNone,
 								CrosshairMessageType::kEquippedItem,
 								CrosshairMessageType::kStealthState,
-								CrosshairMessageType::kTargetSelection 
+								CrosshairMessageType::kTargetingState 
 							},
 							Settings::fSecsBetweenDiffCrosshairMsgs
 						);
@@ -8805,7 +9109,7 @@ namespace ALYSLC
 					CrosshairMessageType::kNone,
 					CrosshairMessageType::kEquippedItem,
 					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs
 			);
@@ -10715,286 +11019,28 @@ namespace ALYSLC
 		); 
 		// Should update set TP, even if the crosshair message is the same.
 		bool updateSetTP = false;
-		if (a_type == CrosshairMessageType::kTargetSelection)
+		if (a_type == CrosshairMessageType::kTargetingState)
 		{
-			if (selectedTargetActorPtr && !selectedTargetActorPtr->IsDead())
+			text = GetCrosshairSelectionMessage(false);
+			// Update if there is a selected living NPC 
+			// or if there is an activation/crosshair refr target.
+			if ((selectedTargetActorPtr && !selectedTargetActorPtr->IsDead()) ||
+				(
+					Util::HandleIsValid(activationRefrHandle) ||
+					Util::HandleIsValid(crosshairRefrHandle)
+				))
 			{
-				// Alive actor. Show name and level.
-				// Passive actors' names are displayed in white,
-				// pacifiable actors' names are displayed in pink,
-				// and enemy actors' names are displayed in red.
-				auto levelRGB = GetLevelDifferenceRGB
-				(
-					aimMode == AimMode::kTwinStick ? 
-					aimCorrectionTargetHandle : 
-					selectedTargetActorHandle
-				);
-				text = fmt::format
-				(
-					"P{}: {} <font color=\"#{:X}\">L{}</font> <font color=\"#{:X}\">{}</font>",
-					playerID + 1, crosshairActive ? "Facing" : "Targeting",
-					levelRGB, selectedTargetActorPtr->GetLevel(),
-					!selectedTargetActorPtr->IsHostileToActor(coopActor.get()) ? 
-					0xFFFFFF : 
-					Util::CanStopCombatWithActor(selectedTargetActorPtr.get()) ?
-					0xFFBBBB :
-					0xFF0000,
-					selectedTargetActorPtr->GetDisplayFullName()
-				);
 				type = a_type;
 				// Refresh set TP to keep the crosshair text from fading when moving the crosshair.
 				updateSetTP = p->pam->IsPerforming(InputAction::kMoveCrosshair);
 			}
-			else
-			{
-				auto selectedRefrPtr = 
-				(
-					Util::HandleIsValid(activationRefrHandle) ? 
-					Util::GetRefrPtrFromHandle(activationRefrHandle) : 
-					Util::HandleIsValid(crosshairRefrHandle) ? 
-					Util::GetRefrPtrFromHandle(crosshairRefrHandle) : 
-					RE::TESObjectREFRPtr()
-				);
-				if (selectedRefrPtr)
-				{
-					// Notify the player that they should sneak to activate.
-					bool isOffLimits = Util::ActivationIsOffLimits
-					(
-						coopActor.get(), selectedRefrPtr.get()
-					); 
-					bool shouldSneakToActivate = isOffLimits && !coopActor->IsSneaking();
-					// Get activation text for the crosshair refr.
-					bool hasActivationText = false;
-					auto baseObj = selectedRefrPtr->GetObjectReference();
-					text = Util::GetActivationText
-					(
-						coopActor.get(),
-						baseObj, 
-						selectedRefrPtr.get(),
-						hasActivationText
-					);
-					if (hasActivationText && baseObj)
-					{
-						bool isBook = baseObj->IsBook();
-						bool isNote = baseObj->IsNote();
-						bool wouldPickupBookNote = 
-						(
-							(isBook || isNote) &&
-							(
-								!GlobalCoopData::CanControlMenus(playerID)
-							)
-						);
-						if (shouldSneakToActivate)
-						{
-							if (wouldPickupBookNote)
-							{
-								text = fmt::format
-								(
-									"P{}: Sneak to <font color=\"#FF0000\">Steal</font> {}", 
-									playerID + 1, selectedRefrPtr->GetName()
-								);
-							}
-							else
-							{
-								text = fmt::format
-								(
-									"P{}: Sneak to {}", p->playerID + 1, text
-								);
-							}
-						}
-						else
-						{
-							if (wouldPickupBookNote)
-							{
-								if (isOffLimits)
-								{
-									text = fmt::format
-									(
-										"P{}: <font color=\"#FF0000\">Steal</font> {}", 
-										playerID + 1,
-										selectedRefrPtr->GetName()
-									);
-								}
-								else
-								{
-									text = fmt::format
-									(
-										"P{}: Take {}", playerID + 1, selectedRefrPtr->GetName()
-									);
-								}
-							}
-							else
-							{
-								text = fmt::format
-								(
-									"P{}: {}", p->playerID + 1, text
-								);
-							}
-						}
-					}
-					else
-					{
-						if (shouldSneakToActivate)
-						{
-							text = fmt::format
-							(
-								"P{}: Sneak to "
-								"<font color=\"#FF0000\">interact</font> with {}",
-								p->playerID + 1, text
-							);
-						}
-						else
-						{
-							if (isOffLimits)
-							{
-								text = fmt::format
-								(
-									"P{}: <font color=\"#FF0000\">Interact</font> with {}", 
-									p->playerID + 1, text
-								);
-							}
-							else
-							{
-								text = fmt::format
-								(
-									"P{}: Interact with {}", p->playerID + 1, text
-								);
-							}
-						}
-					}
-
-					int32_t value = -1;
-					float weight = 0.0f;
-					auto asActor = selectedRefrPtr->As<RE::Actor>();
-					if ((asActor && asActor->IsDead()) || 
-						(!asActor && selectedRefrPtr->GetContainer()))
-					{
-						// Get total weight and value in the container.
-						Util::GetWeightAndValueInRefr(selectedRefrPtr.get(), weight, value);
-					}
-					else if (baseObj)
-					{
-						// Get weight and value for this individual refr.
-						value = baseObj->GetGoldValue();
-						weight = selectedRefrPtr->GetWeight();
-					}
-
-					if (value >= 0)
-					{
-						float inventoryWeight = 
-						(
-							p->isPlayer1 ? 
-							coopActor->GetWeightInContainer() :
-							p->em->inventoryChest->GetWeightInContainer()
-						);
-						const auto invChanges = 
-						(
-							p->isPlayer1 ? 
-							coopActor->GetInventoryChanges() :
-							p->em->inventoryChest->GetInventoryChanges()
-						);
-						if (invChanges)
-						{
-							inventoryWeight = invChanges->totalWeight;
-						}
-
-						const float carryweight = coopActor->GetTotalCarryWeight();
-						float remainingCarryweight = carryweight - inventoryWeight;
-						std::string weightValue = fmt::format
-						(
-							", <font color=\"#{:X}\">Value: </font>"
-							"<font face=\"$EverywhereBoldFont\">{}</font>, "
-							"<font color=\"#{:X}\">Weight: </font>"
-							"<font face=\"$EverywhereBoldFont\">{:.0f}</font>, "
-							"<font color=\"#{:X}\">Space: </font>"
-							"<font face=\"$EverywhereBoldFont\">"
-							"<font color=\"#{:X}\">{:.0f}</font>"
-							"</font>",
-							0xBBA53D,
-							value,
-							0x999999,
-							weight,
-							0x804a00,
-							remainingCarryweight - weight <= 0.0f ? 
-							0xFF0000 : 
-							0xFFFFFF,
-							remainingCarryweight,
-							carryweight
-						);
-						text = fmt::format
-						(
-							"{}", std::string(text) + weightValue
-						);
-					}
-
-					type = a_type;
-					// Refresh set TP to keep the crosshair text from fading 
-					// when moving the crosshair.
-					updateSetTP = p->pam->IsPerforming(InputAction::kMoveCrosshair);
-				}
-			}
 		}
 		else if (a_type == CrosshairMessageType::kStealthState)
 		{
+			// Update only when sneaking.
 			if (coopActor->IsSneaking())
 			{
-				const bool checkSelectedTarget = 
-				(
-					selectedTargetActorPtr &&
-					selectedTargetActorPtr.get() && 
-					!selectedTargetActorPtr->IsDead()
-				);
-				// Set sneak info text to indicate the player's hidden percent,
-				// which is determined by their remaining stealth points:
-				// 
-				// player's total stealth points - 
-				// max(all aggro'd actors' stealth point decrements)
-				
-				// If a particular target actor is selected, 
-				// show their individual detection level of the player as well.
-				if (checkSelectedTarget)
-				{
-					float targetDetectionPct = static_cast<uint8_t>
-					(
-						Util::GetDetectionPercent(coopActor.get(), selectedTargetActorPtr.get())
-					);
-					uint32_t targetDetectionPctRGB = GetDetectionLvlRGB(targetDetectionPct, false);
-					// Set sneak info text to indicate the currently selected/aim correction
-					// target's  detection level of the player 
-					// and the overall detection percentage of the player
-					// for all relevant high process actors.
-					// Passive actors' names are displayed in white,
-					// pacifiable actors' names are displayed in pink,
-					// and enemy actors' names are displayed in red.
-					text = fmt::format
-					(
-						"P{}: Detected by <font color=\"#{:X}\">{}</font> "
-						"(<font color=\"#{:X}\">{}%</font>), overall "
-						"(<font color=\"#{:X}\">{}%</font>)",
-						playerID + 1,
-						!selectedTargetActorPtr->IsHostileToActor(coopActor.get()) ? 
-						0xFFFFFF : 
-						Util::CanStopCombatWithActor(selectedTargetActorPtr.get()) ?
-						0xFFBBBB :
-						0xFF0000,
-						selectedTargetActorPtr->GetDisplayFullName(),
-						targetDetectionPctRGB, 
-						targetDetectionPct,
-						detectionPctRGB,
-						detectionPct
-					);
-				}
-				else
-				{
-					// Detection percent reported accounts for all relevant actors 
-					// in the high process.
-					text = fmt::format
-					(
-						"P{}: Detected (<font color=\"#{:X}\">{}%</font>)",
-						playerID + 1, detectionPctRGB, detectionPct
-					);
-				}
-
+				text = GetCrosshairSelectionMessage(true);
 				type = a_type;
 				// Always show when sneaking.
 				updateSetTP = true;
@@ -11745,47 +11791,10 @@ namespace ALYSLC
 		// Now check if a periodic message should be set.
 		if (!extMessageSet)
 		{
-			// Display selection text if not sneaking 
-			// or if selecting a non-actor or corpse refr.
-			// Display stealth state text otherwise.
-			auto selectedRefrPtr = Util::GetRefrPtrFromHandle(activationRefrHandle);
-			auto selectedTargetActorPtr = Util::GetActorPtrFromHandle
-			(
-				aimMode == AimMode::kTwinStick ? 
-				aimCorrectionTargetHandle : 
-				selectedTargetActorHandle
-			);
-			bool displayTargetSelectionMessage = false;
-			if (aimMode == AimMode::kTwinStick)
-			{
-				displayTargetSelectionMessage =
-				(
-					(!coopActor->IsSneaking()) || 
-					(
-						(selectedRefrPtr && !selectedTargetActorPtr) &&
-						(
-							!selectedRefrPtr->As<RE::Actor>() || 
-							selectedRefrPtr->As<RE::Actor>()->IsDead()
-						)
-					)	
-				);
-			}
-			else
-			{
-				displayTargetSelectionMessage =
-				(
-					(!coopActor->IsSneaking()) || 
-					(
-						(selectedRefrPtr) && 
-						(!selectedTargetActorPtr || selectedTargetActorPtr->IsDead())
-					)	
-				);
-			}
-			
-			if (displayTargetSelectionMessage)
+			if (ShouldDisplayTargetSelectionMessage())
 			{
 				// Selected target.
-				SetPeriodicCrosshairMessage(CrosshairMessageType::kTargetSelection);
+				SetPeriodicCrosshairMessage(CrosshairMessageType::kTargetingState);
 			}
 			else
 			{
@@ -12207,6 +12216,21 @@ namespace ALYSLC
 					crosshairLastMovementHitPosOffset = 
 					crosshairInitialMovementHitPosOffset = RE::NiPoint3();
 					crosshairOnRefrPixelXYDeltas = { 0.0f, 0.0f };
+					// Re-center the crosshair and make inactive.
+					DeactivateCrosshair();
+					SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kGeneralNotification,
+						fmt::format
+						(
+							"P{}: Crosshair is now inactive",
+							playerID + 1
+						),
+						{ 
+							CrosshairMessageType::kNone
+						},
+						0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+					);
 				}
 			}
 			else
@@ -12605,6 +12629,18 @@ namespace ALYSLC
 						shader,
 						max(0.1f, Settings::fSecsBetweenActivationChecks)
 					);	
+				
+					SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kSelectionInfo,
+						GetCrosshairSelectionMessage(!ShouldDisplayTargetSelectionMessage()),
+						{ 
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetingState 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
 				}
 			}
 			
@@ -13288,7 +13324,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -13771,7 +13807,7 @@ namespace ALYSLC
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kActivationInfo, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -13792,7 +13828,7 @@ namespace ALYSLC
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kActivationInfo,
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection
+						CrosshairMessageType::kTargetingState
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -14479,7 +14515,7 @@ namespace ALYSLC
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
+						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);

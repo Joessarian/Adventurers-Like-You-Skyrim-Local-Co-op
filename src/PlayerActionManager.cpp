@@ -3129,7 +3129,7 @@ namespace ALYSLC
 				{ 
 					CrosshairMessageType::kNone,
 					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetSelection 
+					CrosshairMessageType::kTargetingState 
 				},
 				Settings::fSecsBetweenDiffCrosshairMsgs * 2.0f
 			);
@@ -5531,7 +5531,12 @@ namespace ALYSLC
 			holdTimeThreshold *= 2.5f;
 		}
 
-		if (passedPressCheck && params.triggerFlags.all(TriggerFlag::kMinHoldTime))
+		// Check for hold time once all inputs are pressed, the action requires a minimum hold time,
+		// and the action is not already interrupted, 
+		// which would mean the hold time check succeeded previously.
+		if (passedPressCheck && 
+			params.triggerFlags.all(TriggerFlag::kMinHoldTime) &&
+			!IsInterrupted(a_action))
 		{
 			passedPressCheck &= 
 			(
@@ -6240,7 +6245,7 @@ namespace ALYSLC
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kActivationInfo,
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection
+						CrosshairMessageType::kTargetingState
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
@@ -6302,7 +6307,7 @@ namespace ALYSLC
 				CrosshairMessageType::kNone,
 				CrosshairMessageType::kActivationInfo, 
 				CrosshairMessageType::kStealthState, 
-				CrosshairMessageType::kTargetSelection 
+				CrosshairMessageType::kTargetingState 
 			},
 			Settings::fSecsBetweenDiffCrosshairMsgs
 		);

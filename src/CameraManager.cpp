@@ -321,7 +321,7 @@ namespace ALYSLC
 	void CameraManager::PrePauseTask()
 	{
 		DBG("PrePauseTask");
-
+		
 		// Reset no fade flags for all players.
 		SetPlayerFadePrevention(false);
 		// Add back camera-actor collisions before switching to default cam.
@@ -345,7 +345,7 @@ namespace ALYSLC
 	void CameraManager::PreStartTask()
 	{
 		DBG("PreStartTask");
-
+		
 		// Prevent the game from fading all players while the camera is active.
 		SetPlayerFadePrevention(true);
 		// Remove camera-actor collisions before switching to co-op cam.
@@ -2336,7 +2336,7 @@ namespace ALYSLC
 			return;
 		}
 
-		float indicatorBaseLength = Settings::fCamLockOnIndicatorLength;
+		float indicatorBaseLength = Settings::fCamLockOnIndicatorLength / 2.0f;
 		const float& indicatorBaseThickness = Settings::fCamLockOnIndicatorThickness;
 		float targetPixelHeight = Util::GetBoundPixelDist(camTargetPtr.get(), true);
 		targetPixelHeight = targetPixelHeight == 0.0f ? indicatorBaseLength : targetPixelHeight;
@@ -2346,24 +2346,19 @@ namespace ALYSLC
 			indicatorBaseLength,
 			min
 			(
-				indicatorBaseLength / 2.0f,
+				indicatorBaseLength,
 				targetPixelHeight / 4.0f
 			),
 			max
 			(
-				indicatorBaseLength / 2.0f,
+				indicatorBaseLength,
 				targetPixelHeight / 4.0f
 			)
 		);
 
-		// Cap the radius and modify thickness based on distance from the camera.
-		float radius = std::clamp
-		(
-			indicatorBaseLength,
-			1.0f * indicatorBaseThickness, 
-			2.0f * indicatorBaseThickness
-		);
-		const float thickness = 0.2f * radius;
+		// Cap the radius and modify thickness.
+		float radius = indicatorBaseLength;
+		const float thickness = min(0.2f * radius, indicatorBaseThickness);
 		const auto center = glm::vec3(a_centerX, a_centerY, 0.0f);
 		float gapDelta = 0.0f;
 		// Animate for better visibility.

@@ -631,12 +631,15 @@ namespace ALYSLC
 			// but steal/trespass alarm may sound.
 			/*DBG
 			(
-				"{}: {} is {}. IsAnOwner (tt, tf, ft, ff): {}, {}, {}, {}. "
+				"{}: {} (0x{:X}) is {}. IsAnOwner (tt, tf, ft, ff): {}, {}, {}, {}. "
 				"Actor owner: {}, form owner: {}, form faction: {}, "
 				"exData owner: {}, faction owner: {}. "
 				"Owning faction is enemy: {}, tracks crimes: {}. Would be stealing: {}, {}.",
 				a_actor->GetName(),
 				a_refr->GetName(),
+				baseObj ? 
+				*baseObj->formType :
+				RE::FormType::None,
 				(
 					(a_refr->IsLocked() || a_refr->IsDead()) || 
 					(baseObj && baseObj->As<RE::TESObjectDOOR>()) ||
@@ -661,6 +664,13 @@ namespace ALYSLC
 			if ((a_refr->IsLocked() || a_refr->IsDead()) || 
 				(baseObj && baseObj->As<RE::TESObjectDOOR>()) ||
 				(baseObj && baseObj->As<RE::TESFurniture>()))
+			{
+				return false;
+			}
+
+			// Allow for projectile looting while in combat as this does not count as stealing.
+			if ((baseObj && baseObj->As<RE::BGSProjectile>()) &&
+				(p1->IsInCombat() || glob.isInCoopCombat))
 			{
 				return false;
 			}
@@ -8609,21 +8619,44 @@ namespace ALYSLC
 				return;
 			}
 
-			// Companion players will instantly dismount once hit data is applied
+			// Companion players will instantly dismount, exit furniture, 
+			// or stop their current idle animation once hit data is applied
 			// if they hit a target or are hit by something else.
 			// Just deal damage and skip sending the hit data in that case
-			// to workaround the forced dismount, since I haven't found the culprit function yet.
-			if ((GlobalCoopData::IsCoopPlayer(a_aggressor) && a_aggressor->IsOnMount()) ||
-				(GlobalCoopData::IsCoopPlayer(a_target) &&  a_target->IsOnMount()))
+			// to workaround the forced animation cancelling,
+			// since I haven't found the culprit function yet.
+			bool aggressorIsPlayer = GlobalCoopData::IsCoopPlayer(a_aggressor);
+			bool targetIsPlayer = GlobalCoopData::IsCoopPlayer(a_target);
+			if (aggressorIsPlayer || targetIsPlayer)
 			{
-				if (a_damage > 0.0f)
+				bool animCancelWorkaround = 
+				(
+					(
+						(aggressorIsPlayer) && 
+						(
+							a_aggressor->IsOnMount() || 
+							a_aggressor->IsAnimationDriven() || 
+							Util::HandleIsValid(a_aggressor->GetOccupiedFurniture())
+						)
+					) ||
+					(
+						(targetIsPlayer) && 
+						(
+							a_target->IsOnMount() || 
+							a_target->IsAnimationDriven() || 
+							Util::HandleIsValid(a_target->GetOccupiedFurniture())
+						)
+					)
+				);
+				if (animCancelWorkaround)
 				{
-					DBG("NOPE, NO MOUNT. Have {} deal {} damage to {} instead.",
-						a_aggressor->GetName(), a_damage, a_target->GetName());
-					a_target->DoDamage(a_damage, a_aggressor, true);
-				}
+					if (a_damage > 0.0f)
+					{
+						a_target->DoDamage(a_damage, a_aggressor, true);
+					}
 
-				return;
+					return;
+				}
 			}
 
 			RE::HitData hitData{ };

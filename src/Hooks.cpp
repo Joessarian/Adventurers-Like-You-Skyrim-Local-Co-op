@@ -4413,9 +4413,23 @@ namespace ALYSLC
 							speeds
 							[RE::Movement::SPEED_DIRECTIONS::kRotations]
 							[RE::Movement::MaxSpeeds::kRun]					=
-							rotateWhileMovingRun							= 
+							rotateWhileMovingRun =
 							(
-								Settings::fBaseRotationMult * Settings::fBaseMTRotationMult * PI
+								Settings::fBaseRotationMult * Settings::fBaseMTRotationMult * PI +
+								max
+								(
+									0.0f,
+									2.0f * 
+									(
+										glob.cdh->GetAnalogStickState
+										(
+											p->deviceID, true
+										).stickAngularSpeed -
+										Settings::fBaseRotationMult * 
+										Settings::fBaseMTRotationMult *
+										PI
+									)
+								)
 							);
 						}
 
@@ -4567,12 +4581,43 @@ namespace ALYSLC
 							[RE::Movement::SPEED_DIRECTIONS::kBack]
 							[RE::Movement::MaxSpeeds::kRun]				= dodgeSpeed;
 						}
-						else
+						else if (!p->coopActor->IsOnMount() && 
+								 !p->mm->isAnimDriven && 
+								 !p->mm->interactionPackageRunning && 
+								 !p->isDowned)
 						{
+							// IMPORTANT:
+							// Player must not be mounted, downed, animation driven, 
+							// or running their interaction package.
+							// 
+							// The core movement problem when using KeepOffsetFromActor() 
+							// with the player themselves as the offset target
+							// is slow deceleration/acceleration 
+							// when changing directions rapidly.
+							// First noticed that playing the 'SprintStart' animation event
+							// right as the player starts pivoting causes them to turn
+							// and face the new movement direction almost instantly.
+							// Increasing the movement type's directional max speed values, 
+							// depending on how rapidly the player is turning,
+							// has the same effect as forcing the player to briefly sprint 
+							// each time they change directions
+							// and removes most of the sluggishness.
+							// Can still cause rapid bursts of movement at times.
+
 							// Out velocity seems to be the intended velocity 
 							// before collisions are accounted for.
 							// Do not need the Z component.
-							RE::NiPoint3 linVelXY = RE::NiPoint3
+							RE::NiPoint3 linVelXY = RE::NiPoint3();
+							float movementToHeadingAngDiff = -1.0f;
+							// Sets the bounds for the diff factor applied to movement speed below. 
+							// Dependent on rotation speeds -- rotate faster, pivot faster.
+							float range = -1.0f;
+							// Max speed factor. Maxes out at 90 degrees.
+							float diffFactor = -1.0f;
+							// Out velocity seems to be the intended velocity 
+							// before collisions are accounted for.
+							// Do not need velocity Z component.
+							linVelXY = RE::NiPoint3
 							(
 								charController->outVelocity.quad.m128_f32[0], 
 								charController->outVelocity.quad.m128_f32[1], 
@@ -4586,7 +4631,7 @@ namespace ALYSLC
 							);
 							// Yaw difference between the XY velocity direction 
 							// and the direction in which the player wishes to head.
-							float movementToHeadingAngDiff = 
+							movementToHeadingAngDiff = 
 							(
 								p->lsMoved ? 
 								Util::NormalizeAngToPi
@@ -4596,16 +4641,13 @@ namespace ALYSLC
 								) : 
 								0.0f
 							);
-							// Sets the bounds for the diff factor applied to movement speed below. 
-							// Dependent on rotation speeds -- rotate faster, pivot faster.
-							float range = max
+							range = max
 							(
 								1.0f, 
 								(Settings::fBaseMTRotationMult * Settings::fBaseRotationMult) / 
 								3.0f
 							);
-							// Max speed factor. Maxes out at 90 degrees.
-							float diffFactor =
+							diffFactor =
 							(
 								1.0f + 
 								(
@@ -4622,29 +4664,31 @@ namespace ALYSLC
 									)
 								)
 							);
-
-							// Player must not be sprinting, mounted, downed, animation driven, 
-							// or running their interaction package.
-							if (!p->pam->isSprinting && 
-								!p->coopActor->IsOnMount() &&
-								!p->mm->isAnimDriven && 
-								!p->mm->interactionPackageRunning &&
-								!p->isDowned)
+							if (Settings::bUseMidHighProcRotMod)
 							{
-								// The core movement problem when using KeepOffsetFromActor() 
-								// with the player themselves as the offset target
-								// is slow deceleration/acceleration 
-								// when changing directions rapidly.
-								// First noticed that playing the 'SprintStart' animation event
-								// right as the player starts pivoting causes them to turn
-								// and face the new movement direction almost instantly.
-								// Increasing the movement type's directional max speed values, 
-								// depending on how rapidly the player is turning,
-								// has the same effect as forcing the player to briefly sprint 
-								// each time they change directions
-								// and removes most of the sluggishness.
-								// Can still cause rapid bursts of movement at times.
+								// Slow down when rotating rapidly.
+								auto angSpeed = 
+								(
+									glob.cdh->GetAnalogStickState
+									(
+										p->deviceID, true
+									).stickAngularSpeed
+								);
+								auto ratio = 
+								(
+									angSpeed / 
+									(
+										Settings::fBaseRotationMult * 
+										Settings::fBaseMTRotationMult *
+										PI
+									)
+								);
+								diffFactor *= std::clamp(1.0f - ratio, 0.0f, 1.0f);
+							}
 
+							if (Settings::bUseMidHighProcRotMod || 
+								!p->pam->IsPerforming(InputAction::kSprint))
+							{
 								speeds
 								[RE::Movement::SPEED_DIRECTIONS::kLeft]
 								[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
@@ -5709,27 +5753,31 @@ namespace ALYSLC
 			}
 			
 			const auto attackerPtr = Util::GetActorPtrFromHandle(a_hitData.aggressor); 
-			// If a companion player takes damage while mounted, they immediately dismount.
-			// Since I can't find the source of that dismount call and block it from running,
-			// and since the function(s) that force the player to dismount run 
-			// when this hook executes, we'll just apply the intended damage 
-			// and bail instead to prevent the dismount.
-			if (GlobalCoopData::IsCoopPlayer(a_victim) && a_victim->IsOnMount())
+			// Companion players will instantly dismount, exit furniture, 
+			// or stop their current idle animation once hit data is applied
+			// if they hit a target or are hit by something else.
+			// Just deal damage and skip sending the hit data in that case
+			// to workaround the forced animation cancelling,
+			// since I haven't found the culprit function yet.
+			bool targetIsPlayer = GlobalCoopData::IsCoopPlayer(a_victim);
+			if (targetIsPlayer)
 			{
-				DBG
+				bool animCancelWorkaround = 
 				(
-					"NOPE, NO MOUNT. Damage: {} by {} to {}. Gimme.",
-					a_hitData.totalDamage,
-					attackerPtr ? attackerPtr->GetName() : "NONE",
-					a_victim ? a_victim->GetName() : "NONE"
+					a_victim->IsOnMount() || 
+					a_victim->IsAnimationDriven() || 
+					Util::HandleIsValid(a_victim->GetOccupiedFurniture())
 				);
-				a_victim->DoDamage
-				(
-					a_hitData.totalDamage,
-					attackerPtr ? attackerPtr.get() : nullptr,
-					true				
-				);
-				return;
+				if (animCancelWorkaround)
+				{
+					a_victim->DoDamage
+					(
+						a_hitData.totalDamage,
+						attackerPtr ? attackerPtr.get() : nullptr,
+						true				
+					);
+					return;
+				}
 			}
 
 			DBG
@@ -10959,9 +11007,22 @@ namespace ALYSLC
 						[RE::Movement::MaxSpeeds::kRun] =
 						rotateWhileMovingRun =
 						(
-							Settings::fBaseRotationMult * Settings::fBaseMTRotationMult * PI
+							Settings::fBaseRotationMult * Settings::fBaseMTRotationMult * PI +
+							max
+							(
+								0.0f,
+								2.0f * 
+								(
+									glob.cdh->GetAnalogStickState
+									(
+										coopP1->deviceID, true
+									).stickAngularSpeed -
+									Settings::fBaseRotationMult * 
+									Settings::fBaseMTRotationMult *
+									PI
+								)
+							)
 						);
-
 					}
 
 					//=================
@@ -11115,19 +11176,15 @@ namespace ALYSLC
 					else if (bool isAIDriven = coopP1->coopActor->movementController && 
 							 !coopP1->coopActor->movementController->controlsDriven; isAIDriven)
 					{
-						RE::NiPoint3 linVelXY = RE::NiPoint3();
-						float movementToHeadingAngDiff = -1.0f;
-						float range = -1.0f;
-						float diffFactor = -1.0f;
-						// Player must not be sprinting, mounted, downed, animation driven, 
-						// or running their interaction package.
-						if (!coopP1->pam->IsPerforming(InputAction::kSprint) && 
-							!coopP1->coopActor->IsOnMount() && 
+						if (!coopP1->coopActor->IsOnMount() && 
 							!coopP1->mm->isAnimDriven && 
 							!coopP1->mm->interactionPackageRunning && 
 							!coopP1->isDowned)
 						{
-							
+							// IMPORTANT:
+							// Player must not be sprinting, mounted, downed, animation driven, 
+							// or running their interaction package.
+							// 
 							// The core movement problem when using KeepOffsetFromActor() 
 							// with the player themselves as the offset target
 							// is slow deceleration/acceleration 
@@ -11141,16 +11198,23 @@ namespace ALYSLC
 							// each time they change directions
 							// and removes most of the sluggishness.
 							// Can still cause rapid bursts of movement at times.
-
+							
 							// Out velocity seems to be the intended velocity 
 							// before collisions are accounted for.
 							// Do not need velocity Z component.
-							linVelXY = RE::NiPoint3
+							RE::NiPoint3 linVelXY = RE::NiPoint3
 							(
 								charController->outVelocity.quad.m128_f32[0], 
 								charController->outVelocity.quad.m128_f32[1], 
 								0.0f
 							);
+							float movementToHeadingAngDiff = -1.0f;
+							// Sets the bounds for the diff factor applied to movement speed below. 
+							// Dependent on rotation speeds -- rotate faster, pivot faster.
+							float range = -1.0f;
+							// Max speed factor. Maxes out at 90 degrees.
+							float diffFactor = -1.0f;
+							// Velocity XY plane angle.
 							auto linVelYaw = 
 							(
 								linVelXY.Length() == 0.0f ? 
@@ -11169,8 +11233,6 @@ namespace ALYSLC
 								) : 
 								0.0f
 							);
-							// Sets the bounds for the diff factor applied to movement speed below. 
-							// Dependent on rotation speeds -- rotate faster, pivot faster.
 							range = max
 							(
 								1.0f, 
@@ -11195,31 +11257,178 @@ namespace ALYSLC
 									)
 								)
 							);
+							bool useMidHighProc = 
+							(
+								(Settings::bUseMidHighProcRotMod) &&
+								(
+									!ALYSLC::AlternateConversationCameraCompat::g_installed ||
+									!ui ||
+									!ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) ||
+									glob.menuPID > 0
+								)
+							);
+							if (useMidHighProc)
+							{
+								// Slow down when rotating rapidly.
+								auto angSpeed = 
+								(
+									glob.cdh->GetAnalogStickState
+									(
+										coopP1->deviceID, true
+									).stickAngularSpeed
+								);
+								auto ratio = 
+								(
+									angSpeed / 
+									(
+										Settings::fBaseRotationMult * 
+										Settings::fBaseMTRotationMult *
+										PI
+									)
+								);
+								diffFactor *= std::clamp(1.0f - ratio, 0.0f, 1.0f);
+							}
 
-							speeds
-							[RE::Movement::SPEED_DIRECTIONS::kLeft]
-							[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
-							speeds
-							[RE::Movement::SPEED_DIRECTIONS::kLeft]
-							[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
-							speeds
-							[RE::Movement::SPEED_DIRECTIONS::kRight]
-							[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
-							speeds
-							[RE::Movement::SPEED_DIRECTIONS::kRight]
-							[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
-							speeds
-							[RE::Movement::SPEED_DIRECTIONS::kForward]
-							[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
-							speeds
-							[RE::Movement::SPEED_DIRECTIONS::kForward]
-							[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
-							speeds
-							[RE::Movement::SPEED_DIRECTIONS::kBack]
-							[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
-							speeds
-							[RE::Movement::SPEED_DIRECTIONS::kBack]
-							[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
+							if (useMidHighProc || !coopP1->pam->IsPerforming(InputAction::kSprint))
+							{
+								speeds
+								[RE::Movement::SPEED_DIRECTIONS::kLeft]
+								[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
+								speeds
+								[RE::Movement::SPEED_DIRECTIONS::kLeft]
+								[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
+								speeds
+								[RE::Movement::SPEED_DIRECTIONS::kRight]
+								[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
+								speeds
+								[RE::Movement::SPEED_DIRECTIONS::kRight]
+								[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
+								speeds
+								[RE::Movement::SPEED_DIRECTIONS::kForward]
+								[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
+								speeds
+								[RE::Movement::SPEED_DIRECTIONS::kForward]
+								[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
+								speeds
+								[RE::Movement::SPEED_DIRECTIONS::kBack]
+								[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
+								speeds
+								[RE::Movement::SPEED_DIRECTIONS::kBack]
+								[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
+							}
+							
+							// REMOVE when done debugging
+							/*
+							bool allowRotation = false;
+							a_this->GetGraphVariableBool("bAllowRotation", allowRotation);
+							DBG
+							(
+								"{}: AI driven: {}, diff: {}, range: {}, moving: {}, facing: {}, "
+								"LS: {}, LS To Moving diff: {}, curtail: {}, stop: {}, start: {}. "
+								"Animation driven: {}, allow rotation: {}, blocking: {}, {}.",
+								a_this->GetName(),
+								a_this->movementController->GetAIDriven(),
+								diffFactor,
+								range,
+								TO_DEGREES * a_this->GetHeading(true), 
+								TO_DEGREES * a_this->data.angle.z, 
+								TO_DEGREES * 
+								coopP1->analogStickParams[!AnalogStickParams::kLSCamRelAng],
+								TO_DEGREES * 
+								Util::NormalizeAngToPi
+								(
+									coopP1->analogStickParams[!AnalogStickParams::kLSCamRelAng] -
+									a_this->GetHeading(true)
+								),
+								coopP1->mm->shouldCurtailMomentum,
+								coopP1->mm->shouldStopMoving,
+								coopP1->mm->shouldStartMoving,
+								a_this->IsAnimationDriven(),
+								allowRotation,
+								a_this->IsBlocking(),
+								coopP1->pam->isBlocking
+							);
+
+							glm::vec3 origin = ToVec3(a_this->data.location);
+							glm::vec3 offset = ToVec3(charController->outVelocity) * HAVOK_TO_GAME;
+							DebugAPI::QueueArrow3D
+							(
+								origin,
+								origin + offset,
+								Settings::vuOverlayRGBAValues[0], 
+								5.0f,
+								3.0f
+							);
+							offset = ToVec3
+							(
+								Util::RotationToDirectionVect
+								(
+									0.0f, 
+									Util::ConvertAngle
+									(
+										coopP1->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+									)
+								)
+							) * a_this->DoGetMovementSpeed();
+							DebugAPI::QueueArrow3D
+							(
+								origin, 
+								origin + offset, 
+								Settings::vuCrosshairOuterOutlineRGBAValues[0],
+								5.0f,
+								3.0f
+							);
+							auto vel = RE::hkVector4();
+							charController->GetLinearVelocityImpl(vel);
+							offset = ToVec3
+							(
+								RE::NiPoint3
+								(
+									vel.quad.m128_f32[0],
+									vel.quad.m128_f32[1], 
+									0.0f
+								)
+							) * HAVOK_TO_GAME;
+							DebugAPI::QueueArrow3D
+							(
+								origin, 
+								origin + offset, 
+								Settings::vuCrosshairInnerOutlineRGBAValues[0],
+								5.0f,
+								3.0f
+							);
+
+							offset = ToVec3
+							(
+								Util::RotationToDirectionVect
+								(
+									0.0f, Util::ConvertAngle(a_this->GetHeading(false))
+								)
+							) * a_this->DoGetMovementSpeed();
+							DebugAPI::QueueArrow3D
+							(
+								origin, 
+								origin + offset, 
+								0xFF0000FF,
+								5.0f,
+								3.0f
+							);
+							offset = ToVec3
+							(
+								Util::RotationToDirectionVect
+								(
+									0.0f, Util::ConvertAngle(a_this->data.angle.z)
+								)
+							) * a_this->DoGetMovementSpeed();
+							DebugAPI::QueueArrow3D
+							(
+								origin, 
+								origin + offset, 
+								0x00FF00FF,
+								5.0f,
+								3.0f
+							);
+							*/
 						}
 					}
 				}
@@ -11289,7 +11498,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 					);
@@ -11303,7 +11512,7 @@ namespace ALYSLC
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetSelection 
+							CrosshairMessageType::kTargetingState 
 						},
 						0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 					);

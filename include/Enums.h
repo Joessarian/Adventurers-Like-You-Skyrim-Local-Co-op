@@ -1081,8 +1081,9 @@ namespace ALYSLC
 		kReviveAlert,			// Life/Revive percent for downed players.
 		kShoutCooldown,			// Shout cooldown remaining 
 								// when attempting to shout while on cooldown.
-		kStealthState,			// Detection percent overall and for selected target, if any.
-		kTargetSelection,		// Info about a selected actor or object.
+		kSelectionInfo,			// Information on the refr selected by the crosshair.
+		kStealthState,			// Periodic detection percent overall and for selected target.
+		kTargetingState,		// Periodic Info about a selected actor or object.
 
 		kTotal
 	};

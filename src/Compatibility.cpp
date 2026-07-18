@@ -5,6 +5,7 @@ namespace ALYSLC
 {
 	PRECISION_API::IVPrecision4* PrecisionCompat::g_precisionAPI4{ nullptr };
 	TRUEHUD_API::IVTrueHUD3* TrueHUDCompat::g_trueHUDAPI3{ nullptr };
+	TDM_API::IVTDM2* TrueDirectionalMovementCompat::g_tdmAPI2{ nullptr };
 	bool AlternateConversationCameraCompat::g_installed{ false };
 	bool EldenSprintCompat::g_installed{ false };
 	bool EnderalCompat::g_installed{ false };
@@ -326,29 +327,42 @@ namespace ALYSLC
 		}
 	}
 
-	void TrueDirectionalMovementCompat::CheckForTrueDirectionalMovement
+	void TrueDirectionalMovementCompat::RequestTrueDirectionalMovementAPIs
 	(
 		const SKSE::LoadInterface* a_loadInterface
 	)
 	{
-		g_installed = 
+		g_tdmAPI2 = nullptr;
+		const auto pluginInfo = a_loadInterface->GetPluginInfo(TDM_API::TDMPluginName); 
+		if (pluginInfo)
 		{
-			a_loadInterface->GetPluginInfo("TrueDirectionalMovement") || 
-			static_cast<bool>(GetModuleHandleA("TrueDirectionalMovement.dll"))
-		};
+			g_installed = true;
+			INF("Prerequisite mod {} is installed!", TDM_API::TDMPluginName);
 
-		auto dataHandler = RE::TESDataHandler::GetSingleton();
-		if (!g_installed && dataHandler)
-		{
-			g_installed = 
+			g_tdmAPI2 = reinterpret_cast<TDM_API::IVTDM2*>
 			(
-				dataHandler->LookupModByName("TrueDirectionalMovement.esp") != nullptr
+				TDM_API::RequestPluginAPI(TDM_API::InterfaceVersion::V2)
 			);
-		}
+			if (g_tdmAPI2)
+			{
+				INF("Received access to TDM API V2.");
+			}
+			else
+			{
+				ERR("Could not get access to TDM API V2.");
+				return;
+			}
 
-		if (g_installed)
+			INF("Gained access to all required TDM APIs.");
+		}
+		else
 		{
-			INF("True Directional Movement installed!");
+			g_installed = false;
+			ERR
+			(
+				"Could not find prerequisite mod 'True Directional Movement'. "
+				"Please ensure it is installed."
+			);
 		}
 	}
 

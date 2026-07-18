@@ -1,5 +1,6 @@
 #pragma once
 #include <PrecisionAPI.h>
+#include <TrueDirectionalMovementAPI.h>
 #include <TrueHUDAPI.h>
 
 namespace ALYSLC
@@ -99,8 +100,9 @@ namespace ALYSLC
 
 	struct TrueDirectionalMovementCompat
 	{
-		static void CheckForTrueDirectionalMovement(const SKSE::LoadInterface* a_loadInterface);
+		static void RequestTrueDirectionalMovementAPIs(const SKSE::LoadInterface* a_loadInterface);
 		static bool g_installed;
+		static TDM_API::IVTDM2* g_tdmAPI2;
 	};
 
 	struct TrueHUDCompat

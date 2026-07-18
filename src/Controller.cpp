@@ -168,6 +168,12 @@ namespace ALYSLC
 		}
 
 		auto& data = (a_isLS) ? lsStatesList[a_controllerID] : rsStatesList[a_controllerID];
+		// Skip since the controller's state snapshot was not updated since our last check.
+		if (data.packetNumber == inputState.dwPacketNumber)
+		{
+			return;
+		}
+
 		// Larger deadzone when controlling menus to prevent slight analog stick displacements
 		// from changing the currently-selected menu element.
 		float deadZone = 
@@ -253,7 +259,7 @@ namespace ALYSLC
 			(
 				fabsf
 				(
-					Util::NormalizeAngToPi
+					Util::NormalizeAngTo2Pi
 					(
 						atan2f(newNormYPos, newNormXPos) - atan2f(oldNormYPos, oldNormXPos)
 					) / *g_deltaTimeRealTime
@@ -272,6 +278,7 @@ namespace ALYSLC
 		data.xComp = xComp;
 		data.yComp = yComp;
 		data.normMag = newNormMag;
+		data.packetNumber = inputState.dwPacketNumber;
 	}
 
 	void ControllerDataHolder::UpdateInputStatesAndMask

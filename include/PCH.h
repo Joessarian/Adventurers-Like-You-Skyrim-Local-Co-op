@@ -8,7 +8,7 @@
 // WARNING:
 // Enabling debug prints can balloon the mod's log file (ALYSLC.log) to over a million lines.
 // Remove whatever unnecessary prints first.
-// #define ALYSLC_DEBUG_MODE
+#define ALYSLC_DEBUG_MODE
 #ifdef ALYSLC_DEBUG_MODE
 	#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG
 #else 

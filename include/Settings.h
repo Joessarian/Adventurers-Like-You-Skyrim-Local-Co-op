@@ -259,8 +259,8 @@ namespace ALYSLC
 		// Player distance from dialogue target (in-game units) 
 		// at which to automatically exit dialogue.
 		static inline float fAutoEndDialogueRadius = 500.0f;
-		// Camera lock on indicator side length (pixels).
-		static inline float fCamLockOnIndicatorLength = 15.0f;
+		// Camera lock on indicator length (pixels).
+		static inline float fCamLockOnIndicatorLength = 18.0f;
 		// Camera lock on indicator side thickness (pixels).
 		static inline float fCamLockOnIndicatorThickness = 3.0f;
 		// Maximum amount of pixels the crosshair can move across per second.
@@ -1035,6 +1035,10 @@ namespace ALYSLC
 		//-----------
 		//[Movement]:
 		//-----------
+		// Use the middle high process' rotation multiplier to adjust player rotation indirectly.
+		// Much smoother when rotating, but also produces ice-skating movement
+		// when changing direction quickly.
+		static inline const bool bUseMidHighProcRotMod = false;
 		// Multiplier to apply to rotation speed for each movement type.
 		// NOTE: 
 		// Setting this value above 8 leads to choppier rotation,

@@ -1731,6 +1731,50 @@ namespace ALYSLC
 			rmm->isAutoGrabbing = false;
 		}
 
+		// Return true if a crosshair target selection message should be displayed,
+		// or false if a stealth state message should be shown instead.
+		inline bool ShouldDisplayTargetSelectionMessage()
+		{
+			// Display selection text if not sneaking 
+			// or if selecting a non-actor or corpse refr.
+			// Display stealth state text otherwise.
+			auto selectedRefrPtr = Util::GetRefrPtrFromHandle(activationRefrHandle);
+			auto selectedTargetActorPtr = Util::GetActorPtrFromHandle
+			(
+				aimMode == AimMode::kTwinStick ? 
+				aimCorrectionTargetHandle : 
+				selectedTargetActorHandle
+			);
+			bool displayTargetSelectionMessage = false;
+			if (aimMode == AimMode::kTwinStick)
+			{
+				displayTargetSelectionMessage =
+				(
+					(!coopActor->IsSneaking()) || 
+					(
+						(selectedRefrPtr && !selectedTargetActorPtr) &&
+						(
+							!selectedRefrPtr->As<RE::Actor>() || 
+							selectedRefrPtr->As<RE::Actor>()->IsDead()
+						)
+					)	
+				);
+			}
+			else
+			{
+				displayTargetSelectionMessage =
+				(
+					(!coopActor->IsSneaking()) || 
+					(
+						(selectedRefrPtr) && 
+						(!selectedTargetActorPtr || selectedTargetActorPtr->IsDead())
+					)	
+				);
+			}
+			
+			return displayTargetSelectionMessage;
+		}
+
 		//
 		// Member funcs
 		//
@@ -1870,6 +1914,12 @@ namespace ALYSLC
 			const float a_range
 		);
 		
+		// Get the crosshair selection text message to display.
+		// If sneaking, return a string that gives info on detection,
+		// in addition to the selected NPC, if any.
+		// Return the empty string if the crosshair is not on a selectable entity.
+		const RE::BSFixedString GetCrosshairSelectionMessage(bool a_stealthState);
+
 		// Get detection-level-modified gradient RGB value.
 		// NOTE: 
 		// The raw detection level ranges from -1000 to 1000,
