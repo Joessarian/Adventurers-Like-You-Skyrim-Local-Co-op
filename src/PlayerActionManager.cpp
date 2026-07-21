@@ -51,6 +51,14 @@ namespace ALYSLC
 
 	void PlayerActionManager::MainTask()
 	{
+		// Controller error check.
+		XINPUT_STATE tempState{ };
+		ZeroMemory(&tempState, sizeof(XINPUT_STATE));
+		if (XInputGetState(deviceID, &tempState) != ERROR_SUCCESS)
+		{
+			return;
+		}
+
 		// Player action holders.
 		const auto& paFuncs = glob.paFuncsHolder;
 		const auto& paInfo = glob.paInfoHolder;

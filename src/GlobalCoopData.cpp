@@ -14,900 +14,96 @@ namespace ALYSLC
 		return glob;
 	}
 
-	void GlobalCoopData::InitializeGlobalCoopData(RE::BGSRefAlias* a_player1RefAlias)
+	void GlobalCoopData::PrepForCoop()
 	{
-		// Initialize all global co-op data.
-		// Called from script the first time a save is loaded after starting the game.
+		// Set all global co-op data and clean up in preparation for co-op.
 
 		auto& glob = GetSingleton();
 
-		// Global primitive data type members.
-		glob.allPlayersInit = false;
-		glob.coopSessionActive = false;
-		glob.hybridModeActive = false;
-		glob.isCameraShakeActive = false;
-		glob.isInCoopCombat = false;
-		glob.isSummoningPlayers = false;
-		glob.p1IsEssential = false;
-		glob.partyWiped = false;
-		glob.activePlayers = 0;
-		glob.livingPlayers = 0;
-		glob.copiedDataPlayerPID = -1;
-		glob.lastResolvedMenuPID = -1;
-		glob.menuPID = -1;
-		glob.prevMenuPID = -1;
-		glob.p1SavedPerkCount = 0;
-		glob.player1DID = -1;
-		glob.quickLootControlPID = -1;
-		glob.quickLootReqPID = -1;
-		glob.menusOnlyAlwaysOpen.store(true);
-		glob.singleplayerModeActive = false;
-		glob.supportedMenuOpen.store(false);
-		// Handles.
-		glob.reqQuickLootContainerHandle = RE::ObjectRefHandle();
-		// Time points.
-		glob.lastCoopCompanionSkillLevelsCheckTP =
-		glob.lastSupportedMenusClosedTP =
-		glob.lastTempMenusClosedTP =
-		glob.lastXPThresholdCheckTP = SteadyClock::now();
-		// Set global entities and lists.
-		glob.player1Actor = RE::ActorPtr(RE::PlayerCharacter::GetSingleton());
-		glob.player1RefAlias = a_player1RefAlias;
-		glob.activateHighlightShaders.fill(nullptr);
-		glob.castingGlobVars.clear();
-		glob.charGenRace = nullptr;
-		glob.charGenEquippedForms.fill(nullptr);
-		glob.charGenSkillDataList.clear();
-		glob.coopEntityBlacklist.clear();
-		glob.coopEntityBlacklistFIDSet.clear();
-		glob.coopInventoryChests.clear();
-		glob.coopPackages.clear();
-		glob.coopPackageFormlists.clear();
-		glob.coopPlayerFactions.clear();
-		glob.coopPlayerKeywords.clear();
-		glob.p1FavoritedFormsMap.clear();
-		glob.perksAdded.clear();
-		glob.perksRemoved.clear();
-		glob.placeholderSpells.clear();
-		glob.placeholderSpellsSet.clear();
+		// Initialize or re-assign global co-op data.
+		// Called each time a save is loaded or when starting a new game.
+
+		DBG("PrepForCoop.");
+		// First time initialization.
+		bool firstTimeInit = !glob.globalDataInit;
+		SetGlobalCoopData();
+			
+		// Import all settings after initializing co-op data.
+		ALYSLC::Settings::ImportAllSettings();
+		// Re-register for script events.
+		UnregisterEvents();
+		RegisterEvents();
+		// Reset crosshair text and position.
+		SetCrosshairText(true);
+		// Reset supported menu open state because it won't reset
+		// properly if the previous co-op session ended while a supported menu was open.
+		ResetMenuState();
+		// Make sure no players have co-op keywords from a previous session.
+		// Don't want an inactive player character to keep an active player's co-op player keyword;
+		// will mess with executing the ranged attack package and sneaking.
+		RemoveCoopPlayerKeywords();
+		// Reset collisions for all players in case they were toggled off 
+		// or a player is still paralyzed.
+		ResetCoopEntityCollisions();
+		// Stop any active co-op session.
+		SignalWaitForUpdate(true);
+		// Re-enable any controls for P1 that might have been disabled.
+		Util::ToggleAllControls(true);
+		// Clear any lingering queued input events.
+		for (auto& ptr : glob.reqInputEvents)
+		{
+			ptr.release();
+		}
+
 		glob.reqInputEvents.clear();
-		glob.savedP1ActiveEffectsListPtr = nullptr;
-		// Crosshair text offsets.
-		glob.originalCrosshairTextOffsets = std::nullopt;
-
-		// Load in data by form ID.
-		if (auto dataHandler = RE::TESDataHandler::GetSingleton(); dataHandler)
+		// Reset to the default third person camera orientation, 
+		// just in case the game was saved while the co-op cam was active.
+		Util::ResetTPCamOrientation();
+		if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1) 
 		{
-			// Actors that are blacklisted from selection via targeting.
-			// P1 first.
-			glob.coopEntityBlacklist.emplace_back(RE::PlayerCharacter::GetSingleton());
-			// Co-op companion player actors.
-			glob.coopEntityBlacklist.emplace_back
-			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[1], PLUGIN_NAME)
-			);
-			glob.coopEntityBlacklist.emplace_back
-			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[2], PLUGIN_NAME)
-			);
-			glob.coopEntityBlacklist.emplace_back
-			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[3], PLUGIN_NAME)
-			);
-			glob.coopEntityBlacklist.emplace_back
-			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[4], PLUGIN_NAME)
-			);
-			glob.coopEntityBlacklist.emplace_back
-			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[5], PLUGIN_NAME)
-			);
-			glob.coopEntityBlacklist.emplace_back
-			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[6], PLUGIN_NAME)
-			);
-			glob.coopEntityBlacklist.emplace_back
-			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[7], PLUGIN_NAME)
-			);
-			glob.coopEntityBlacklist.emplace_back
-			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[8], PLUGIN_NAME)
-			);
-			glob.coopEntityBlacklist.emplace_back
-			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[9], PLUGIN_NAME)
-			);
-
-			for (auto i = 0; i < glob.coopEntityBlacklist.size(); ++i)
-			{
-				DBG
-				(
-					"Entity  #{}: {}.",
-					i, 
-					glob.coopEntityBlacklist[i] ?
-					glob.coopEntityBlacklist[i]->GetName() :
-					"NONE"
-				);
-			}
-
-			// Used to check if an actor is a blacklisted one.
-			for (const auto& blacklistedActorPtr : glob.coopEntityBlacklist)
-			{
-				if (blacklistedActorPtr)
-				{
-					glob.coopEntityBlacklistFIDSet.insert(blacklistedActorPtr->formID);
-				}
-			}
-
-			// One inventory chest per player.
-			glob.coopInventoryChests.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESObjectREFR>(0x822, PLUGIN_NAME)
-			);
-			glob.coopInventoryChests.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESObjectREFR>(0x823, PLUGIN_NAME)
-			);
-			glob.coopInventoryChests.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESObjectREFR>(0x824, PLUGIN_NAME)
-			);
-			glob.coopInventoryChests.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESObjectREFR>(0x825, PLUGIN_NAME)
-			);
-			glob.coopInventoryChests.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESObjectREFR>(0x8AA, PLUGIN_NAME)
-			);
-			glob.coopInventoryChests.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESObjectREFR>(0x8AB, PLUGIN_NAME)
-			);
-			glob.coopInventoryChests.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESObjectREFR>(0x8AC, PLUGIN_NAME)
-			);
-			glob.coopInventoryChests.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESObjectREFR>(0x8AD, PLUGIN_NAME)
-			);
-			glob.coopInventoryChests.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESObjectREFR>(0x8AE, PLUGIN_NAME)
-			);
-			glob.coopInventoryChests.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESObjectREFR>(0x8AF, PLUGIN_NAME)
-			);
-
-			// Packages for co-op companion player actors.
-			// (Default, combat override, ranged attack packages, special interaction) per player.
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x867, PLUGIN_NAME)
-			);
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x868, PLUGIN_NAME)
-			);
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x866, PLUGIN_NAME)
-			);
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x815, PLUGIN_NAME)
-			);
-
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x86C, PLUGIN_NAME)
-			);
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x869, PLUGIN_NAME)
-			);
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x86F, PLUGIN_NAME)
-			);
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x816, PLUGIN_NAME)
-			);
-
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x86D, PLUGIN_NAME)
-			);
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x86A, PLUGIN_NAME)
-			);
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x870, PLUGIN_NAME)
-			);
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x817, PLUGIN_NAME)
-			);
-
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x86E, PLUGIN_NAME)
-			);
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x86B, PLUGIN_NAME)
-			);
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x871, PLUGIN_NAME)
-			);
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x818, PLUGIN_NAME)
-			);
-
-			// Package formlists for each player character
-			// that hold the co-op packages above when they are added.
-			// (Default, combat override) for each player character.
-			// NOTE:
-			// Very important. 
-			// These formlists are assigned directly to the player charaacter's actor bases,
-			// so they must be matched to the character themselves 
-			// when assigned upon summoning that character.
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x81B, PLUGIN_NAME)
-			);
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x81A, PLUGIN_NAME)
-			);
-
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x82B, PLUGIN_NAME)
-			);
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x82A, PLUGIN_NAME)
-			);
-
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x83E, PLUGIN_NAME)
-			);
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x83F, PLUGIN_NAME)
-			);
-
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x842, PLUGIN_NAME)
-			);
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x841, PLUGIN_NAME)
-			);
-
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x898, PLUGIN_NAME)
-			);
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x89E, PLUGIN_NAME)
-			);
-
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x899, PLUGIN_NAME)
-			);
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x89F, PLUGIN_NAME)
-			);
-
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x89A, PLUGIN_NAME)
-			);
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x8A0, PLUGIN_NAME)
-			);
-
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x89B, PLUGIN_NAME)
-			);
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x8A1, PLUGIN_NAME)
-			);
-
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x89C, PLUGIN_NAME)
-			);
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x8A2, PLUGIN_NAME)
-			);
-
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x89D, PLUGIN_NAME)
-			);
-			glob.coopPackageFormlists.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x8A3, PLUGIN_NAME)
-			);
-
-			// Global variables that indicate whether a co-op companion player is trying to cast
-			// a spell/shout using the LH, RH, 2H, dual, or voice slots.
 			// NOTE: 
-			// Currently, dual casting is not functional.
-			// Order: LH, RH, 2H, Dual, Shout, Voice (same as cast package indexing enum).
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x838, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x83B, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x880, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x862, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x884, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x888, PLUGIN_NAME)
-			);
-
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x839, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x83C, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x881, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x863, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x885, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x889, PLUGIN_NAME)
-			);
-
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x83A, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x83D, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x882, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x864, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x886, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x88A, PLUGIN_NAME)
-			);
-
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x845, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x846, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x883, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x865, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x887, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x88B, PLUGIN_NAME)
-			);
-
-			// Other global variables.
-			glob.canStartCoopGlob = 
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x84A, PLUGIN_NAME)	
-			);
-			glob.summoningMenuOpenGlob = 
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x81F, PLUGIN_NAME)
-			);
-			glob.werewolfTransformationGlob =
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x2EA9A, "Enderal - Forgotten Stories.esm")
-			);
-
-			// NOTE: 
-			// Not functional as of now, but may be used later.
-			// Placeholder shouts that hold copied data from existing shouts.
-			// Allows co-op companion player actors to cast different shouts 
-			// through their ranged attack package.
-			// For each player.
-			glob.placeholderShouts.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESShout>(0x87C, PLUGIN_NAME)
-			);
-			glob.placeholderShouts.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESShout>(0x87D, PLUGIN_NAME)
-			);
-			glob.placeholderShouts.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESShout>(0x87E, PLUGIN_NAME)
-			);
-			glob.placeholderShouts.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESShout>(0x87F, PLUGIN_NAME)
-			);
-			
-			// Placeholder spells that hold copied data from existing spells.
-			// Allows co-op companion player actors to cast different spells 
-			// through their ranged attack package.
-			// Order: (LH, RH, 2H, Voice) for each player.
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x82D, PLUGIN_NAME)
-			);
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x82F, PLUGIN_NAME)
-			);
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x874, PLUGIN_NAME)
-			);
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x878, PLUGIN_NAME)
-			);
-
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x82E, PLUGIN_NAME)
-			);
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x831, PLUGIN_NAME)
-			);
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x875, PLUGIN_NAME)
-			);
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x879, PLUGIN_NAME)
-			);
-
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x830, PLUGIN_NAME)
-			);
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x832, PLUGIN_NAME)
-			);
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x876, PLUGIN_NAME)
-			);
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x87A, PLUGIN_NAME)
-			);
-
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x847, PLUGIN_NAME)
-			);
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x848, PLUGIN_NAME)
-			);
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x877, PLUGIN_NAME)
-			);
-			glob.placeholderSpells.emplace_back
-			(
-				dataHandler->LookupForm<RE::SpellItem>(0x87B, PLUGIN_NAME)
-			);
-
-			// Keywords.
-
-			// Active player keywords.
-			glob.coopPlayerKeywords.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSKeyword>(0x835, PLUGIN_NAME)
-			);
-			glob.coopPlayerKeywords.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSKeyword>(0x836, PLUGIN_NAME)
-			);
-			glob.coopPlayerKeywords.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSKeyword>(0x837, PLUGIN_NAME)
-			);
-			glob.coopPlayerKeywords.emplace_back
-			(
-				dataHandler->LookupForm<RE::BGSKeyword>(0x844, PLUGIN_NAME)
-			);
-
-			// Keyword for companion players (not for P1).
-			glob.companionPlayerKeyword = 
-			(
-				dataHandler->LookupForm<RE::BGSKeyword>(0x861, PLUGIN_NAME)
-			);
-
-			// Factions.
-			
-			// PlayerFaction.
-			glob.coopPlayerFactions.emplace_back
-			(
-				RE::TESForm::LookupByID<RE::TESFaction>(0xDB1)
-			);
-
-			// ALYSLC companion player faction (P1 and 3 base co-op characters).
-			glob.coopPlayerFactions.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESFaction>(0x873, PLUGIN_NAME)
-			);
-			
-			// [Enderal Only]
-			if (ALYSLC::EnderalCompat::g_installed)
-			{
-				// PlayerAlliesFaction:
-				glob.coopPlayerFactions.emplace_back
-				(
-					RE::TESForm::LookupByID<RE::TESFaction>(0x39BD7)
-				);
-			
-				// EPFaction: Enderal XP-granting faction.
-				// Actors in this faction give the player XP 
-				// when they perform actions, such as killing enemies.
-				glob.coopPlayerFactions.emplace_back
-				(
-					RE::TESForm::LookupByID<RE::TESFaction>(0x39DCE)
-				);
-			}
-			else
-			{
-				// Default factions from the P1's 'Player' actor base.
-				
-				// MagicCharmFaction
-				glob.coopPlayerFactions.emplace_back
-				(
-					RE::TESForm::LookupByID<RE::TESFaction>(0x8F3E8)
-				);
-
-				// MagicAllegianceFaction
-				glob.coopPlayerFactions.emplace_back
-				(
-					RE::TESForm::LookupByID<RE::TESFaction>(0x9E0C9)
-				);
-
-				// PlayerBedOwnership
-				glob.coopPlayerFactions.emplace_back
-				(
-					RE::TESForm::LookupByID<RE::TESFaction>(0xF2073)
-				);
-			}
-
-			// Magic effects.
-			glob.tarhielsGaleEffect = 
-			(
-				ALYSLC::SkyrimsParagliderCompat::g_installed ? 
-				dataHandler->LookupForm<RE::EffectSetting>(0x10C68, "Paragliding.esp") : 
-				nullptr
-			);
-
-			// Movement types.
-			glob.paraglidingMT = 
-			(
-				ALYSLC::SkyrimsParagliderCompat::g_installed ? 
-				dataHandler->LookupForm<RE::BGSMovementType>(0x33D1, "Paragliding.esp") : 
-				nullptr
-			);
-
-			// Shaders.
-			glob.activateHighlightShaders[0] = 
-			(
-				dataHandler->LookupForm<RE::TESEffectShader>(0x8B0, PLUGIN_NAME)
-			);
-			glob.activateHighlightShaders[1] = 
-			(
-				dataHandler->LookupForm<RE::TESEffectShader>(0x8B1, PLUGIN_NAME)
-			);
-			glob.activateHighlightShaders[2] = 
-			(
-				dataHandler->LookupForm<RE::TESEffectShader>(0x8B2, PLUGIN_NAME)
-			);
-			glob.activateHighlightShaders[3] = 
-			(
-				dataHandler->LookupForm<RE::TESEffectShader>(0x8B3, PLUGIN_NAME)
-			);
-			glob.activateDefaultShader = 
-			(
-				dataHandler->LookupForm<RE::TESEffectShader>(0x84B, PLUGIN_NAME)
-			);
-			glob.activateFailureShader = 
-			(
-				dataHandler->LookupForm<RE::TESEffectShader>(0x8B4, PLUGIN_NAME)
-			);
-			glob.activateUseShader = 
-			(
-				dataHandler->LookupForm<RE::TESEffectShader>(0x8B5, PLUGIN_NAME)
-			);
-			glob.dragonHolesShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x4CEC8);
-			glob.dragonSoulAbsorbShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x280C0);
-			glob.ghostFXShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x64D67);
-
-			// Spells.
-			glob.tarhielsGaleSpell = 
-			(
-				ALYSLC::SkyrimsParagliderCompat::g_installed ? 
-				dataHandler->LookupForm<RE::SpellItem>(0x10C67, "Paragliding.esp") :
-				nullptr
-			);
-
-			// Get all bound arrow ammo types.
-			const auto& ammoList = dataHandler->GetFormArray<RE::TESAmmo>();
-			for (auto ammo : ammoList)
-			{
-				if (!ammo)
-				{
-					continue;
-				}
-
-				if (ammo->HasKeywordByEditorID("WeapTypeBoundArrow"))
-				{
-					glob.boundArrowAmmoList.emplace_back(ammo);
-				}
-			}
-
-			// Forms from other mods.
-
-			// Paraglider.
-			glob.paraglider = dataHandler->LookupForm<RE::TESObjectMISC>(0x802, "Paragliding.esp");
+			// The game fails to save P1's perks properly at times,
+			// either clearing all of them, or only saving the perks unlocked by P1 
+			// and not by any other player.
+			// I have yet to find a reason why it does this or find a direct solution,
+			// so the current workaround is to import P1's perks
+			// to ensure that they can access their saved perks, even outside of co-op.
+			// Please note that if the mod is uninstalled, 
+			// P1 will have to respec all their perks manually,
+			// as the function below will not fire to import all the serialized perks.
+			ImportUnlockedPerks(p1);
 		}
 
-		// Get all hand equip slots by ID.
-		glob.bothHandsEquipSlot = RE::TESForm::LookupByID<RE::BGSEquipSlot>(0x13F45);
-		glob.eitherHandEquipSlot = RE::TESForm::LookupByID<RE::BGSEquipSlot>(0x13F44);
-		glob.leftHandEquipSlot = RE::TESForm::LookupByID<RE::BGSEquipSlot>(0x13F43);
-		glob.rightHandEquipSlot = RE::TESForm::LookupByID<RE::BGSEquipSlot>(0x13F42);
-		glob.shieldEquipSlot = RE::TESForm::LookupByID<RE::BGSEquipSlot>(0x141E8);
-		glob.voiceEquipSlot = RE::TESForm::LookupByID<RE::BGSEquipSlot>(0x25BEE);
-
-		// NPC keyword.
-		glob.npcKeyword = RE::TESForm::LookupByID<RE::BGSKeyword>(0x13794);
-		// Vampire keyword.
-		glob.vampireKeyword = RE::TESForm::LookupByID<RE::BGSKeyword>(0xA82BB);
-		// Get all weapon type (aside from Bound Arrow) keywords by ID.
-		// Cannot insert by RE::WEAPON_TYPE since warhammer is not included as its own type.
-		glob.weapTypeKeywordsList.clear();
-		// Warhammer (No weapon type enum member).
-		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x6D930));
-		// Sword.
-		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x1E711));
-		// Dagger.
-		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x1E713));
-		// War Axe.
-		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x1E712));
-		// Mace.
-		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x1E714));
-		// Greatsword.
-		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x6D931));
-		// Battleaxe.
-		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x6D932));
-		// Bow.
-		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x1E715));
-		// Staff.
-		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x1E716));
-		// Crossbow (No weapon type keyword, so using bow).
-		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x1E715));
-
-		//=================
-		// Base game forms.
-		//=================
-		// Art Objects:
-		glob.paraglideIndicatorEffect1 = 
-		(
-			RE::TESForm::LookupByEditorID<RE::BGSArtObject>("FXWispParticleAttachObject")
-		);
-		glob.paraglideIndicatorEffect2 = 
-		(
-			RE::TESForm::LookupByEditorID<RE::BGSArtObject>("CallOfValorTargetFX01")
-		);
-		glob.reviveDragonSoulEffect = RE::TESForm::LookupByID<RE::BGSArtObject>(0x2E6AA);
-		glob.reviveHealingEffect = RE::TESForm::LookupByID<RE::BGSArtObject>(0x3F810);
-		// Bound objects.
-		// 1H slot clearer.
-		glob.dummy1H = RE::TESForm::LookupByID<RE::TESBoundObject>(0x6B95F);
-		// 2H slot clearer.
-		glob.fists = RE::TESForm::LookupByID<RE::TESBoundObject>(0x1F4);
-		if (!ALYSLC::EnderalCompat::g_installed)
+		auto ui = RE::UI::GetSingleton();
+		if (ui && !ui->IsMenuOpen(DebugOverlayMenu::MENU_NAME))
 		{
-			// Formlists:
-			glob.shoutVarSpellsFormList = RE::TESForm::LookupByID<RE::BGSListForm>(0x167D9);
-			// Perks:
-			glob.assassinsBladePerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x58211);
-			glob.backstabPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x58210);
-			glob.criticalChargePerk = RE::TESForm::LookupByID<RE::BGSPerk>(0xCB406);
-			glob.deadlyAimPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x1036F0);
-			glob.dualCastingAlterationPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x153CD);
-			glob.dualCastingConjurationPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x153CE);
-			glob.dualCastingDestructionPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x153CF);
-			glob.dualCastingIllusionPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x153D0);
-			glob.dualCastingRestorationPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x153D1);
-			glob.greatCriticalChargePerk = RE::TESForm::LookupByID<RE::BGSPerk>(0xCB407);
-			glob.powerBashPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x58F67);
-			glob.quickShotPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x105F19);
-			glob.shieldChargePerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x58F6A);
-			glob.sneakRollPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x105F23);
-			// Globals:
-			// Not for Skyrim.
-			glob.craftingPointsGlob = nullptr;
-			glob.learningPointsGlob = nullptr;
-			glob.memoryPointsGlob = nullptr;
-			glob.playerLevelGlob = nullptr;
-			glob.werewolfTransformationGlob = nullptr;
+			// Open the ALYSLC overlay if it isn't open already.
+			DBG("ALYSLC overlay not open. Opening.");
+			DebugOverlayMenu::Load();
 		}
-		else
+
+		// Stop combat without removing bounties to prevent aggro on load 
+		// from previously pacified neutral factions.
+		Util::StopCombatOnPlayerAndAllies();
+
+		// Make sure time is not frozen.
+		Util::ToggleFreezeTime(false);
+
+		if (firstTimeInit)
 		{
-			// None used -- either renamed or not compatible.
-			// Also only added to companion players if P1 chooses
-			// a compatible perk when meditating.
-			glob.shoutVarSpellsFormList = nullptr;
-			// Perks:
-			glob.assassinsBladePerk = nullptr;
-			glob.backstabPerk = nullptr;
-			glob.criticalChargePerk = nullptr;
-			glob.deadlyAimPerk = nullptr;
-			glob.dualCastingAlterationPerk = nullptr;
-			glob.dualCastingConjurationPerk = nullptr;
-			glob.dualCastingDestructionPerk = nullptr;
-			glob.dualCastingIllusionPerk = nullptr;
-			glob.dualCastingRestorationPerk = nullptr;
-			glob.greatCriticalChargePerk = nullptr;
-			glob.powerBashPerk = nullptr;
-			glob.quickShotPerk = nullptr;
-			glob.shieldChargePerk = nullptr;
-			glob.sneakRollPerk = nullptr;
-			// Globals:
-			glob.craftingPointsGlob = 
+			RE::DebugMessageBox
 			(
-				RE::TESForm::LookupByEditorID<RE::TESGlobal>("Handwerkspunkte"sv)
+				"[ALYSLC]\nDone initializing!\nTo assign Player 1's controller "
+				"and summon other players:\n"
+				"1. Ensure Player 1 is not in combat.\n"
+				"2. Hold the 'Wait' bind on Player 1's controller.\n"
+				"3. Press and release the 'Pause/Journal' bind on Player 1's controller.\n\n"
+				"The summoning menu will open and a tri-colored border overlay will indicate "
+				"which player has control of the menu.\n"
+				"See the mod's MCM for additional information and to customize settings.\n"
+				"Have fun!"
 			);
-			glob.learningPointsGlob = RE::TESForm::LookupByEditorID<RE::TESGlobal>("Lernpunkte"sv);
-			glob.memoryPointsGlob = RE::TESForm::LookupByEditorID<RE::TESGlobal>("TalentPoints"sv);
-			glob.playerLevelGlob = RE::TESForm::LookupByEditorID<RE::TESGlobal>("PlayerLevel"sv);
 		}
-
-		// Carryweight-related forms.
-		glob.extraPocketsMagSpell = RE::TESForm::LookupByID<RE::SpellItem>(0x96592);
-		glob.extraPocketsPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x96590);
-
-		// Get all selectable level up perks.
-		SELECTABLE_PERKS.clear();
-		SELECTABLE_SHARED_PERKS.clear();
-		if (const auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
-		{
-			auto getSelectablePerks =
-			[&glob](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
-			{
-				auto perk = a_node->perk;
-				while (perk)
-				{
-					SELECTABLE_PERKS.insert(perk);
-					if (a_node->associatedSkill)
-					{
-						bool shared = SHARED_SKILL_NAMES_SET.contains
-						(
-							a_node->associatedSkill->enumName
-						);
-						if (shared)
-						{
-							SELECTABLE_SHARED_PERKS.insert(perk);
-						}
-					}
-
-					perk = perk->nextPerk;
-				}
-			};
-
-			Util::TraverseAllPerks(p1, getSelectablePerks);
-		}
-
-		// Assign triggerable killmoves.
-		AssignSkeletonSpecificKillmoves();
-		AssignGenericKillmoves();
-
-		// Set default XP-related game settings' values.
-		SaveDefaultXPBaseAndMultFromGameSettings();
-
-		// Initialize managers, holders, and other global data members and wrap in smart pointers.
-		glob.cam = std::make_unique<CameraManager>();
-		glob.cdh = std::make_unique<ControllerDataHolder>();
-		glob.mim = std::make_unique<MenuInputManager>();
-		glob.moarm = std::make_unique<MenuOpeningActionRequestsManager>();
-		glob.contactListener = std::make_unique<ContactListener>();
-		glob.copyDataReqInfo = std::make_unique<CopyPlayerDataRequestInfo>();
-		glob.coopCompanionExchangeableData = std::make_unique<ExchangeablePlayerData>();
-		glob.p1ExchangeableData = std::make_unique<ExchangeablePlayerData>();
-		glob.lastP1MeleeUseSkillCallArgs = std::make_unique<LastP1MeleeUseSkillCallArgs>();
-		glob.paFuncsHolder = std::make_unique<PlayerActionFunctionsHolder>();
-		glob.paInfoHolder = std::make_unique<PlayerActionInfoHolder>();
-		glob.taskRunner	= std::make_unique<TaskRunner>("[GLOB]");
-		// Interp data.
-		glob.crosshairTextFadeInterpData = std::make_unique<TwoWayInterpData>();
-		glob.crosshairTextFadeInterpData->SetInterpInterval(1.0f, true);
-		glob.crosshairTextFadeInterpData->SetInterpInterval(2.0f, false);
-
-		// Create inactive co-op players.
-		std::generate
-		(
-			glob.coopPlayers.begin(), glob.coopPlayers.end(), 
-			[]() 
-			{
-				return std::make_shared<CoopPlayer>();
-			}
-		);
-
-		// Done initializing.
-		glob.globalDataInit = true;
-		INF("Global data initialized!");
 	}
 
 	//=============================================================================================
@@ -5372,7 +4568,7 @@ namespace ALYSLC
 			}
 		}
 	}
-
+	
 	void GlobalCoopData::RescaleActivePlayerAVs()
 	{
 		// Rescale active player HMS and skill AVs to serialized values. 
@@ -5732,6 +4928,24 @@ namespace ALYSLC
 		(
 			RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina, oldStaminaDamage
 		);
+	}
+
+	void GlobalCoopData::ResetCoopEntityCollisions()
+	{
+		// Toggle collisions on and remove paralysis flag for all players.
+
+		auto& glob = GetSingleton();
+		for (const auto playerActor : glob.coopEntityBlacklist)
+		{
+			if (!playerActor || playerActor->IsDisabled() || !playerActor->Is3DLoaded())
+			{
+				continue;
+			}
+				
+			DBG("{}.", playerActor->GetName());
+			Util::EnableCollisionForActor(playerActor.get());
+			playerActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+		}
 	}
 
 	void GlobalCoopData::ResetMenuPlayerIDs()
@@ -6822,6 +6036,943 @@ namespace ALYSLC
 		);
 	}
 
+	void GlobalCoopData::SetGlobalCoopData()
+	{
+		auto dataHandler = RE::TESDataHandler::GetSingleton(); 
+		if (!dataHandler)
+		{
+			ERR("ERR: Could not get data handler. Some global co-op data will not be set.");
+		}
+
+		auto& glob = GetSingleton(); 
+		// P1 data may change on loading a save (if another player character's save is loaded),
+		// so we must update the alias.
+		SetPlayer1RefAlias();
+
+		// If already initialized, we don't need to update all the data.
+		if (glob.globalDataInit)
+		{
+			// Must also ensure the camera manager is not running on save load.
+			// Reset P1's DID.
+			// Will be automatically re-assigned on the first summoning after save load.
+			glob.player1DID = -1;
+			// Reset player ID requesting control of menus.
+			glob.moarm->reqTransferMenuControlPlayerPID = -1;
+			// Get P1, which may be a different character.
+			glob.player1Actor.reset();
+			glob.player1Actor = RE::ActorPtr(RE::PlayerCharacter::GetSingleton());
+			// Set living and active players to 0 when not in co-op.
+			glob.livingPlayers = glob.activePlayers = 0;
+			// Reset QuickLoot menu-opening data.
+			glob.quickLootControlPID = -1;
+			glob.quickLootReqPID = -1;
+			glob.reqQuickLootContainerHandle = RE::ObjectRefHandle();
+			// Co-op camera set to paused and not waiting for toggle.
+			glob.cam->SetWaitForToggle(false);
+			glob.cam->ToggleCoopCamera(false);
+			// Reset combat and camera shake state.
+			glob.isCameraShakeActive = false;
+			glob.isInCoopCombat = false;
+			// Set as not summoning yet.
+			glob.isSummoningPlayers = false;
+			// Make sure the party is not flagged as wiped.
+			glob.partyWiped = false;
+			return;
+		}
+		
+		// Global primitive data type members.
+		glob.allPlayersInit = false;
+		glob.coopSessionActive = false;
+		glob.hybridModeActive = false;
+		glob.isCameraShakeActive = false;
+		glob.isInCoopCombat = false;
+		glob.isSummoningPlayers = false;
+		glob.p1IsEssential = false;
+		glob.partyWiped = false;
+		glob.activePlayers = 0;
+		glob.livingPlayers = 0;
+		glob.copiedDataPlayerPID = -1;
+		glob.lastResolvedMenuPID = -1;
+		glob.menuPID = -1;
+		glob.prevMenuPID = -1;
+		glob.p1SavedPerkCount = 0;
+		glob.player1DID = -1;
+		glob.quickLootControlPID = -1;
+		glob.quickLootReqPID = -1;
+		glob.menusOnlyAlwaysOpen.store(true);
+		glob.singleplayerModeActive = false;
+		glob.supportedMenuOpen.store(false);
+		// Handles.
+		glob.reqQuickLootContainerHandle = RE::ObjectRefHandle();
+		// Time points.
+		glob.lastCoopCompanionSkillLevelsCheckTP =
+		glob.lastSupportedMenusClosedTP =
+		glob.lastTempMenusClosedTP =
+		glob.lastXPThresholdCheckTP = SteadyClock::now();
+		// Set global entities and lists.
+		glob.player1Actor = RE::ActorPtr(RE::PlayerCharacter::GetSingleton());
+		glob.activateHighlightShaders.fill(nullptr);
+		glob.castingGlobVars.clear();
+		glob.charGenRace = nullptr;
+		glob.charGenEquippedForms.fill(nullptr);
+		glob.charGenSkillDataList.clear();
+		glob.coopEntityBlacklist.clear();
+		glob.coopEntityBlacklistFIDSet.clear();
+		glob.coopInventoryChests.clear();
+		glob.coopPackages.clear();
+		glob.coopPackageFormlists.clear();
+		glob.coopPlayerFactions.clear();
+		glob.coopPlayerKeywords.clear();
+		glob.p1FavoritedFormsMap.clear();
+		glob.perksAdded.clear();
+		glob.perksRemoved.clear();
+		glob.placeholderSpells.clear();
+		glob.placeholderSpellsSet.clear();
+		glob.reqInputEvents.clear();
+		glob.savedP1ActiveEffectsListPtr = nullptr;
+		// Crosshair text offsets.
+		glob.originalCrosshairTextOffsets = std::nullopt;
+
+		// Load in data by form ID.
+		if (dataHandler)
+		{
+			// Actors that are blacklisted from selection via targeting.
+			// P1 first.
+			glob.coopEntityBlacklist.emplace_back(RE::PlayerCharacter::GetSingleton());
+			// Co-op companion player actors.
+			glob.coopEntityBlacklist.emplace_back
+			(
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[1], PLUGIN_NAME)
+			);
+			glob.coopEntityBlacklist.emplace_back
+			(
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[2], PLUGIN_NAME)
+			);
+			glob.coopEntityBlacklist.emplace_back
+			(
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[3], PLUGIN_NAME)
+			);
+			glob.coopEntityBlacklist.emplace_back
+			(
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[4], PLUGIN_NAME)
+			);
+			glob.coopEntityBlacklist.emplace_back
+			(
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[5], PLUGIN_NAME)
+			);
+			glob.coopEntityBlacklist.emplace_back
+			(
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[6], PLUGIN_NAME)
+			);
+			glob.coopEntityBlacklist.emplace_back
+			(
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[7], PLUGIN_NAME)
+			);
+			glob.coopEntityBlacklist.emplace_back
+			(
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[8], PLUGIN_NAME)
+			);
+			glob.coopEntityBlacklist.emplace_back
+			(
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[9], PLUGIN_NAME)
+			);
+
+			for (auto i = 0; i < glob.coopEntityBlacklist.size(); ++i)
+			{
+				DBG
+				(
+					"Entity  #{}: {}.",
+					i, 
+					glob.coopEntityBlacklist[i] ?
+					glob.coopEntityBlacklist[i]->GetName() :
+					"NONE"
+				);
+			}
+
+			// Used to check if an actor is a blacklisted one.
+			for (const auto& blacklistedActorPtr : glob.coopEntityBlacklist)
+			{
+				if (blacklistedActorPtr)
+				{
+					glob.coopEntityBlacklistFIDSet.insert(blacklistedActorPtr->formID);
+				}
+			}
+
+			// One inventory chest per player.
+			glob.coopInventoryChests.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESObjectREFR>(0x822, PLUGIN_NAME)
+			);
+			glob.coopInventoryChests.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESObjectREFR>(0x823, PLUGIN_NAME)
+			);
+			glob.coopInventoryChests.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESObjectREFR>(0x824, PLUGIN_NAME)
+			);
+			glob.coopInventoryChests.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESObjectREFR>(0x825, PLUGIN_NAME)
+			);
+			glob.coopInventoryChests.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESObjectREFR>(0x8AA, PLUGIN_NAME)
+			);
+			glob.coopInventoryChests.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESObjectREFR>(0x8AB, PLUGIN_NAME)
+			);
+			glob.coopInventoryChests.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESObjectREFR>(0x8AC, PLUGIN_NAME)
+			);
+			glob.coopInventoryChests.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESObjectREFR>(0x8AD, PLUGIN_NAME)
+			);
+			glob.coopInventoryChests.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESObjectREFR>(0x8AE, PLUGIN_NAME)
+			);
+			glob.coopInventoryChests.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESObjectREFR>(0x8AF, PLUGIN_NAME)
+			);
+
+			// Packages for co-op companion player actors.
+			// (Default, combat override, ranged attack packages, special interaction) per player.
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x867, PLUGIN_NAME)
+			);
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x868, PLUGIN_NAME)
+			);
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x866, PLUGIN_NAME)
+			);
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x815, PLUGIN_NAME)
+			);
+
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x86C, PLUGIN_NAME)
+			);
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x869, PLUGIN_NAME)
+			);
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x86F, PLUGIN_NAME)
+			);
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x816, PLUGIN_NAME)
+			);
+
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x86D, PLUGIN_NAME)
+			);
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x86A, PLUGIN_NAME)
+			);
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x870, PLUGIN_NAME)
+			);
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x817, PLUGIN_NAME)
+			);
+
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x86E, PLUGIN_NAME)
+			);
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x86B, PLUGIN_NAME)
+			);
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x871, PLUGIN_NAME)
+			);
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x818, PLUGIN_NAME)
+			);
+
+			// Package formlists for each player character
+			// that hold the co-op packages above when they are added.
+			// (Default, combat override) for each player character.
+			// NOTE:
+			// Very important. 
+			// These formlists are assigned directly to the player charaacter's actor bases,
+			// so they must be matched to the character themselves 
+			// when assigned upon summoning that character.
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x81B, PLUGIN_NAME)
+			);
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x81A, PLUGIN_NAME)
+			);
+
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x82B, PLUGIN_NAME)
+			);
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x82A, PLUGIN_NAME)
+			);
+
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x83E, PLUGIN_NAME)
+			);
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x83F, PLUGIN_NAME)
+			);
+
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x842, PLUGIN_NAME)
+			);
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x841, PLUGIN_NAME)
+			);
+
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x898, PLUGIN_NAME)
+			);
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x89E, PLUGIN_NAME)
+			);
+
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x899, PLUGIN_NAME)
+			);
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x89F, PLUGIN_NAME)
+			);
+
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x89A, PLUGIN_NAME)
+			);
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x8A0, PLUGIN_NAME)
+			);
+
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x89B, PLUGIN_NAME)
+			);
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x8A1, PLUGIN_NAME)
+			);
+
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x89C, PLUGIN_NAME)
+			);
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x8A2, PLUGIN_NAME)
+			);
+
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x89D, PLUGIN_NAME)
+			);
+			glob.coopPackageFormlists.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSListForm>(0x8A3, PLUGIN_NAME)
+			);
+
+			// Global variables that indicate whether a co-op companion player is trying to cast
+			// a spell/shout using the LH, RH, 2H, dual, or voice slots.
+			// NOTE: 
+			// Currently, dual casting is not functional.
+			// Order: LH, RH, 2H, Dual, Shout, Voice (same as cast package indexing enum).
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x838, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x83B, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x880, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x862, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x884, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x888, PLUGIN_NAME)
+			);
+
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x839, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x83C, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x881, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x863, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x885, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x889, PLUGIN_NAME)
+			);
+
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x83A, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x83D, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x882, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x864, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x886, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x88A, PLUGIN_NAME)
+			);
+
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x845, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x846, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x883, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x865, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x887, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x88B, PLUGIN_NAME)
+			);
+
+			// Other global variables.
+			glob.canStartCoopGlob = 
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x84A, PLUGIN_NAME)	
+			);
+			glob.summoningMenuOpenGlob = 
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x81F, PLUGIN_NAME)
+			);
+			glob.werewolfTransformationGlob =
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x2EA9A, "Enderal - Forgotten Stories.esm")
+			);
+
+			// NOTE: 
+			// Not functional as of now, but may be used later.
+			// Placeholder shouts that hold copied data from existing shouts.
+			// Allows co-op companion player actors to cast different shouts 
+			// through their ranged attack package.
+			// For each player.
+			glob.placeholderShouts.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESShout>(0x87C, PLUGIN_NAME)
+			);
+			glob.placeholderShouts.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESShout>(0x87D, PLUGIN_NAME)
+			);
+			glob.placeholderShouts.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESShout>(0x87E, PLUGIN_NAME)
+			);
+			glob.placeholderShouts.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESShout>(0x87F, PLUGIN_NAME)
+			);
+			
+			// Placeholder spells that hold copied data from existing spells.
+			// Allows co-op companion player actors to cast different spells 
+			// through their ranged attack package.
+			// Order: (LH, RH, 2H, Voice) for each player.
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x82D, PLUGIN_NAME)
+			);
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x82F, PLUGIN_NAME)
+			);
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x874, PLUGIN_NAME)
+			);
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x878, PLUGIN_NAME)
+			);
+
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x82E, PLUGIN_NAME)
+			);
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x831, PLUGIN_NAME)
+			);
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x875, PLUGIN_NAME)
+			);
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x879, PLUGIN_NAME)
+			);
+
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x830, PLUGIN_NAME)
+			);
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x832, PLUGIN_NAME)
+			);
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x876, PLUGIN_NAME)
+			);
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x87A, PLUGIN_NAME)
+			);
+
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x847, PLUGIN_NAME)
+			);
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x848, PLUGIN_NAME)
+			);
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x877, PLUGIN_NAME)
+			);
+			glob.placeholderSpells.emplace_back
+			(
+				dataHandler->LookupForm<RE::SpellItem>(0x87B, PLUGIN_NAME)
+			);
+
+			// Keywords.
+
+			// Active player keywords.
+			glob.coopPlayerKeywords.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSKeyword>(0x835, PLUGIN_NAME)
+			);
+			glob.coopPlayerKeywords.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSKeyword>(0x836, PLUGIN_NAME)
+			);
+			glob.coopPlayerKeywords.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSKeyword>(0x837, PLUGIN_NAME)
+			);
+			glob.coopPlayerKeywords.emplace_back
+			(
+				dataHandler->LookupForm<RE::BGSKeyword>(0x844, PLUGIN_NAME)
+			);
+
+			// Keyword for companion players (not for P1).
+			glob.companionPlayerKeyword = 
+			(
+				dataHandler->LookupForm<RE::BGSKeyword>(0x861, PLUGIN_NAME)
+			);
+
+			// Factions.
+			
+			// PlayerFaction.
+			glob.coopPlayerFactions.emplace_back
+			(
+				RE::TESForm::LookupByID<RE::TESFaction>(0xDB1)
+			);
+
+			// ALYSLC companion player faction (P1 and 3 base co-op characters).
+			glob.coopPlayerFactions.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESFaction>(0x873, PLUGIN_NAME)
+			);
+			
+			// [Enderal Only]
+			if (ALYSLC::EnderalCompat::g_installed)
+			{
+				// PlayerAlliesFaction:
+				glob.coopPlayerFactions.emplace_back
+				(
+					RE::TESForm::LookupByID<RE::TESFaction>(0x39BD7)
+				);
+			
+				// EPFaction: Enderal XP-granting faction.
+				// Actors in this faction give the player XP 
+				// when they perform actions, such as killing enemies.
+				glob.coopPlayerFactions.emplace_back
+				(
+					RE::TESForm::LookupByID<RE::TESFaction>(0x39DCE)
+				);
+			}
+			else
+			{
+				// Default factions from the P1's 'Player' actor base.
+				
+				// MagicCharmFaction
+				glob.coopPlayerFactions.emplace_back
+				(
+					RE::TESForm::LookupByID<RE::TESFaction>(0x8F3E8)
+				);
+
+				// MagicAllegianceFaction
+				glob.coopPlayerFactions.emplace_back
+				(
+					RE::TESForm::LookupByID<RE::TESFaction>(0x9E0C9)
+				);
+
+				// PlayerBedOwnership
+				glob.coopPlayerFactions.emplace_back
+				(
+					RE::TESForm::LookupByID<RE::TESFaction>(0xF2073)
+				);
+			}
+
+			// Magic effects.
+			glob.tarhielsGaleEffect = 
+			(
+				ALYSLC::SkyrimsParagliderCompat::g_installed ? 
+				dataHandler->LookupForm<RE::EffectSetting>(0x10C68, "Paragliding.esp") : 
+				nullptr
+			);
+
+			// Movement types.
+			glob.paraglidingMT = 
+			(
+				ALYSLC::SkyrimsParagliderCompat::g_installed ? 
+				dataHandler->LookupForm<RE::BGSMovementType>(0x33D1, "Paragliding.esp") : 
+				nullptr
+			);
+
+			// Shaders.
+			glob.activateHighlightShaders[0] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8B0, PLUGIN_NAME)
+			);
+			glob.activateHighlightShaders[1] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8B1, PLUGIN_NAME)
+			);
+			glob.activateHighlightShaders[2] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8B2, PLUGIN_NAME)
+			);
+			glob.activateHighlightShaders[3] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8B3, PLUGIN_NAME)
+			);
+			glob.activateDefaultShader = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x84B, PLUGIN_NAME)
+			);
+			glob.activateFailureShader = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8B4, PLUGIN_NAME)
+			);
+			glob.activateUseShader = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8B5, PLUGIN_NAME)
+			);
+			glob.dragonHolesShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x4CEC8);
+			glob.dragonSoulAbsorbShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x280C0);
+			glob.ghostFXShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x64D67);
+
+			// Spells.
+			glob.tarhielsGaleSpell = 
+			(
+				ALYSLC::SkyrimsParagliderCompat::g_installed ? 
+				dataHandler->LookupForm<RE::SpellItem>(0x10C67, "Paragliding.esp") :
+				nullptr
+			);
+
+			// Get all bound arrow ammo types.
+			const auto& ammoList = dataHandler->GetFormArray<RE::TESAmmo>();
+			for (auto ammo : ammoList)
+			{
+				if (!ammo)
+				{
+					continue;
+				}
+
+				if (ammo->HasKeywordByEditorID("WeapTypeBoundArrow"))
+				{
+					glob.boundArrowAmmoList.emplace_back(ammo);
+				}
+			}
+
+			// Forms from other mods.
+
+			// Paraglider.
+			glob.paraglider = dataHandler->LookupForm<RE::TESObjectMISC>(0x802, "Paragliding.esp");
+		}
+
+		// Get all hand equip slots by ID.
+		glob.bothHandsEquipSlot = RE::TESForm::LookupByID<RE::BGSEquipSlot>(0x13F45);
+		glob.eitherHandEquipSlot = RE::TESForm::LookupByID<RE::BGSEquipSlot>(0x13F44);
+		glob.leftHandEquipSlot = RE::TESForm::LookupByID<RE::BGSEquipSlot>(0x13F43);
+		glob.rightHandEquipSlot = RE::TESForm::LookupByID<RE::BGSEquipSlot>(0x13F42);
+		glob.shieldEquipSlot = RE::TESForm::LookupByID<RE::BGSEquipSlot>(0x141E8);
+		glob.voiceEquipSlot = RE::TESForm::LookupByID<RE::BGSEquipSlot>(0x25BEE);
+
+		// NPC keyword.
+		glob.npcKeyword = RE::TESForm::LookupByID<RE::BGSKeyword>(0x13794);
+		// Vampire keyword.
+		glob.vampireKeyword = RE::TESForm::LookupByID<RE::BGSKeyword>(0xA82BB);
+		// Get all weapon type (aside from Bound Arrow) keywords by ID.
+		// Cannot insert by RE::WEAPON_TYPE since warhammer is not included as its own type.
+		glob.weapTypeKeywordsList.clear();
+		// Warhammer (No weapon type enum member).
+		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x6D930));
+		// Sword.
+		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x1E711));
+		// Dagger.
+		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x1E713));
+		// War Axe.
+		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x1E712));
+		// Mace.
+		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x1E714));
+		// Greatsword.
+		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x6D931));
+		// Battleaxe.
+		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x6D932));
+		// Bow.
+		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x1E715));
+		// Staff.
+		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x1E716));
+		// Crossbow (No weapon type keyword, so using bow).
+		glob.weapTypeKeywordsList.emplace_back(RE::TESForm::LookupByID<RE::BGSKeyword>(0x1E715));
+
+		//=================
+		// Base game forms.
+		//=================
+		// Art Objects:
+		glob.paraglideIndicatorEffect1 = 
+		(
+			RE::TESForm::LookupByEditorID<RE::BGSArtObject>("FXWispParticleAttachObject")
+		);
+		glob.paraglideIndicatorEffect2 = 
+		(
+			RE::TESForm::LookupByEditorID<RE::BGSArtObject>("CallOfValorTargetFX01")
+		);
+		glob.reviveDragonSoulEffect = RE::TESForm::LookupByID<RE::BGSArtObject>(0x2E6AA);
+		glob.reviveHealingEffect = RE::TESForm::LookupByID<RE::BGSArtObject>(0x3F810);
+		// Bound objects.
+		// 1H slot clearer.
+		glob.dummy1H = RE::TESForm::LookupByID<RE::TESBoundObject>(0x6B95F);
+		// 2H slot clearer.
+		glob.fists = RE::TESForm::LookupByID<RE::TESBoundObject>(0x1F4);
+		if (!ALYSLC::EnderalCompat::g_installed)
+		{
+			// Formlists:
+			glob.shoutVarSpellsFormList = RE::TESForm::LookupByID<RE::BGSListForm>(0x167D9);
+			// Perks:
+			glob.assassinsBladePerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x58211);
+			glob.backstabPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x58210);
+			glob.criticalChargePerk = RE::TESForm::LookupByID<RE::BGSPerk>(0xCB406);
+			glob.deadlyAimPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x1036F0);
+			glob.dualCastingAlterationPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x153CD);
+			glob.dualCastingConjurationPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x153CE);
+			glob.dualCastingDestructionPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x153CF);
+			glob.dualCastingIllusionPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x153D0);
+			glob.dualCastingRestorationPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x153D1);
+			glob.greatCriticalChargePerk = RE::TESForm::LookupByID<RE::BGSPerk>(0xCB407);
+			glob.powerBashPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x58F67);
+			glob.quickShotPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x105F19);
+			glob.shieldChargePerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x58F6A);
+			glob.sneakRollPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x105F23);
+			// Globals:
+			// Not for Skyrim.
+			glob.craftingPointsGlob = nullptr;
+			glob.learningPointsGlob = nullptr;
+			glob.memoryPointsGlob = nullptr;
+			glob.playerLevelGlob = nullptr;
+			glob.werewolfTransformationGlob = nullptr;
+		}
+		else
+		{
+			// None used -- either renamed or not compatible.
+			// Also only added to companion players if P1 chooses
+			// a compatible perk when meditating.
+			glob.shoutVarSpellsFormList = nullptr;
+			// Perks:
+			glob.assassinsBladePerk = nullptr;
+			glob.backstabPerk = nullptr;
+			glob.criticalChargePerk = nullptr;
+			glob.deadlyAimPerk = nullptr;
+			glob.dualCastingAlterationPerk = nullptr;
+			glob.dualCastingConjurationPerk = nullptr;
+			glob.dualCastingDestructionPerk = nullptr;
+			glob.dualCastingIllusionPerk = nullptr;
+			glob.dualCastingRestorationPerk = nullptr;
+			glob.greatCriticalChargePerk = nullptr;
+			glob.powerBashPerk = nullptr;
+			glob.quickShotPerk = nullptr;
+			glob.shieldChargePerk = nullptr;
+			glob.sneakRollPerk = nullptr;
+			// Globals:
+			glob.craftingPointsGlob = 
+			(
+				RE::TESForm::LookupByEditorID<RE::TESGlobal>("Handwerkspunkte"sv)
+			);
+			glob.learningPointsGlob = RE::TESForm::LookupByEditorID<RE::TESGlobal>("Lernpunkte"sv);
+			glob.memoryPointsGlob = RE::TESForm::LookupByEditorID<RE::TESGlobal>("TalentPoints"sv);
+			glob.playerLevelGlob = RE::TESForm::LookupByEditorID<RE::TESGlobal>("PlayerLevel"sv);
+		}
+
+		// Carryweight-related forms.
+		glob.extraPocketsMagSpell = RE::TESForm::LookupByID<RE::SpellItem>(0x96592);
+		glob.extraPocketsPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x96590);
+
+		// Get all selectable level up perks.
+		SELECTABLE_PERKS.clear();
+		SELECTABLE_SHARED_PERKS.clear();
+		if (const auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
+		{
+			auto getSelectablePerks =
+			[&glob](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
+			{
+				auto perk = a_node->perk;
+				while (perk)
+				{
+					SELECTABLE_PERKS.insert(perk);
+					if (a_node->associatedSkill)
+					{
+						bool shared = SHARED_SKILL_NAMES_SET.contains
+						(
+							a_node->associatedSkill->enumName
+						);
+						if (shared)
+						{
+							SELECTABLE_SHARED_PERKS.insert(perk);
+						}
+					}
+
+					perk = perk->nextPerk;
+				}
+			};
+
+			Util::TraverseAllPerks(p1, getSelectablePerks);
+		}
+
+		// Assign triggerable killmoves.
+		AssignSkeletonSpecificKillmoves();
+		AssignGenericKillmoves();
+
+		// Set default XP-related game settings' values.
+		SaveDefaultXPBaseAndMultFromGameSettings();
+
+		// Initialize managers, holders, and other global data members and wrap in smart pointers.
+		glob.cam = std::make_unique<CameraManager>();
+		glob.cdh = std::make_unique<ControllerDataHolder>();
+		glob.mim = std::make_unique<MenuInputManager>();
+		glob.moarm = std::make_unique<MenuOpeningActionRequestsManager>();
+		glob.contactListener = std::make_unique<ContactListener>();
+		glob.copyDataReqInfo = std::make_unique<CopyPlayerDataRequestInfo>();
+		glob.coopCompanionExchangeableData = std::make_unique<ExchangeablePlayerData>();
+		glob.p1ExchangeableData = std::make_unique<ExchangeablePlayerData>();
+		glob.lastP1MeleeUseSkillCallArgs = std::make_unique<LastP1MeleeUseSkillCallArgs>();
+		glob.paFuncsHolder = std::make_unique<PlayerActionFunctionsHolder>();
+		glob.paInfoHolder = std::make_unique<PlayerActionInfoHolder>();
+		glob.taskRunner	= std::make_unique<TaskRunner>("[GLOB]");
+		// Interp data.
+		glob.crosshairTextFadeInterpData = std::make_unique<TwoWayInterpData>();
+		glob.crosshairTextFadeInterpData->SetInterpInterval(1.0f, true);
+		glob.crosshairTextFadeInterpData->SetInterpInterval(2.0f, false);
+
+		// Create inactive co-op players.
+		std::generate
+		(
+			glob.coopPlayers.begin(), glob.coopPlayers.end(), 
+			[]() 
+			{
+				return std::make_shared<CoopPlayer>();
+			}
+		);
+		
+		if (!glob.player1RefAlias)
+		{
+			ERR("ERR: Player 1 Reference Alias not filled. Must set via script.");
+		}
+
+		// Done initializing.
+		glob.globalDataInit = true;
+		INF("Global data set!");
+	}
+
 	void GlobalCoopData::SetMenuPlayerIDs(const int32_t a_playerID)
 	{
 		// Set previous and current menu PIDs directly to the given PID.
@@ -6860,6 +7011,93 @@ namespace ALYSLC
 				}
 			}
 		}
+	}
+
+	void GlobalCoopData::SetPlayer1RefAlias()
+	{
+		// Set the player 1 reference alias from the handler quest.
+		
+		auto& glob = GetSingleton();
+		auto dataHandler = RE::TESDataHandler::GetSingleton();
+		if (!dataHandler)
+		{
+			ERR("ERR: Could not get data handler and set ref alias.");
+			return;
+		}
+
+		// Get quest and ref alias from quest.
+		glob.handlerQuest = dataHandler->LookupForm<RE::TESQuest>(0x80F, PLUGIN_NAME);
+		if (!glob.handlerQuest)
+		{
+			ERR("ERR: Could not get ALYSLC's co-op handler quest to retrieve alias.");
+			return;
+		}
+
+		for (auto alias : glob.handlerQuest->aliases)
+		{
+			if (!alias && !static_cast<RE::BGSRefAlias*>(alias))
+			{
+				continue;
+			}
+
+			glob.player1RefAlias = static_cast<RE::BGSRefAlias*>(alias);
+			DBG
+			(
+				"Quest {} (0x{:X}) has alias {} (0x{:X})",
+				glob.handlerQuest->GetName(),
+				glob.handlerQuest->formID,
+				alias->aliasName,
+				alias->aliasID
+			);
+			break;
+		}
+	}
+
+	void GlobalCoopData::SignalWaitForUpdate(bool a_shouldDismiss)
+	{
+		// Either dismiss all active players or just request their managers to wait for refresh.
+		// Any active co-op session is also flagged as ended.
+		
+		auto& glob = GetSingleton();
+		DBG("Should dismiss all active players: {}.", a_shouldDismiss);
+		// Dismiss P1 last, as the P1 ref alias script performs the final cleanup measures 
+		// for the co-op session.
+		for (const auto& p : glob.coopPlayers)
+		{
+			if (!p->isActive || p->isPlayer1)
+			{
+				continue;
+			}
+
+			if (a_shouldDismiss)
+			{
+				p->DismissPlayer();
+			}
+			else
+			{
+				p->RequestStateChange(ManagerState::kAwaitingRefresh);
+			}
+		}
+		
+		const auto& coopP1 = glob.coopPlayers[0];
+		if (coopP1 && coopP1->isActive) 
+		{
+			if (a_shouldDismiss)
+			{
+				coopP1->DismissPlayer();
+			}
+			else
+			{
+				coopP1->RequestStateChange(ManagerState::kAwaitingRefresh);
+			}
+		}
+
+		// Stop menu and camera managers and flag session as ended.
+		glob.cam->ToggleCoopCamera(false);
+		glob.mim->RequestStateChange(ManagerState::kAwaitingRefresh);
+		// Restore XP threshold.
+		GlobalCoopData::ModifyLevelUpXPThreshold(false);
+		glob.coopSessionActive = false;
 	}
 
 	void GlobalCoopData::StopAllCombatOnCoopPlayers

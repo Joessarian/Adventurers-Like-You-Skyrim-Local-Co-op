@@ -168,12 +168,6 @@ namespace ALYSLC
 		}
 
 		auto& data = (a_isLS) ? lsStatesList[a_controllerID] : rsStatesList[a_controllerID];
-		// Skip since the controller's state snapshot was not updated since our last check.
-		if (data.packetNumber == inputState.dwPacketNumber)
-		{
-			return;
-		}
-
 		// Larger deadzone when controlling menus to prevent slight analog stick displacements
 		// from changing the currently-selected menu element.
 		float deadZone = 
@@ -278,7 +272,6 @@ namespace ALYSLC
 		data.xComp = xComp;
 		data.yComp = yComp;
 		data.normMag = newNormMag;
-		data.packetNumber = inputState.dwPacketNumber;
 	}
 
 	void ControllerDataHolder::UpdateInputStatesAndMask
@@ -525,6 +518,7 @@ namespace ALYSLC
 		// Must set P1's DID again just in case the input device ordering changed,
 		// otherwise, triggering the summoning menu while in co-op and re-summoning players
 		// will cause P1 to control multiple players if P1 was using the keyboard previously.
+		/*
 		if (glob.coopSessionActive && activeControllerCount != oldControllerCount)
 		{
 			DBG
@@ -534,15 +528,11 @@ namespace ALYSLC
 				oldControllerCount, activeControllerCount
 			);
 
-			// Controller was unplugged during a co-op session.
-			// Tear down the session and have players choose their characters again.
-			RE::DebugMessageBox
+			RE::DebugNotification
 			(
 				fmt::format
 				(
-					"[ALYSLC]\nA controller was {}. "
-					"Please open the Summoning Menu again with Player 1's controller "
-					"to re-assign Player 1's input device ID.",
+					"[ALYSLC] ERROR: Controller was {}. Ending session.", 
 					activeControllerCount > oldControllerCount ? 
 					"connected" :
 					"disconnected"
@@ -553,6 +543,7 @@ namespace ALYSLC
 			glob.player1DID = -1;
 			return;
 		}
+		*/
 
 		if (glob.coopSessionActive) 
 		{

@@ -70,6 +70,14 @@ namespace ALYSLC
 		// Re-equip forms that were automatically unequipped by the game.
 		// Temporary solution until figuring out how to prevent the game from auto-equipping
 		// the "best" gear for co-op actors.
+		
+		// Controller error check.
+		XINPUT_STATE tempState{ };
+		ZeroMemory(&tempState, sizeof(XINPUT_STATE));
+		if (XInputGetState(deviceID, &tempState) != ERROR_SUCCESS)
+		{
+			return;
+		}
 
 		// P1 does not require assistance, leave them be.
 		if (p->isPlayer1)
@@ -6556,8 +6564,18 @@ namespace ALYSLC
 		}
 		
 		skipEquipProcessing = true;
-		auto lhForm = desiredForms[!EquipIndex::kLeftHand];
-		auto rhForm = desiredForms[!EquipIndex::kRightHand];
+		auto lhForm = 
+		(
+			p->isPlayer1 ? 
+			coopActor->GetEquippedObject(true) :
+			desiredForms[!EquipIndex::kLeftHand]
+		);
+		auto rhForm = 
+		(
+			p->isPlayer1 ? 
+			coopActor->GetEquippedObject(false) : 
+			desiredForms[!EquipIndex::kRightHand]
+		);
 		auto equipSlot = glob.eitherHandEquipSlot;
 		auto lhEquipType = lhForm ? lhForm->As<RE::BGSEquipType>() : nullptr;
 		auto rhEquipType = rhForm ? rhForm->As<RE::BGSEquipType>() : nullptr;

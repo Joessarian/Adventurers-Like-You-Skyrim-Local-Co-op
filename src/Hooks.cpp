@@ -4664,56 +4664,30 @@ namespace ALYSLC
 									)
 								)
 							);
-							if (Settings::bUseMidHighProcRotMod)
-							{
-								// Slow down when rotating rapidly.
-								auto angSpeed = 
-								(
-									glob.cdh->GetAnalogStickState
-									(
-										p->deviceID, true
-									).stickAngularSpeed
-								);
-								auto ratio = 
-								(
-									angSpeed / 
-									(
-										Settings::fBaseRotationMult * 
-										Settings::fBaseMTRotationMult *
-										PI
-									)
-								);
-								diffFactor *= std::clamp(1.0f - ratio, 0.0f, 1.0f);
-							}
-
-							if (Settings::bUseMidHighProcRotMod || 
-								!p->pam->IsPerforming(InputAction::kSprint))
-							{
-								speeds
-								[RE::Movement::SPEED_DIRECTIONS::kLeft]
-								[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
-								speeds
-								[RE::Movement::SPEED_DIRECTIONS::kLeft]
-								[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
-								speeds
-								[RE::Movement::SPEED_DIRECTIONS::kRight]
-								[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
-								speeds
-								[RE::Movement::SPEED_DIRECTIONS::kRight]
-								[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
-								speeds
-								[RE::Movement::SPEED_DIRECTIONS::kForward]
-								[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
-								speeds
-								[RE::Movement::SPEED_DIRECTIONS::kForward]
-								[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
-								speeds
-								[RE::Movement::SPEED_DIRECTIONS::kBack]
-								[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
-								speeds
-								[RE::Movement::SPEED_DIRECTIONS::kBack]
-								[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
-							}
+							speeds
+							[RE::Movement::SPEED_DIRECTIONS::kLeft]
+							[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
+							speeds
+							[RE::Movement::SPEED_DIRECTIONS::kLeft]
+							[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
+							speeds
+							[RE::Movement::SPEED_DIRECTIONS::kRight]
+							[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
+							speeds
+							[RE::Movement::SPEED_DIRECTIONS::kRight]
+							[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
+							speeds
+							[RE::Movement::SPEED_DIRECTIONS::kForward]
+							[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
+							speeds
+							[RE::Movement::SPEED_DIRECTIONS::kForward]
+							[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
+							speeds
+							[RE::Movement::SPEED_DIRECTIONS::kBack]
+							[RE::Movement::MaxSpeeds::kWalk]			*= diffFactor;
+							speeds
+							[RE::Movement::SPEED_DIRECTIONS::kBack]
+							[RE::Movement::MaxSpeeds::kRun]				*= diffFactor;
 						}
 					}
 
@@ -11259,13 +11233,10 @@ namespace ALYSLC
 							);
 							bool useMidHighProc = 
 							(
-								(Settings::bUseMidHighProcRotMod) &&
-								(
-									!ALYSLC::AlternateConversationCameraCompat::g_installed ||
-									!ui ||
-									!ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) ||
-									glob.menuPID > 0
-								)
+								!ALYSLC::AlternateConversationCameraCompat::g_installed ||
+								!ui ||
+								!ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) ||
+								glob.menuPID > 0
 							);
 							if (useMidHighProc)
 							{
@@ -17895,24 +17866,28 @@ namespace ALYSLC
 						p1->charGenRace ? p1->charGenRace->formEditorID : "NONE",
 						saveMgr ? saveMgr->currentCharacterID : 0xDEAD
 					);
-					// Restore skill levels, XP, level threshold, and active effects.
-					// Also re-equip all gear.
-					auto currentAV = RE::ActorValue::kNone;
-					for (auto i = 0; i < Skill::kTotal; ++i)
+					if (!glob.charGenSkillDataList.empty() && 
+						glob.charGenSkillDataList.size() == Skill::kTotal)
 					{
-						currentAV = glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i));
-						p1->SetBaseActorValue(currentAV, glob.charGenSkillDataList[i].level);
-						p1->skills->data->skills[i] = glob.charGenSkillDataList[i];
-						DBG
-						(
-							"Restoring {}'s level to {}, threshold to {}, XP to {}.",
-							Util::GetActorValueName(currentAV),
-							glob.charGenSkillDataList[i].level,
-							glob.charGenSkillDataList[i].levelThreshold,
-							glob.charGenSkillDataList[i].xp
-						);
+						// Restore skill levels, XP, level threshold, and active effects.
+						// Also re-equip all gear.
+						auto currentAV = RE::ActorValue::kNone;
+						for (auto i = 0; i < Skill::kTotal; ++i)
+						{
+							currentAV = glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i));
+							p1->SetBaseActorValue(currentAV, glob.charGenSkillDataList[i].level);
+							p1->skills->data->skills[i] = glob.charGenSkillDataList[i];
+							DBG
+							(
+								"Restoring {}'s level to {}, threshold to {}, XP to {}.",
+								Util::GetActorValueName(currentAV),
+								glob.charGenSkillDataList[i].level,
+								glob.charGenSkillDataList[i].levelThreshold,
+								glob.charGenSkillDataList[i].xp
+							);
+						}
 					}
-
+					
 					/*
 					// TODO: Restore active effects and equipped gear.
 					auto currentEffectsList = p1->GetActiveEffectList();

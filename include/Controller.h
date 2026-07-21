@@ -197,8 +197,7 @@ namespace ALYSLC
 				prevYComp(0.0f),
 				xComp(0.0f), 
 				yComp(0.0f),
-				maxMag(0),
-				packetNumber(0)
+				maxMag(0)
 			{ }
 
 			// Analog stick is displaced fully from center.
@@ -275,8 +274,6 @@ namespace ALYSLC
 			float yComp;
 			// Maximum pre-normalized full displacement from center.
 			SHORT maxMag;
-			// Last recorded controller packet ID (snapshot of controller state).
-			DWORD packetNumber;
 		};
 
 		struct InputState

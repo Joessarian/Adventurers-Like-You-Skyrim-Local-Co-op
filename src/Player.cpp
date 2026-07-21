@@ -158,6 +158,7 @@ namespace ALYSLC
 		}
 
 		// Controller error check.
+		/*
 		XINPUT_STATE tempState{ };
 		ZeroMemory(&tempState, sizeof(XINPUT_STATE));
 		if (XInputGetState(deviceID, &tempState) != ERROR_SUCCESS)
@@ -169,16 +170,11 @@ namespace ALYSLC
 				coopActor->GetName(), deviceID
 			);
 
-			// Controller was unplugged during a co-op session.
-			// Tear down the session and have players choose their characters again.
-			RE::DebugMessageBox
+			RE::DebugNotification
 			(
 				fmt::format
 				(
-					"[ALYSLC]\nERROR: Could not get input from controller {}.\n"
-					"Ending co-op session.\n"
-					"Please ensure all desired controllers are plugged in.", 
-					deviceID
+					"[ALYSLC] ERROR: Controller {} not found. Ending session.", deviceID
 				).data()
 			);
 			GlobalCoopData::TearDownCoopSession(true, true);
@@ -187,6 +183,7 @@ namespace ALYSLC
 			glob.player1DID = -1;
 			return ManagerState::kAwaitingRefresh;
 		}
+		*/
 
 		// Player dismissed or no co-op session active.
 		if ((currentState != ManagerState::kUninitialized) && 
@@ -289,6 +286,19 @@ namespace ALYSLC
 			return ManagerState::kPaused;
 		}
 		
+		// Controller error check.
+		/*XINPUT_STATE tempState{ };
+		ZeroMemory(&tempState, sizeof(XINPUT_STATE));
+		if (XInputGetState(deviceID, &tempState) != ERROR_SUCCESS)
+		{
+			DBG
+			(
+				"{}: controller input error for DID {}. Remain paused.",
+				coopActor->GetName(), deviceID
+			);
+			return currentState;
+		}*/
+
 		// Special Case:
 		// Keep companion players invisible and above P1 while the title sequence plays.
 		if (!isPlayer1 && ui->IsMenuOpen(RE::TitleSequenceMenu::MENU_NAME))

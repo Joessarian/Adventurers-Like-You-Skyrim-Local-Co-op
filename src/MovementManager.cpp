@@ -45,6 +45,14 @@ namespace ALYSLC
 
 	void MovementManager::MainTask()
 	{
+		// Controller error check.
+		XINPUT_STATE tempState{ };
+		ZeroMemory(&tempState, sizeof(XINPUT_STATE));
+		if (XInputGetState(deviceID, &tempState) != ERROR_SUCCESS)
+		{
+			return;
+		}
+
 		// Update movement state and then set rotation and speed.
 		UpdateMovementState();
 		UpdateAttackSourceOrientationData(false);
@@ -3324,16 +3332,9 @@ namespace ALYSLC
 						newYaw + rawYawOffset
 					);
 				}
-
-				if (Settings::bUseMidHighProcRotMod)
-				{
-					midHighProc->rotationSpeed.z = rawYawOffset * (1.0f / *g_deltaTimeRealTime);
-				}
-				else
-				{
-					movementActorPtr->SetHeading(newYaw);
-					midHighProc->rotationSpeed.z = 0.0f;
-				}
+				
+				movementActorPtr->SetHeading(newYaw);
+				midHighProc->rotationSpeed.z = 0.0f;
 
 				// Move to interaction package entry position which was set during activation.
 				// Slow down when nearing the interaction position.
@@ -3469,19 +3470,12 @@ namespace ALYSLC
 			ClearKeepOffsetFromActor();
 			SetDontMove(true);
 			// Can still rotate.
-			if (Settings::bUseMidHighProcRotMod)
-			{
-				midHighProc->rotationSpeed.z = rawYawOffset * (1.0f / *g_deltaTimeRealTime);
-			}
-			else
-			{
-				float newYaw = Util::NormalizeAng0To2Pi
-				(
-					movementActorPtr->data.angle.z + rawYawOffset
-				);
-				movementActorPtr->SetHeading(newYaw);
-				midHighProc->rotationSpeed.z = 0.0f;
-			}
+			float newYaw = Util::NormalizeAng0To2Pi
+			(
+				movementActorPtr->data.angle.z + rawYawOffset
+			);
+			movementActorPtr->SetHeading(newYaw);
+			midHighProc->rotationSpeed.z = 0.0f;
 		}
 		else if (shouldStopMoving || p->isRevivingPlayer || lsMag == 0.0f)
 		{
@@ -3528,13 +3522,7 @@ namespace ALYSLC
 				// Manually rotate to avoid slow motion shifting when the rotation offset is small.
 				// Mid proc rotation multiplier does not affect the player's rotation
 				// when animation driven.
-				if (Settings::bUseMidHighProcRotMod &&
-					!p->isRevivingPlayer && 
-					!p->coopActor->IsAnimationDriven())
-				{
-					midHighProc->rotationSpeed.z = rawYawOffset * (1.0f / *g_deltaTimeRealTime);
-				}
-				else if (p->isRevivingPlayer && p->pam->JustStarted(InputAction::kActivate))
+				if (p->isRevivingPlayer && p->pam->JustStarted(InputAction::kActivate))
 				{
 					// Only turn to face initially since the player will jitter a lot
 					// if modifying rotation directly while in the revive animation.
@@ -3647,7 +3635,6 @@ namespace ALYSLC
 				);
 				bool useMidHighProcRot = 
 				(
-					(Settings::bUseMidHighProcRotMod && !isP1InACCDialogue) ||
 					(allowRotation && p->pam->isAttacking && !p->pam->isInCastingAnim) ||
 					(isParagliding) ||
 					(p->pam->IsPerformingAllOf(InputAction::kSprint, InputAction::kBlock))
@@ -4560,33 +4547,38 @@ namespace ALYSLC
 
 				shouldCurtailMomentum = true;
 			}
-
-			// REMOVE when done debugging.
-			/*DBG
-			(
-				"{}: Curtail: {}, start/stop moving: {}, {}, dont move set: {}, LS moved: {}, "
-				"movement speed: {}, attacking: {}, blocking: {}, bashing: {}, casting: {}, "
-				"movement yaw target changed: {}, turn: {}, face: {}, finished getting up: {}, "
-				"turn to face when stopped: {}, stop when turning: {}",
-				coopActor->GetName(), 
-				shouldCurtailMomentum,
-				shouldStartMoving,
-				shouldStopMoving,
-				dontMoveSet,
-				p->lsMoved,
-				movementSpeed,
-				p->pam->isAttacking,
-				p->pam->isBlocking,
-				p->pam->isBashing,
-				p->pam->isInCastingAnim,
-				movementYawTargetChanged, 
-				turnToTarget, 
-				faceCrosshairPos,
-				finishedGettingUp,
-				turnToFaceTargetWhileStopped,
-				stopWhenTurningToTarget
-			);*/
-
+			
+		// REMOVE when done debugging.
+#ifdef ALYSLC_DEBUG_MODE
+			if (shouldCurtailMomentum)
+			{
+				DBG
+				(
+					"{}: Curtail: {}, start/stop moving: {}, {}, dont move set: {}, LS moved: {}, "
+					"movement speed: {}, attacking: {}, blocking: {}, bashing: {}, casting: {}, "
+					"movement yaw target changed: {}, turn: {}, face: {}, finished getting up: {}, "
+					"turn to face when stopped: {}, stop when turning: {}",
+					coopActor->GetName(), 
+					shouldCurtailMomentum,
+					shouldStartMoving,
+					shouldStopMoving,
+					dontMoveSet,
+					p->lsMoved,
+					movementSpeed,
+					p->pam->isAttacking,
+					p->pam->isBlocking,
+					p->pam->isBashing,
+					p->pam->isInCastingAnim,
+					movementYawTargetChanged, 
+					turnToTarget, 
+					faceCrosshairPos,
+					finishedGettingUp,
+					turnToFaceTargetWhileStopped,
+					stopWhenTurningToTarget
+				);
+			}
+#endif
+			
 			isGettingUp = false;
 		}
 		
@@ -5085,7 +5077,12 @@ namespace ALYSLC
 
 		// Set start or stop movement flags.
 		const float movementSpeed = movementActorPtr->DoGetMovementSpeed();
-		bool isMoving = 
+		// Want to record previous frame's state.
+		// Required in the instances where the player stops moving and their movement speed hits 0
+		// in one frame -- we still have to stop their movement animation
+		// or they will continue slowly walking in place when stopped.
+		bool wasMovingSelf = isMovingSelf;
+		isMovingSelf = 
 		{
 			(movementSpeed > 0.0f) &&
 			(
@@ -5151,13 +5148,19 @@ namespace ALYSLC
 			}
 		}
 
-		// Stop moving if currently moving and not dodging, 
-		// and if the LS is centered, a menu stops movement, 
-		// the player is reviving a buddy, or if attempting discovery.
+		// Record whether or not the player has started/stopped moving (animation events sent)
+		// during the previous frame.
+		bool startedMoving = shouldStartMoving;
+		bool stoppedMoving = shouldStopMoving;
+		// Stop moving if currently moving, or moving last frame, 
+		// or the move start animation was sent.
+		// Must also not be dodging, or not moving the LS, or a menu stops movement, 
+		// or the player is reviving a buddy, or attempting discovery.
+		// And lastly, must not be 
 		shouldStopMoving = 
 		{
+			(isMovingSelf || wasMovingSelf || startedMoving) &&
 			(
-				isMoving && 
 				!isDashDodging &&
 				!isRequestingDashDodge && 
 				!isTKDodging && 
@@ -5178,7 +5181,7 @@ namespace ALYSLC
 		shouldStartMoving = 
 		{
 			p->lsMoved && 
-			!isMoving && 
+			!isMovingSelf && 
 			!isDashDodging && 
 			!isRequestingDashDodge && 
 			!interactionPackageRunning && 
@@ -5190,6 +5193,48 @@ namespace ALYSLC
 		// Should stop and not start moving if an action makes use of the left stick.
 		shouldStopMoving |= p->pam->actionPreventsMovement;
 		shouldStartMoving &= !p->pam->actionPreventsMovement;
+
+		// REMOVE when done debugging.
+#ifdef ALYSLC_DEBUG_MODE
+		if (glob.cdh->GetInputState(deviceID, InputAction::kRShoulder).isPressed)
+		{
+			DBG
+			(
+				"{}: Movement State: AI driven: {}, animation driven: {}, ext package running: {}, "
+				"LS moved: {}, movement speed: {}, is/was moving self: {}, {}, {}. "
+				"should start/stop: {}, {}, "
+				"should curtail momentum: {}, turn to face target: {}, face crosshair: {}, "
+				"face target state changed: {}, is sneaking: {}, should remove AI driven: {}.",
+				coopActor->GetName(),
+				glob.player1Actor->movementController && 
+				!glob.player1Actor->movementController->controlsDriven,
+				coopActor->IsAnimationDriven(),
+				p1ExtPackageRunning,
+				p->lsMoved,
+				movementSpeed,
+				isMovingSelf,
+				wasMovingSelf,
+				(!isMovingSelf && wasMovingSelf && shouldStopMoving) ?
+				"SLIDE POTENTIAL" :
+				"NOT STOPPING",
+				shouldStartMoving,
+				shouldStopMoving,
+				shouldCurtailMomentum,
+				turnToTarget,
+				faceCrosshairPos,
+				movementYawTargetChanged,
+				coopActor->IsSneaking(),
+				(!p1ExtPackageRunning) && 
+				(
+					(!p->isRevivingPlayer && isAnimDriven) ||
+					p->pam->sendingP1MotionDrivenEvents ||
+					isRagdolled ||
+					menuStopsMovement ||
+					attemptDiscovery
+				)
+			);
+		}
+#endif
 	}
 
 	void NodeOrientationManager::ApplyCustomNodeRotation

@@ -55,6 +55,31 @@ namespace ALYSLC
 
 	void TargetingManager::MainTask()
 	{
+		// Controller error check.
+		XINPUT_STATE tempState{ };
+		ZeroMemory(&tempState, sizeof(XINPUT_STATE));
+		if (XInputGetState(deviceID, &tempState) != ERROR_SUCCESS)
+		{
+			SetCurrentCrosshairMessage
+			(
+				true,
+				CrosshairMessageType::kGeneralNotification,
+				fmt::format
+				(
+					"P{}: <font color=\"#FF0000\">Controller not found!</font>", 
+					playerID + 1
+				),
+				{ 
+					CrosshairMessageType::kNone, 
+					CrosshairMessageType::kStealthState, 
+					CrosshairMessageType::kTargetingState 
+				},
+				Settings::fSecsBetweenDiffCrosshairMsgs
+			);
+			UpdateCrosshairMessage();
+			return;
+		}
+
 		// Update crosshair position and selection first, 
 		// and draw the crosshair, player indicator, and aim pitch indicator
 		// if no fullscreen menu is open or not controlling menus.

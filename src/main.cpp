@@ -67,6 +67,9 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 
 		// Attempt to load the debug overlay.
 		ALYSLC::DebugOverlayMenu::Load();
+
+		// Prepare for co-op when starting a new game.
+		ALYSLC::GlobalCoopData::PrepForCoop();
 		break;
 	}
 	case SKSE::MessagingInterface::kPostLoad:
@@ -85,6 +88,9 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		// No longer loading a save.
 		auto& glob = ALYSLC::GlobalCoopData::GetSingleton();
 		glob.loadingASave = false;
+
+		// Prepare for co-op once the save is loaded.
+		ALYSLC::GlobalCoopData::PrepForCoop();
 		break;
 	}
 	case SKSE::MessagingInterface::kPostPostLoad:

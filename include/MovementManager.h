@@ -615,6 +615,9 @@ namespace ALYSLC
 		bool isGettingUp;
 		// Is the player attempting to mount?
 		bool isMounting;
+		// Is the player walking, running, sprinting, or swimming?
+		// Moving themselves in any capacity (not falling or being pushed).
+		bool isMovingSelf;
 		// Is the player in the air paragliding?
 		bool isParagliding;
 		// Have the player's char controller pitch and roll angles fully reset to 0?

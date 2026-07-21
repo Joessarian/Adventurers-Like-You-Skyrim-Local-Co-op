@@ -26,6 +26,9 @@ namespace ALYSLC
 		// Set global co-op data after the player loads a save.
 		// Return true if global data was initialized for the first time.
 		bool InitializeGlobalData(RE::StaticFunctionTag*, RE::BGSRefAlias* a_player1Ref);
+
+		// Set player 1's reference alias directly to the given alias.
+		void SetPlayer1RefAlias(RE::StaticFunctionTag*, RE::BGSRefAlias* a_player1Ref);
 		
 		// Setup input device data for all connected devices and return a list of device IDs
 		// for all active devices. P1's DID is always first.

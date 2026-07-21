@@ -836,10 +836,6 @@ namespace ALYSLC
 		// Remove all perks for this player and then add back all serialized unlocked perks.
 		static void ImportUnlockedPerks(RE::Actor* a_coopActor);
 
-		// Set global data after loading a save.
-		// Ref alias passed in through script.
-		static void InitializeGlobalCoopData(RE::BGSRefAlias* a_player1RefAlias);
-
 		// Checks if the player given by the player ID is controlling menus.
 		static bool IsControllingMenus(const int32_t& a_playerID);
 		
@@ -921,6 +917,9 @@ namespace ALYSLC
 		// to all handled player arm/torso nodes.
 		static void PrecisionPrePhysicsStepCallback(RE::bhkWorld* a_world);
 
+		// Set global data and clean up in preparation for co-op after loading a save.
+		static void PrepForCoop();
+
 		// Register for global script events to send data to the player ref alias script.
 		static void RegisterEvents();
 
@@ -940,6 +939,9 @@ namespace ALYSLC
 		// Use the passed-in base level to determine 
 		// if the player has leveled up in co-op before rescaling.
 		static void RescaleHMS(RE::Actor* a_playerActor, const float& a_baseLevel = 1.0f);
+
+		// Toggle collisions on and remove paralysis flag for all players.
+		static void ResetCoopEntityCollisions();
 
 		// Set last menu player ID to the current one and then
 		// reset the current menu player ID.
@@ -983,9 +985,19 @@ namespace ALYSLC
 		// Or reset the crosshair if requested.
 		static void SetCrosshairText(bool&& a_shouldReset = false);
 
+		// Set all global co-op data.
+		static void SetGlobalCoopData();
+
 		// Set menu player IDs (current and previous).
 		// -1 to reset.
 		static void SetMenuPlayerIDs(const int32_t a_playerID);
+
+		// Set the player 1 reference alias from the handler quest.
+		static void SetPlayer1RefAlias();
+		
+		// Either dismiss all active players or just request their managers to wait for refresh.
+		// Any active co-op session is also flagged as ended.
+		static void SignalWaitForUpdate(bool a_shouldDismiss);
 
 		// DEBUG OPTION: Stop combat between all actors and players.
 		// Only among party means that only combat between player teammates and players is stopped.
@@ -2125,10 +2137,6 @@ namespace ALYSLC
 		// Effects applied when reviving players.
 		RE::BGSArtObject* reviveDragonSoulEffect;
 		RE::BGSArtObject* reviveHealingEffect;
-		// Reference alias to P1.
-		// Used to register co-op player menu events:
-		// Summoning Menu, Debug Menu. Helper Menu.
-		RE::BGSRefAlias* player1RefAlias;
 		// Equip slots: both hands, either hand, left, right, shield, voice.
 		RE::BGSEquipSlot* bothHandsEquipSlot;
 		RE::BGSEquipSlot* eitherHandEquipSlot;
@@ -2162,6 +2170,10 @@ namespace ALYSLC
 		RE::BGSPerk* backstabPerk;
 		RE::BGSPerk* deadlyAimPerk;
 		RE::BGSPerk* quickShotPerk;
+		// Reference alias to P1.
+		// Used to register co-op player menu events:
+		// Summoning Menu, Debug Menu. Helper Menu.
+		RE::BGSRefAlias* player1RefAlias;
 		// Paraglide movement type.
 		RE::BGSMovementType* paraglidingMT;
 		// Paraglider updraft effect.
@@ -2207,6 +2219,8 @@ namespace ALYSLC
 		RE::TESGlobal* summoningMenuOpenGlob;
 		// Is P1 transformed into a werewolf?
 		RE::TESGlobal* werewolfTransformationGlob;
+		// ALYSLC handler quest.
+		RE::TESQuest* handlerQuest;
 
 		// Menu opening requests' event registrations.
 		// Args:

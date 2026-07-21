@@ -1035,10 +1035,6 @@ namespace ALYSLC
 		//-----------
 		//[Movement]:
 		//-----------
-		// Use the middle high process' rotation multiplier to adjust player rotation indirectly.
-		// Much smoother when rotating, but also produces ice-skating movement
-		// when changing direction quickly.
-		static inline const bool bUseMidHighProcRotMod = false;
 		// Multiplier to apply to rotation speed for each movement type.
 		// NOTE: 
 		// Setting this value above 8 leads to choppier rotation,
