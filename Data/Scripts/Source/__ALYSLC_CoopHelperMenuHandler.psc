@@ -253,7 +253,6 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int a
                         ALYSLC.Log("[CHMH SCRIPT] Gifting items from " + PlayerInMenu.GetDisplayName() + " to P1 " + PlayerRef.GetDisplayName())
                         ; Set player menu control.
                         ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, "GiftMenu")
-                        ;PlayerInMenu.ShowGiftMenu(False, None, True, False)
                         ALYSLC.SetGifteePlayerActor(PlayerRef as Actor)
                         PlayerInMenu.ShowGiftMenu(True, None, True, False)
                         ALYSLC.SetGifteePlayerActor(None)

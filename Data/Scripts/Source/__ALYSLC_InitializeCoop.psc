@@ -14,8 +14,8 @@ Function Init()
 	ALYSLC.Log("[INIT SCRIPT] INIT")
 	; Prevent summoning until initialization finishes.
 	CanStartCoopGlobVar.SetValue(0.00)
-	; Initialize global co-op data in the plugin.
-	Bool FirstTimeInit = ALYSLC.InitializeGlobalData(Player1ReferenceAlias)
+	; Update reference alias used by the plugin in case it wasn't initialized earlier.
+	ALYSLC.SetPlayer1RefAlias(Player1ReferenceAlias)
 	; Reset summoning request state each time a save is loaded.
     CoopIsSummoningPlayers.SetValue(0)
 	StorageUtil.SetIntValue(None, "ALYSLC_CoopStarted", -1)
@@ -61,9 +61,9 @@ Function Init()
 
 	; Weird crashes sometimes occur if any loaded co-op entity does not have collision enabled 
 	; when the the game loads in.
-	ALYSLC.EnableCoopEntityCollision()
+	;ALYSLC.EnableCoopEntityCollision()
 	; Indicate that co-op session is over and pause player managers for refresh if needed.
-	ALYSLC.SignalWaitForUpdate(True)
+	;ALYSLC.SignalWaitForUpdate(True)
 
 	; Remove straggling co-op companions and force resummoning.
 	Float WaitTimeElapsed = 0.0
@@ -92,9 +92,9 @@ Function Init()
 	ALYSLC.Log("[INIT SCRIPT] Initialization complete.")
 	
 	; If a save was loaded for the first time, notify the players of how to trigger the Summoning Menu to start co-op.
-	If (FirstTimeInit)
-		Debug.MessageBox("[ALYSLC]\nDone initializing!\nTo assign Player 1's controller and summon other players:\n1. Ensure Player 1 is not in combat.\n2. Hold the 'Wait' bind on Player 1's controller.\n3. Press and release the 'Pause/Journal' bind on Player 1's controller.\n\nThe summoning menu will open and a tri-colored border overlay will indicate which player has control of the menu.\nSee the mod's MCM for additional information and to customize settings.\nHave fun!")
-	EndIf
+	; If (FirstTimeInit)
+	; 	Debug.MessageBox("[ALYSLC]\nDone initializing!\nTo assign Player 1's controller and summon other players:\n1. Ensure Player 1 is not in combat.\n2. Hold the 'Wait' bind on Player 1's controller.\n3. Press and release the 'Pause/Journal' bind on Player 1's controller.\n\nThe summoning menu will open and a tri-colored border overlay will indicate which player has control of the menu.\nSee the mod's MCM for additional information and to customize settings.\nHave fun!")
+	; EndIf
 EndFunction
 
 ; Run Init().

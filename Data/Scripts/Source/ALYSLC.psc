@@ -5,6 +5,7 @@ Scriptname ALYSLC Hidden
 
 ;========================================================================================================================================================================================================================
 Bool Function InitializeGlobalData(ReferenceAlias a_player1Ref) Global Native
+Function SetPlayer1RefAlias(ReferenceAlias a_player1Ref) Global Native
 Int[] Function GetConnectedInputDeviceIDs() Global Native
 Bool Function InitializeCoopPlayers(Int a_numCompanions, Int[] a_deviceIDs, Actor[] a_coopActors) Global Native
 ;========================================================================================================================================================================================================================
