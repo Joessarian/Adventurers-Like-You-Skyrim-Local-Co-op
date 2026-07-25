@@ -1580,6 +1580,15 @@ namespace ALYSLC
 			selectedTargetActorHandle = RE::ActorHandle();
 		}
 
+		// Instantly clear the crosshair text messages.
+		inline void ClearCrosshairMessage()
+		{
+			lastCrosshairMessage->CopyMessageData(crosshairMessage);
+			crosshairMessage->setTP = SteadyClock::now();
+			extCrosshairMessage->Clear();
+			crosshairMessage->Clear();
+		}
+
 		// Clear out all targeted actor/refr handles.
 		inline void ClearTargetHandles() 
 		{

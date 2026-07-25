@@ -857,6 +857,9 @@ namespace ALYSLC
 		// do not scale with P1. We do not want the game to auto scale the player's stats.
 		void RemoveAVAutoScaling();
 
+		// Remove equipped bound weapons and re-equip previous items/magic in the LH/RH.
+		void RemoveBoundWeapons();
+
 		// Reset killmove data for this player and the killmove victim player, if any.
 		void ResetAllKillmoveData(const int32_t& a_targetPlayerIndex);
 
@@ -958,7 +961,7 @@ namespace ALYSLC
 
 		// Update bound weapon lifetime data.
 		// Unequip bound weapon(s) when their lifetime expires and reset cached bound weapon data.
-		void UpdateBoundWeaponTimers();
+		void UpdateBoundWeaponState();
 
 		// Set/remove the co-op character's player keyword based on their PID.
 		void UpdateCoopPlayerKeyword(bool a_set);

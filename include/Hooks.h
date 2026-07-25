@@ -562,6 +562,12 @@ namespace ALYSLC
 			(
 				RE::InputEvent* a_inputEvent, bool& a_newEventChainedOut
 			);
+			// Check if P1 is trying to activate another player while the co-op camera is inactive
+			// and revive/gift items with the other player if so.
+			// Can revive/gift items with the 'Activate' input event 
+			// from either keyboard or controller.
+			// Return true if the event should be blocked.
+			static bool CheckForP1ActivateReq(RE::InputEvent* a_inputEvent);
 			// Check if P1 is trying to toggle the co-op camera/singleplayer mode on or off.
 			// If the correct bind is pressed, toggle the co-op camera back on 
 			// if it is off while in co-op, and toggle singleplayer mode on/off if not in co-op.
@@ -592,11 +598,6 @@ namespace ALYSLC
 			// with player data copied over to P1.
 			// Return true if the event should be blocked.
 			static bool CheckForP1QuickSaveReq(RE::InputEvent* a_inputEvent);
-			// Check if P1 is trying to revive another player while the co-op camera is inactive
-			// and revive the other player if so.
-			// Can revive with the 'Activate' input event from either keyboard or controller.
-			// Return true if the event should be blocked.
-			static bool CheckForP1ReviveReq(RE::InputEvent* a_inputEvent);
 			// Filter out and discard P1 input events that should be ignored while in co-op,
 			// and allow other player's emulated P1 input events to pass through if they
 			// are in control of menus.

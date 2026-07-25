@@ -350,6 +350,9 @@ namespace ALYSLC
 		// Previous frame's absolute right stick Z game angle (not factoring in cam angle).
 		std::array<float, (size_t)!AnalogStickParams::kTotal> analogStickParams;
 
+		// External request to refresh data for this player's managers.
+		bool extRefreshData;
+
 		// Has this player been dismissed (DismissPlayer() called) 
 		// during the current co-op session?
 		// Set to true BEFORE the current co-op session ends 

@@ -485,6 +485,7 @@ namespace ALYSLC
 		
 		// Have the player perform a jump.
 		void PerformJump();
+		void PerformJumpOld();
 
 		// Fear not companion players, we have dollar store-brand paragliding at home.
 		// Requires Loki's mod:
@@ -493,6 +494,9 @@ namespace ALYSLC
 		// https://github.com/LXIV-CXXVIII/Skyrims-Paraglider/blob/main/src/main.cpp
 		// And P1 must have the paraglider already.
 		void PerformMagicalParaglide();
+
+		// Reset jump data.
+		void ResetJumpData();
 
 		// Reset all time points to the current time.
 		void ResetTPs();

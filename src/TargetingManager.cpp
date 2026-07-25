@@ -60,23 +60,27 @@ namespace ALYSLC
 		ZeroMemory(&tempState, sizeof(XINPUT_STATE));
 		if (XInputGetState(deviceID, &tempState) != ERROR_SUCCESS)
 		{
-			SetCurrentCrosshairMessage
-			(
-				true,
-				CrosshairMessageType::kGeneralNotification,
-				fmt::format
+			if (deviceID < ALYSLC_MAX_CONTROLLER_COUNT)
+			{
+				SetCurrentCrosshairMessage
 				(
-					"P{}: <font color=\"#FF0000\">Controller not found!</font>", 
-					playerID + 1
-				),
-				{ 
-					CrosshairMessageType::kNone, 
-					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
-			);
-			UpdateCrosshairMessage();
+					true,
+					CrosshairMessageType::kGeneralNotification,
+					fmt::format
+					(
+						"P{}: <font color=\"#FF0000\">Controller not found!</font>", 
+						playerID + 1
+					),
+					{ 
+						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetingState 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				UpdateCrosshairMessage();
+			}
+			
 			return;
 		}
 
@@ -167,7 +171,7 @@ namespace ALYSLC
 		ResetTPs();
 		// Deselect target and reset manipulated refrs/crosshair if data was refreshed.
 		auto ui = RE::UI::GetSingleton();
-		if (currentState == ManagerState::kAwaitingRefresh)
+		if (p->extRefreshData || currentState == ManagerState::kAwaitingRefresh)
 		{
 			// Clear all targets.
 			ClearTargetHandles();
@@ -175,11 +179,7 @@ namespace ALYSLC
 			validCrosshairRefrHit = false;
 			// Clear all grabbed and released refrs if a data refresh is required
 			// to stop grabbing refrs and checking for released refr collisions.
-			if (currentState == ManagerState::kAwaitingRefresh)
-			{
-				rmm->ClearAll();
-			}
-
+			rmm->ClearAll();
 			// Reset crosshair position.
 			ResetCrosshairPosition();
 		}

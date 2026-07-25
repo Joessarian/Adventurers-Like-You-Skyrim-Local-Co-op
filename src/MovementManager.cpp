@@ -192,7 +192,7 @@ namespace ALYSLC
 		aimPitchPos = glob.player1Actor->data.location;
 		coopActor->data.angle.x = 0.0f;
 
-		if (currentState == ManagerState::kAwaitingRefresh)
+		if (p->extRefreshData || currentState == ManagerState::kAwaitingRefresh)
 		{
 			// Reset node rotations.
 			nom->InstantlyResetAllNodeData(p);
@@ -1151,12 +1151,6 @@ namespace ALYSLC
 			return;
 		}
 
-		if (p->pam->JustStarted(InputAction::kJump))
-		{
-			jumpBindHeldFrameCount = 1;
-		}
-		
-
 		auto& currentHKPState = charController->context.currentState;
 		// TODO:
 		// Tweaks, tweaks, and more tweaks.
@@ -1171,12 +1165,29 @@ namespace ALYSLC
 				(1.0f / (*g_deltaTimeRealTime * RE::BSTimer::QGlobalTimeMultiplier())) + 0.5f
 			)
 		);
+		bool onPress = 
+		(
+			glob.paInfoHolder->ACTION_BASE_PERF_TYPES
+			[!InputAction::kJump - !InputAction::kFirstAction] == PerfType::kOnPress
+		);
+		if (onPress && p->pam->JustStarted(InputAction::kJump))
+		{
+			jumpBindHeldFrameCount = 1;
+		}
+		else if (!onPress && p->pam->GetPlayerActionInputJustReleased(InputAction::kJump, false))
+		{
+			jumpBindHeldFrameCount = 
+			(
+				p->pam->GetPlayerActionInputHoldTime(InputAction::kJump) / *g_deltaTimeRealTime
+			);
+		}
+		
 		const float jumpHoldTimeVertSpeedOffset = 
 		(
 			havokInitialJumpZVelocity * std::lerp
 			(
 				-0.2f,
-				0.9f,
+				0.8f,
 				min(0.5f * jumpBindHeldFrameCount / baseJumpAscentFramecount, 1.0f)
 			)
 		);
@@ -1276,13 +1287,7 @@ namespace ALYSLC
 					coopActor->PotentiallyFixRagdollState();
 				}
 			
-				isAirborneWhileJumping = false;
-				isFallingWhileJumping = false;
-				reqStartJump = false;
-				sentJumpFallEvent = false;
-				p->jumpStartTP = SteadyClock::now();
-				jumpBindHeldFrameCount =
-				framesSinceStartingJump = 0;
+				ResetJumpData();
 				return;
 			}
 
@@ -1342,7 +1347,6 @@ namespace ALYSLC
 			charController->lock.Unlock();
 
 			// Jump has started.
-			jumpBindHeldFrameCount = 
 			framesSinceStartingJump = 1;
 			isAirborneWhileJumping = true;
 			isFallingWhileJumping = false;
@@ -1361,13 +1365,7 @@ namespace ALYSLC
 				Util::AdjustFallState(charController, true);
 				charController->lock.Unlock();
 
-				isAirborneWhileJumping = false;
-				isFallingWhileJumping = false;
-				reqStartJump = false;
-				sentJumpFallEvent = false;
-				p->jumpStartTP = SteadyClock::now();
-				jumpBindHeldFrameCount = 
-				framesSinceStartingJump = 0;
+				ResetJumpData();
 				return;
 			}
 			else if (p->mm->isParagliding)
@@ -1382,18 +1380,28 @@ namespace ALYSLC
 				}
 				charController->lock.Unlock();
 
-				isAirborneWhileJumping = false;
-				isFallingWhileJumping = false;
-				reqStartJump = false;
-				sentJumpFallEvent = false;
-				p->jumpStartTP = SteadyClock::now();
-				jumpBindHeldFrameCount =
-				framesSinceStartingJump = 0;
+				ResetJumpData();
 				return;
 			}
+			else if ((isSynced || isAnimDriven) || 
+					(coopActor->currentProcess &&
+					 coopActor->currentProcess->middleHigh && 
+					 coopActor->currentProcess->middleHigh->furnitureIdle))
+			{
+				// Stop adjusting fall velocity and checking for landing if animation driven
+				// or interacting with furniture.
+				// Prevents the landing animation from playing after the furniture idle finishes,
+				// ex. for mods like SkyParkour.
+				ResetJumpData();
+				return;
+			}
+			
+			// TEMP: Prevents Follower Parkour from sending out a landing roll animation.
+			// Does not affect fall damage calculated upon landing. Yipee!
+			charController->lock.Lock();
+			charController->fallTime = 0.0f;
+			charController->lock.Unlock();
 
-			// Check if the player has landed on a surface, and if so, reset state and return early.
-			bool hitSurfaceBelow = false;
 			// Handle ascent to peak of the jump at which the player begins to fall.
 			// Apex is reached once the player's vertical velocity is 0 or negative (falling).
 			if (!isFallingWhileJumping)
@@ -1404,7 +1412,7 @@ namespace ALYSLC
 				}
 				charController->lock.Unlock();
 				
-				if (p->pam->AllButtonsPressedForAction(InputAction::kJump))
+				if (onPress && p->pam->AllButtonsPressedForAction(InputAction::kJump))
 				{
 					jumpBindHeldFrameCount++;
 				}
@@ -1427,15 +1435,16 @@ namespace ALYSLC
 					// Set fall start time and height.
 					Util::AdjustFallState(charController, true);
 					charController->lock.Unlock();
-					if (movementSpeed <= 10.0f)
+					/*if (movementSpeed <= 10.0f)
 					{
 						coopActor->NotifyAnimationGraph("JumpFall");
 					}
 					else
 					{
 						coopActor->NotifyAnimationGraph("JumpFallDirectional");
-					}
-
+					}*/
+					
+					coopActor->NotifyAnimationGraph("JumpFall");
 					sentJumpFallEvent = true;
 				}
 				
@@ -1468,289 +1477,7 @@ namespace ALYSLC
 						RE::hkpSurfaceInfo::SupportedState::kSupported
 					) 
 				);
-				hitSurfaceBelow = controllerLanded;
-
-				// NOTE:
-				// Raycast landing detection not necessary right now.
-				// May use in the future if implementing a fully custom jump action
-				// that does not rely on the character controller's state.
-				/*
-				// Have to check for a collidable surface under the player 
-				// with a single raycast, since the char controller flags and surface info
-				// sometimes indicate the player can land while they are still in midair.
-				float minZEndCoord = FLT_MAX;
-				if (hitSurfaceBelow && !p->isPlayer1)
-				{
-					hitSurfaceBelow = false;
-					glm::vec4 start =
-					{
-						coopActor->data.location.x,
-						coopActor->data.location.y,
-						coopActor->data.location.z + coopActor->GetHeight(),
-						0.0f
-					};
-					glm::vec4 end = 
-					(
-						start - glm::vec4(0.0f, 0.0f, 1.01f * coopActor->GetHeight(), 0.0f)
-					);
-					Raycast::RayResult result{ };
-					// Cast a ray downward from each foot.
-					bool castFromFoot = false;
-					if (auto player3DPtr = Util::GetRefr3D(coopActor.get()); player3DPtr)
-					{
-						const auto strings = RE::FixedStrings::GetSingleton();
-						if (strings)
-						{
-							// Continue early if the player's loaded 3D data is invalid.
-							auto loadedData = p->coopActor->loadedData;
-							if (loadedData)
-							{
-								// Continue early if the player's 3D is invalid.
-								auto data3DPtr = loadedData->data3D;
-								if (data3DPtr && data3DPtr->parent)
-								{
-									auto leftFoot = data3DPtr->GetObjectByName(strings->npcLFoot);
-									if (leftFoot)
-									{
-										castFromFoot = true;
-										// Cast slightly beyond the bottom surface of the foot,
-										// otherwise no hit will be recorded even when 
-										// the player's foot is visually in contact with a surface.
-										float dist = Util::GetRigidBodyCapsuleAxisLength(leftFoot);
-										if (dist == 0.0f)
-										{
-											dist = 2.0f * leftFoot->worldBound.radius;
-											if (dist == 0.0f)
-											{
-												dist = coopActor->GetScale() * 15.0f;
-											}
-										}
-
-										start = ToVec4(leftFoot->world.translate);
-										end = start + glm::vec4(0.0f, 0.0f, -dist, 0.0f); 
-										result = Raycast::hkpCastRay
-										(
-											start, 
-											end, 
-											std::vector<RE::TESObjectREFR*>({ coopActor.get() }),
-											std::vector<RE::FormType>
-											(
-												{ 
-													RE::FormType::Activator, 
-													RE::FormType::TalkingActivator 
-												}
-											)
-										);
-										//result = Raycast::CastRay(start, end, dist);
-										hitSurfaceBelow = result.hit;
-										if (end.z < minZEndCoord)
-										{
-											minZEndCoord = end.z;
-										}
-
-										// REMOVE when done debugging
-										DBG
-										(
-											"{}: HIT FROM LEFT FOOT: {}. "
-											"Dist: {}, player scale: {}.",
-											coopActor->GetName(), 
-											hitSurfaceBelow, 
-											dist, 
-											coopActor->GetScale()
-										);
-										DebugAPI::QueueLine3D
-										(
-											start, 
-											end, 
-											result.hit ? 
-											Settings::vuCrosshairOuterOutlineRGBAValues[playerID] :
-											Settings::vuCrosshairInnerOutlineRGBAValues[playerID],
-											2.0f
-										);
-										//DebugAPI::QueueCircle3D
-										//(
-										//	result.hit ? 
-										//	result.hitPos :
-										//	end,
-										//	ToVec3
-										//	(
-										//		Util::RotationToDirectionVect
-										//		(
-										//			-glob.cam->camPitch, 
-										//			Util::ConvertAngle(glob.cam->camYaw)
-										//		)
-										//	), 
-										//	result.hit ? 
-										//	Settings::vuCrosshairOuterOutlineRGBAValues
-										//	[playerID] :
-										//	Settings::vuCrosshairInnerOutlineRGBAValues
-										//	[playerID],
-										//	16,
-										//	dist,
-										//	2.0f
-										//);
-									}	
-									
-									// Only need to cast from other foot if there was no hit 
-									// when trying to raycast from the previous foot.
-									if (!hitSurfaceBelow)
-									{
-										auto rightFoot = data3DPtr->GetObjectByName
-										(
-											strings->npcRFoot
-										);
-										if (rightFoot)
-										{
-											castFromFoot = true;
-											float dist = Util::GetRigidBodyCapsuleAxisLength
-											(
-												rightFoot
-											);
-											if (dist == 0.0f)
-											{
-												dist = 2.0f * rightFoot->worldBound.radius;
-												if (dist == 0.0f)
-												{
-													dist = coopActor->GetScale() * 15.0f;
-												}
-											}
-
-											start = ToVec4(rightFoot->world.translate);
-											end = start + glm::vec4(0.0f, 0.0f, -dist, 0.0f); 
-											result = Raycast::hkpCastRay
-											(
-												start, 
-												end, 
-												std::vector<RE::TESObjectREFR*>
-												(
-													{ coopActor.get() }
-												),
-												std::vector<RE::FormType>
-												(
-													{
-														RE::FormType::Activator, 
-														RE::FormType::TalkingActivator 
-													}
-												)
-											);
-											//result = Raycast::CastRay(start, end, dist);
-											hitSurfaceBelow |= result.hit;
-											if (end.z < minZEndCoord)
-											{
-												minZEndCoord = end.z;
-											}
-
-											// REMOVE when done debugging
-											DBG
-											(
-												"{}: HIT FROM RIGHT FOOT: {}. "
-												"Dist: {}, player scale: {}.",
-												coopActor->GetName(), 
-												hitSurfaceBelow, 
-												dist, 
-												coopActor->GetScale()
-											);
-											DebugAPI::QueueLine3D
-											(
-												start, 
-												end, 
-												result.hit ? 
-												Settings::vuCrosshairOuterOutlineRGBAValues
-												[playerID] :
-												Settings::vuCrosshairInnerOutlineRGBAValues
-												[playerID],
-												2.0f
-											);
-											//DebugAPI::QueueCircle3D
-											//(
-											//	result.hit ? 
-											//	result.hitPos :
-											//	end, 
-											//	ToVec3
-											//	(
-											//		Util::RotationToDirectionVect
-											//		(
-											//			-glob.cam->camPitch, 
-											//			Util::ConvertAngle(glob.cam->camYaw)
-											//		)
-											//	), 
-											//	result.hit ? 
-											//	Settings::vuCrosshairOuterOutlineRGBAValues
-											//	[playerID] :
-											//	Settings::vuCrosshairInnerOutlineRGBAValues
-											//	[playerID],
-											//	16,
-											//	dist,
-											//	2.0f
-											//);
-										}
-									}
-								}
-							}
-						}
-					}
-
-					// If we could not raycast from either foot,
-					// cast from the player's refr pos as a fallback.
-					if (!hitSurfaceBelow)
-					{
-						start =
-						{
-							coopActor->data.location.x,
-							coopActor->data.location.y,
-							coopActor->data.location.z + coopActor->GetHeight() * 0.5f,
-							0.0f
-						};
-						end = 
-						{
-							start.x,
-							start.y,
-							castFromFoot ?
-							minZEndCoord : 
-							coopActor->data.location.z - 0.025f * coopActor->GetHeight(),
-							0.0f
-						};
-						result = Raycast::hkpCastRay
-						(
-							start, 
-							end, 
-							std::vector<RE::TESObjectREFR*>({ coopActor.get() }),
-							std::vector<RE::FormType>
-							(
-								{ RE::FormType::Activator, RE::FormType::TalkingActivator }
-							)
-						);
-						hitSurfaceBelow |= result.hit;
-						DebugAPI::QueueLine3D
-						(
-							start, 
-							end, 
-							result.hit ? 
-							Settings::vuCrosshairOuterOutlineRGBAValues
-							[playerID] :
-							Settings::vuCrosshairInnerOutlineRGBAValues
-							[playerID],
-							2.0f
-						);
-					}
-
-					// REMOVE when done debugging
-					if (hitSurfaceBelow)
-					{
-						const float surfaceNormalPitch = asinf(result.rayNormal.z);
-						DBG
-						(
-							"{}: Hit surface with normal pitch {}, surface pitch {}. Can land: {}",
-							coopActor->GetName(),
-							surfaceNormalPitch * TO_DEGREES,
-							(PI / 2.0f - surfaceNormalPitch) * TO_DEGREES,
-							hitSurfaceBelow
-						);
-					}
-				}
-				*/
-
-				if (hitSurfaceBelow)
+				if (controllerLanded)
 				{
 					// Reset jump state variables.
 					charController->lock.Lock();
@@ -1759,12 +1486,10 @@ namespace ALYSLC
 					Util::AdjustFallState(charController, true);
 					charController->lock.Unlock();
 
-					isAirborneWhileJumping = false;
-					isFallingWhileJumping = false;
-					reqStartJump = false;
 					// Have to manually trigger the landing animation 
 					// to minimize occurrences of the hovering bug.
 					// No more 'Surf's up, dude!'.
+					/*
 					if (p->isPlayer1)
 					{
 						RE::hkVector4 velUponLanding{ };
@@ -1778,6 +1503,8 @@ namespace ALYSLC
 						{
 							coopActor->NotifyAnimationGraph("JumpLand");
 						}
+
+						coopActor->NotifyAnimationGraph("JumpLand");
 					}
 					else
 					{
@@ -1785,7 +1512,9 @@ namespace ALYSLC
 						// or the soft blended landing animation for P2-P4.
 						coopActor->NotifyAnimationGraph("JumpLandEnd");
 					}
+					*/
 					
+					coopActor->NotifyAnimationGraph("JumpLand");
 					charController->lock.Lock();
 					{
 						charController->surfaceInfo.surfaceNormal = RE::hkVector4(0.0f);
@@ -1794,22 +1523,22 @@ namespace ALYSLC
 						RE::hkpSurfaceInfo::SupportedState::kSupported;
 					}
 					charController->lock.Unlock();
-
-					// Update jump start TP on landing.
-					p->jumpStartTP = SteadyClock::now();
-					jumpBindHeldFrameCount = 
-					framesSinceStartingJump = 0;
-
+					
+					ResetJumpData();
+					DBG("{}: Landed: {}.", 
+						coopActor->GetName(), TO_DEGREES * coopActor->data.angle.z);
 					return;
 				}
-
-				// Continue falling and increment jump held frame count.
-				if (p->pam->AllButtonsPressedForAction(InputAction::kJump))
+				else
 				{
-					jumpBindHeldFrameCount++;
-				}
+					// Continue falling and increment jump held frame count.
+					if (onPress && p->pam->AllButtonsPressedForAction(InputAction::kJump))
+					{
+						jumpBindHeldFrameCount++;
+					}
 
-				framesSinceStartingJump++;
+					framesSinceStartingJump++;
+				}
 			}
 
 			// Continue falling.
@@ -1864,6 +1593,286 @@ namespace ALYSLC
 			lsData.normMag,
 			framesSinceStartingJump
 		);*/
+	}
+
+	void MovementManager::PerformJumpOld()
+	{
+		// Jump. That's it.
+
+		auto charController = coopActor->GetCharController();
+		if (!charController)
+		{
+			return;
+		}
+
+		auto& currentHKPState = charController->context.currentState;
+		// Number of frames to spend ascending to the apex of the jump.
+		// Not less than 1.
+		const uint32_t jumpAscentFramecount = max
+		(
+			1, 
+			static_cast<uint32_t>
+			(
+				Settings::fSecsAfterGatherToFall * 
+				(1.0f / (*g_deltaTimeRealTime * RE::BSTimer::QGlobalTimeMultiplier())) + 0.5f
+			)
+		);
+		// Start jump. Play gather animation(s) and invert gravity for the player.
+		if (reqStartJump)
+		{
+			// Gotta move.
+			SetDontMove(false);
+			RE::hkVector4 velBeforeJumpVect{ };
+			charController->GetLinearVelocityImpl(velBeforeJumpVect);
+			if (velBeforeJumpVect.Length3() == 0.0f)
+			{
+				coopActor->NotifyAnimationGraph("JumpStandingStart");
+			}
+			else
+			{
+				coopActor->NotifyAnimationGraph("JumpDirectionalStart");
+			}
+
+			// Plain jump
+			charController->lock.Lock();
+			{
+				charController->flags.set(RE::CHARACTER_FLAGS::kJumping);
+				charController->context.currentState = RE::hkpCharacterStateType::kInAir;
+				const auto& lsData = glob.cdh->GetAnalogStickState(deviceID, true);
+				velBeforeJumpVect = RE::hkVector4
+				(
+					velBeforeJumpVect.quad.m128_f32[0] + 
+					(
+						GAME_TO_HAVOK *
+						Settings::fJumpAdditionalLaunchSpeed *
+						lsData.normMag *
+						cosf
+						(
+							Util::ConvertAngle
+							(
+								p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+							)
+						)
+					),
+					velBeforeJumpVect.quad.m128_f32[1] + 
+					(
+						GAME_TO_HAVOK *
+						Settings::fJumpAdditionalLaunchSpeed *
+						lsData.normMag *
+						sinf
+						(
+							Util::ConvertAngle
+							(
+								p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+							)
+						)
+					),
+					havokInitialJumpZVelocity + 
+					(
+						GAME_TO_HAVOK *
+						Settings::fJumpAdditionalLaunchSpeed
+					),
+					0.0f
+				);
+				// Invert gravity and set initial velocity.
+				charController->gravity = -Settings::fJumpingGravityMult;
+				charController->SetLinearVelocityImpl(velBeforeJumpVect);
+			}
+			charController->lock.Unlock();
+
+			// Jump has started.
+			framesSinceStartingJump = 1;
+			isAirborneWhileJumping = true;
+			isFallingWhileJumping = false;
+			sentJumpFallEvent = false;
+			reqStartJump = false;
+			p->jumpStartTP = SteadyClock::now();
+		}
+		else if (isAirborneWhileJumping)
+		{
+			// Abort jump if ragdolling.
+			if (coopActor->IsInRagdollState())
+			{
+				// Reset gravity and jump state variables,
+				// plus set fall start height and time.
+				charController->lock.Lock();
+				charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
+				charController->gravity = 1.0f;
+				Util::AdjustFallState(charController, true);
+				charController->lock.Unlock();
+
+				isAirborneWhileJumping = false;
+				isFallingWhileJumping = false;
+				reqStartJump = false;
+				sentJumpFallEvent = false;
+				p->jumpStartTP = SteadyClock::now();
+				framesSinceStartingJump = 0;
+				return;
+			}
+			else if (p->mm->isParagliding)
+			{
+				// Reset gravity and jump state variables.
+				charController->lock.Lock();
+				{
+					charController->flags.reset
+					(
+						RE::CHARACTER_FLAGS::kJumping
+					);
+					charController->gravity = 1.0f;
+				}
+				charController->lock.Unlock();
+
+				isAirborneWhileJumping = false;
+				isFallingWhileJumping = false;
+				reqStartJump = false;
+				sentJumpFallEvent = false;
+				p->jumpStartTP = SteadyClock::now();
+				framesSinceStartingJump = 0;
+				return;
+			}
+
+			// Handle ascent to peak of the jump at which the player begins to fall.
+			if (!isFallingWhileJumping)
+			{
+				isFallingWhileJumping = framesSinceStartingJump >= jumpAscentFramecount;
+				charController->lock.Lock();
+				{
+					// Zero gravity at apex.
+					charController->gravity = Util::InterpolateEaseIn
+					(
+						-Settings::fJumpingGravityMult,
+						0.0f,
+						static_cast<float>(framesSinceStartingJump) / jumpAscentFramecount,
+						2.0f
+					);
+				}
+				charController->lock.Unlock();
+
+				framesSinceStartingJump++;
+			}
+			else
+			{
+				// Only send the fall animation, which cancels all melee/ranged attack animations,
+				// if the player is not attacking or casting.
+				bool startedAttackAfterJumping = 
+				(
+					Util::GetElapsedSeconds(p->lastAttackStartTP) <
+					p->pam->GetSecondsSinceLastStart(InputAction::kJump)
+				);
+				if (!sentJumpFallEvent && !startedAttackAfterJumping && !p->pam->isAttacking)
+				{
+					charController->lock.Lock();
+					charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
+					// Set fall start time and height.
+					Util::AdjustFallState(charController, true);
+					charController->lock.Unlock();
+
+					coopActor->NotifyAnimationGraph("JumpFall");
+					sentJumpFallEvent = true;
+				}
+					
+				// Check if the player has landed, reset state, and return early.
+				bool canLand = 
+				(
+					(
+						charController->flags.all
+						(
+							RE::CHARACTER_FLAGS::kCanJump, 
+							RE::CHARACTER_FLAGS::kSupport
+						)
+					) && 
+					(
+						charController->context.currentState == 
+						RE::hkpCharacterStateType::kOnGround &&
+						charController->surfaceInfo.supportedState.get() != 
+						RE::hkpSurfaceInfo::SupportedState::kUnsupported
+					) 
+				);
+				// Have to check for a collidable surface under the player 
+				// with a single raycast, since the char controller flags and surface info
+				// sometimes indicate the player can land while they are still in midair.
+				if (canLand)
+				{
+					glm::vec4 start =
+					{
+						coopActor->data.location.x,
+						coopActor->data.location.y,
+						coopActor->data.location.z + coopActor->GetHeight(),
+						0.0f
+					};
+					glm::vec4 end = 
+					(
+						start - glm::vec4(0.0f, 0.0f, 1.25f * coopActor->GetHeight(), 0.0f)
+					);
+					auto result = Raycast::hkpCastRay
+					(
+						start, 
+						end, 
+						std::vector<RE::TESObjectREFR*>({ coopActor.get() }),
+						std::vector<RE::FormType>
+						(
+							{ RE::FormType::Activator, RE::FormType::TalkingActivator }
+						)
+					);
+					// No surface beneath the player, so they cannot land.
+					if (!result.hit)
+					{
+						canLand = false;
+					}
+				}
+
+				if (canLand)
+				{
+					// Reset jump state variables.
+					charController->lock.Lock();
+					charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
+					charController->gravity = 1.0f;
+					// Set fall start time and height.
+					Util::AdjustFallState(charController, true);
+					charController->lock.Unlock();
+
+					isAirborneWhileJumping = false;
+					isFallingWhileJumping = false;
+					reqStartJump = false;
+					// Have to manually trigger the landing animation 
+					// to minimize occurrences of the hovering bug.
+					// No more 'Surf's up, dude!'.
+					coopActor->NotifyAnimationGraph("JumpLand");
+					charController->lock.Lock();
+					{
+						charController->surfaceInfo.surfaceNormal = RE::hkVector4(0.0f);
+						charController->surfaceInfo.surfaceDistanceExcess = 0.0f;
+						charController->surfaceInfo.supportedState = 
+						RE::hkpSurfaceInfo::SupportedState::kSupported;
+					}
+					charController->lock.Unlock();
+
+					// Update jump start TP on landing.
+					p->jumpStartTP = SteadyClock::now();
+					framesSinceStartingJump = 0;
+
+					return;
+				}
+
+				// Continue falling.
+				charController->lock.Lock();
+				{
+					charController->gravity = Util::InterpolateEaseIn
+					(
+						0.0f, 
+						Settings::fJumpingGravityMult,
+						(
+							max(framesSinceStartingJump - jumpAscentFramecount, 0.0f) /
+							jumpAscentFramecount
+						),
+						2.0f
+					);
+				}
+				charController->lock.Unlock();
+
+				framesSinceStartingJump++;
+			}
+		}
 	}
 
 	void MovementManager::PerformMagicalParaglide()
@@ -2085,6 +2094,17 @@ namespace ALYSLC
 		//=========================================================================================
 		charController->lock.Unlock();
 		//=========================================================================================
+	}
+
+	void MovementManager::ResetJumpData()
+	{
+		isAirborneWhileJumping = false;
+		isFallingWhileJumping = false;
+		reqStartJump = false;
+		sentJumpFallEvent = false;
+		jumpBindHeldFrameCount =
+		framesSinceStartingJump = 0;
+		p->jumpStartTP = SteadyClock::now();
 	}
 
 	void MovementManager::ResetTPs()
@@ -3493,8 +3513,8 @@ namespace ALYSLC
 				shouldStopMoving && 
 				!p->isRevivingPlayer &&
 				!p->pam->isAttacking && 
-				!isAirborneWhileJumping && 
 				!reqStartJump &&
+				!isAirborneWhileJumping && 
 				!Util::IsAirborne(coopActor.get())
 			);
 			ClearKeepOffsetFromActor();
@@ -3682,6 +3702,14 @@ namespace ALYSLC
 		// Store the set pitch and yaw.
 		playerPitch = movementActorPtr->data.angle.x;
 		playerYaw = movementActorPtr->data.angle.z;
+
+		// REMOVE when done debugging.
+		/*DBG("{}: {}: {}.", 
+			coopActor->GetName(), 
+			Util::IsAirborne(coopActor.get()) || isAirborneWhileJumping ? 
+			"AIRBORNE" : 
+			"LANDED",
+			TO_DEGREES * coopActor->data.angle.z);*/
 	}
 
 	void MovementManager::SetShouldPerformLocationDiscovery()
@@ -4536,7 +4564,7 @@ namespace ALYSLC
 			(
 				(!coopActor->IsInKillMove() && !coopActor->IsOnMount()) && 
 				(finishedGettingUp || turnToFaceTargetWhileStopped || stopWhenTurningToTarget) &&
-				(!Util::IsAirborne(coopActor.get()))
+				(!isAirborneWhileJumping && !Util::IsAirborne(coopActor.get()))
 			);
 			if (canCurtailMomentum)
 			{
@@ -4557,7 +4585,7 @@ namespace ALYSLC
 					"{}: Curtail: {}, start/stop moving: {}, {}, dont move set: {}, LS moved: {}, "
 					"movement speed: {}, attacking: {}, blocking: {}, bashing: {}, casting: {}, "
 					"movement yaw target changed: {}, turn: {}, face: {}, finished getting up: {}, "
-					"turn to face when stopped: {}, stop when turning: {}",
+					"turn to face when stopped: {}, stop when turning: {}, is airborne: {}, {}",
 					coopActor->GetName(), 
 					shouldCurtailMomentum,
 					shouldStartMoving,
@@ -4574,7 +4602,9 @@ namespace ALYSLC
 					faceCrosshairPos,
 					finishedGettingUp,
 					turnToFaceTargetWhileStopped,
-					stopWhenTurningToTarget
+					stopWhenTurningToTarget,
+					isAirborneWhileJumping,
+					Util::IsAirborne(coopActor.get())
 				);
 			}
 #endif

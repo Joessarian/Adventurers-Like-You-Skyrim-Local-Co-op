@@ -262,7 +262,9 @@ namespace ALYSLC
 				if (p->isActive && !p->isPlayer1 && p->coopActor->currentProcess)
 				{
 					p->pam->ReadyWeapon(false);
-					//p->em->ReEquipHandForms();
+					// Hey, past me, why is this commented out?
+					// Does it cause a crash?
+					// p->em->ReEquipHandForms();
 				}
 			}
 		}
@@ -1876,7 +1878,9 @@ namespace ALYSLC
 					if (glob.coopSessionActive && !p->isPlayer1 && p->coopActor->currentProcess)
 					{
 						p->pam->ReadyWeapon(false);
-						//p->em->ReEquipHandForms();
+						// Hey, past me, why is this commented out?
+						// Does it cause a crash?
+						// p->em->ReEquipHandForms();
 					}
 				}
 			}
@@ -2461,6 +2465,8 @@ namespace ALYSLC
 				if (!p->isPlayer1) 
 				{
 					DBG("About to move player {} to P1.", p->coopActor->GetName());
+					// Signal to re-equip after resuming managers.
+					p->em->reEquipOnTeleport = true;
 					// Sheathe before moving to minimize incidence of equip state bugs.
 					p->pam->ReadyWeapon(false);
 					auto taskInterface = SKSE::GetTaskInterface();

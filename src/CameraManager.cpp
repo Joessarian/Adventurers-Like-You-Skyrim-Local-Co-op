@@ -368,7 +368,7 @@ namespace ALYSLC
 		);
 		if (shouldEnableP1Managers)
 		{
-			const auto& coopP1 = glob.coopPlayers[glob.player1DID];
+			const auto& coopP1 = glob.coopPlayers[0];
 			if (coopP1 && !coopP1->isDowned)
 			{
 				coopP1->RequestStateChange(ManagerState::kRunning);

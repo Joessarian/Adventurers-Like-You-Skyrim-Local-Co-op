@@ -513,13 +513,11 @@ namespace ALYSLC
 		}
 
 		activeControllerCount = controllerCount;
-		// Check if a controller was plugged in or unplugged, 
-		// and end any active co-op session if so.
-		// Must set P1's DID again just in case the input device ordering changed,
+		// Check if a new controller was plugged in, and end any active co-op session if so.
+		// Must set P1's DID again just in case P! wasn't using a controller before,
 		// otherwise, triggering the summoning menu while in co-op and re-summoning players
-		// will cause P1 to control multiple players if P1 was using the keyboard previously.
-		/*
-		if (glob.coopSessionActive && activeControllerCount != oldControllerCount)
+		// will cause P1 to control multiple players.
+		if (glob.coopSessionActive && activeControllerCount > oldControllerCount)
 		{
 			DBG
 			(
@@ -532,10 +530,7 @@ namespace ALYSLC
 			(
 				fmt::format
 				(
-					"[ALYSLC] ERROR: Controller was {}. Ending session.", 
-					activeControllerCount > oldControllerCount ? 
-					"connected" :
-					"disconnected"
+					"[ALYSLC] New controller was plugged in. Please re-summon."
 				).data()
 			);
 			GlobalCoopData::TearDownCoopSession(true, true);
@@ -543,7 +538,6 @@ namespace ALYSLC
 			glob.player1DID = -1;
 			return;
 		}
-		*/
 
 		if (glob.coopSessionActive) 
 		{

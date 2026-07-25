@@ -2112,13 +2112,14 @@ namespace ALYSLC
 			{
 				continue;
 			}
-
-			p->taskRunner->AddTask
+			
+			p->extRefreshData = true;
+			/*p->taskRunner->AddTask
 			(
 				p->coopActor->GetName(),
 				__FUNCTION__,
 				[&p]() { p->RefreshPlayerManagersTask(); }
-			);
+			);*/
 		}
 	}
 
@@ -2140,13 +2141,14 @@ namespace ALYSLC
 		{
 			return;
 		}
-
-		p->taskRunner->AddTask
+		
+		p->extRefreshData = true;
+		/*p->taskRunner->AddTask
 		(
 			p->coopActor->GetName(),
 			__FUNCTION__,
 			[&p]() { p->RefreshPlayerManagersTask(); }
-		);
+		);*/
 	}
 
 	void CoopLib::Debug::ResetCoopCompanion

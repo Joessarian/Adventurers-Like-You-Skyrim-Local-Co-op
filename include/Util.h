@@ -2046,20 +2046,25 @@ namespace ALYSLC
 			return RE::NiPoint3();
 		}
 
-		// Get the bound weapon associated with the given spell, if any.
-		inline RE::TESObjectWEAP* GetAssociatedBoundWeap(RE::SpellItem* a_spell) 
+		// Get the bound form (weapon/armor) associated with the given magic item, if any.
+		inline RE::TESForm* GetAssociatedBoundForm(RE::MagicItem* a_magicItem) 
 		{
-			if (!a_spell) 
+			if (!a_magicItem) 
 			{
 				return nullptr;
 			}
 
-			if (auto avEffect = a_spell->GetAVEffect(); avEffect && avEffect->data.associatedForm) 
+			if (auto avEffect = a_magicItem->GetAVEffect(); 
+				avEffect && avEffect->data.associatedForm) 
 			{
 				if (auto assocWeap = avEffect->data.associatedForm->As<RE::TESObjectWEAP>();
 					assocWeap && assocWeap->IsBound()) 
 				{
 					return assocWeap;
+				}
+				else if (avEffect->HasArchetype(RE::EffectSetting::Archetype::kBoundWeapon))
+				{
+					return avEffect->data.associatedForm;
 				}
 			}
 

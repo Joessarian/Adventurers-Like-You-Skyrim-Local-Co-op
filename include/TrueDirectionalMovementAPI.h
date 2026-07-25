@@ -5,7 +5,7 @@
 /*
 * For modders: Copy this file into your own project if you wish to use this API
 */
-	namespace TDM_API
+namespace TDM_API
 {
 	constexpr const auto TDMPluginName = "TrueDirectionalMovement";
 

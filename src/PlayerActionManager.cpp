@@ -1236,7 +1236,7 @@ namespace ALYSLC
 			// Hacky, but the only solution for now.
 			// Update bound weapon state for companion players
 			// and unequip bound weapons once their lifetime expires.
-			UpdateBoundWeaponTimers();
+			UpdateBoundWeaponState();
 		}
 		
 		// Check if an FNF cast was triggered on release of a cast bind 
@@ -1330,6 +1330,11 @@ namespace ALYSLC
 
 		// Add player keyword first.
 		UpdateCoopPlayerKeyword(true);
+		// Update player flags if data was refreshed.
+		if (p->extRefreshData || currentState == ManagerState::kAwaitingRefresh)
+		{
+			p->SetCoopPlayerFlags();
+		}
 
 		if (p->isPlayer1) 
 		{
@@ -5002,8 +5007,8 @@ namespace ALYSLC
 					}
 					else
 					{
-						// No lock, no party.
-						return;
+						DBG("Failed to obtain lock. (0x{:X})", 
+							std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					}
 				}
 			}
@@ -5728,78 +5733,10 @@ namespace ALYSLC
 		else
 		{
 			// Unequip bound weapons when sheathing weapons.
-			if (!a_shouldDraw) 
+			/*if (!a_shouldDraw) 
 			{
-				// Reset bound weapon state.
-				boundWeapReq2H = false;
-				boundWeapReqLH = false;
-				boundWeapReqRH = false;
-				secsSinceBoundWeap2HReq = 
-				secsSinceBoundWeapLHReq =
-				secsSinceBoundWeapRHReq = 0.0f;
-				p->em->lastReqBoundWeapLH =
-				p->em->lastReqBoundWeapRH = nullptr;
-
-				// Right hand.
-				bool clearedHandSlot = false;
-				if (auto rhForm = coopActor->GetEquippedObject(false); rhForm)
-				{
-					if (auto weap = rhForm->As<RE::TESObjectWEAP>(); weap && weap->IsBound())
-					{
-						// Remove the bound weapon.
-						coopActor->RemoveItem
-						(
-							weap->As<RE::TESBoundObject>(),
-							1,
-							RE::ITEM_REMOVE_REASON::kRemove, 
-							nullptr,
-							nullptr
-						);
-						clearedHandSlot = true;
-						if (weap->IsBow())
-						{
-							// Unequip bound ammunition too.
-							auto boundArrow = p->em->equippedForms[!EquipIndex::kAmmo]; 
-							if (boundArrow && 
-								boundArrow->HasKeywordByEditorID("WeapTypeBoundArrow"))
-							{
-								// Remove the bound arrows.
-								coopActor->RemoveItem
-								(
-									boundArrow->As<RE::TESBoundObject>(),
-									1,
-									RE::ITEM_REMOVE_REASON::kRemove, 
-									nullptr,
-									nullptr
-								);
-							}
-						}
-					}
-				}
-
-				// Left hand.
-				if (auto lhForm = coopActor->GetEquippedObject(true); lhForm)
-				{
-					if (auto weap = lhForm->As<RE::TESObjectWEAP>(); weap && weap->IsBound())
-					{
-						// Remove the bound weapon.
-						coopActor->RemoveItem
-						(
-							weap->As<RE::TESBoundObject>(),
-							1,
-							RE::ITEM_REMOVE_REASON::kRemove, 
-							nullptr,
-							nullptr
-						);
-						clearedHandSlot = true;
-					}
-				}
-
-				if (clearedHandSlot)
-				{
-					p->em->ReEquipHandForms();
-				}
-			}
+				RemoveBoundWeapons();
+			}*/
 
 			// More redundancy.
 			if (coopActor->currentProcess)
@@ -5903,6 +5840,119 @@ namespace ALYSLC
 			DBG("{}: set level to {}.", coopActor->GetName(), p1Level);
 			actorBase->actorData.level = p1Level;
 		}
+	}
+
+	void PlayerActionManager::RemoveBoundWeapons()
+	{
+		// Remove equipped bound weapons and re-equip previous items/magic in the LH/RH.
+		
+		// Let the game handle bound weapons for P1.
+		if (p->isPlayer1)
+		{
+			return;
+		}
+
+		DBG("{}", coopActor->GetName());
+		// Reset bound weapon request state.
+		boundWeapReq2H = false;
+		boundWeapReqLH = false;
+		boundWeapReqRH = false;
+		secsSinceBoundWeap2HReq = 
+		secsSinceBoundWeapLHReq =
+		secsSinceBoundWeapRHReq = 0.0f;
+		p->em->lastReqBoundWeapLH =
+		p->em->lastReqBoundWeapRH = nullptr;
+
+		// Right hand.
+		bool clearedHandSlot = false;
+		if (auto rhForm = coopActor->GetEquippedObject(false); rhForm)
+		{
+			if (auto weap = rhForm->As<RE::TESObjectWEAP>(); weap && weap->IsBound())
+			{
+				// Remove the bound weapon.
+				coopActor->RemoveItem
+				(
+					weap->As<RE::TESBoundObject>(),
+					1,
+					RE::ITEM_REMOVE_REASON::kRemove, 
+					nullptr,
+					nullptr
+				);
+				clearedHandSlot = true;
+				if (weap->IsBow())
+				{
+					// Unequip bound ammunition too.
+					auto boundArrow = p->em->equippedForms[!EquipIndex::kAmmo]; 
+					if (boundArrow && 
+						boundArrow->HasKeywordByEditorID("WeapTypeBoundArrow"))
+					{
+						// Remove the bound arrows.
+						coopActor->RemoveItem
+						(
+							boundArrow->As<RE::TESBoundObject>(),
+							1,
+							RE::ITEM_REMOVE_REASON::kRemove, 
+							nullptr,
+							nullptr
+						);
+					}
+				}
+			}
+		}
+
+		// Left hand.
+		if (auto lhForm = coopActor->GetEquippedObject(true); lhForm)
+		{
+			if (auto weap = lhForm->As<RE::TESObjectWEAP>(); weap && weap->IsBound())
+			{
+				// Remove the bound weapon.
+				coopActor->RemoveItem
+				(
+					weap->As<RE::TESBoundObject>(),
+					1,
+					RE::ITEM_REMOVE_REASON::kRemove, 
+					nullptr,
+					nullptr
+				);
+				clearedHandSlot = true;
+			}
+		}
+
+		// Clear out bound weapon active effects too.
+		if (auto effectList = p->coopActor->GetActiveEffectList(); effectList)
+		{
+			for (auto effect : *effectList)
+			{
+				if (!effect)
+				{
+					continue;
+				}
+
+				auto baseObj = effect->GetBaseObject(); 
+				DBG("{}: Has active effect {} with spell {}. Archetypes: {}, {}",
+					coopActor->GetName(),
+					baseObj ? baseObj->GetName() : "NONE",
+					effect->spell ? effect->spell->GetName() : "NONE",
+					baseObj ? !baseObj->data.archetype : !RE::EffectSetting::Archetype::kNone,
+					effect->spell && effect->spell->avEffectSetting ? 
+					!effect->spell->avEffectSetting->data.archetype : 
+					!RE::EffectSetting::Archetype::kNone
+				);
+				if ((baseObj && 
+					baseObj->HasArchetype(RE::EffectSetting::Archetype::kBoundWeapon)) ||
+					(Util::GetAssociatedBoundForm(effect->spell)))
+				{
+					DBG("{}: Dispelling bound weapon active effect {} with spell {}.",
+						coopActor->GetName(),
+						baseObj ? baseObj->GetName() : "NONE",
+						effect->spell ? effect->spell->GetName() : "NONE");
+					effect->Dispel(true);
+					continue;
+				}
+			}
+		}
+
+		p->em->ReEquipHandForms();
 	}
 
 	void PlayerActionManager::ResetAllKillmoveData(const int32_t& a_targetPlayerIndex)
@@ -8032,7 +8082,7 @@ namespace ALYSLC
 		}
 	}
 
-	void PlayerActionManager::UpdateBoundWeaponTimers()
+	void PlayerActionManager::UpdateBoundWeaponState()
 	{
 		// NOTE: 
 		// For companion players only. Bound weapons work fine for P1.
@@ -8048,9 +8098,35 @@ namespace ALYSLC
 
 		auto lhWeap = p->em->GetLHWeapon();
 		auto rhWeap = p->em->GetRHWeapon();
-		bool boundWeapLH = lhWeap && lhWeap->IsBound();
-		bool boundWeapRH = rhWeap && rhWeap->IsBound();
-		bool boundWeap2H = boundWeapRH && rhWeap->equipSlot == glob.bothHandsEquipSlot;
+		bool boundWeapLH = 
+		(
+			lhWeap && lhWeap->IsBound() && lhWeap->equipSlot != glob.bothHandsEquipSlot
+		);
+		bool boundWeapRH = 
+		(
+			rhWeap && rhWeap->IsBound() && rhWeap->equipSlot != glob.bothHandsEquipSlot
+		);
+		bool boundWeap2H = 
+		(
+			(rhWeap && rhWeap->IsBound() && rhWeap->equipSlot == glob.bothHandsEquipSlot) ||
+			(lhWeap && lhWeap->IsBound() && lhWeap->equipSlot == glob.bothHandsEquipSlot)
+		);
+		// Clear out all requests and re-equip cached forms if player has their weapons sheathed.
+		auto lhForm = coopActor->GetEquippedObject(true);
+		auto rhForm = coopActor->GetEquippedObject(false);
+		if ((!coopActor->IsWeaponDrawn()) && 
+			(
+				boundWeapReq2H ||
+				boundWeapReqLH ||
+				boundWeapReqRH ||
+				p->em->lastReqBoundWeapLH ||
+				p->em->lastReqBoundWeapRH
+			))
+		{
+			RemoveBoundWeapons();
+			return;
+		}
+
 		// NOTE:
 		// Bound weapon duration is equal to the bound weapon effect setting's base duration
 		// until I find a way to get the active effect to apply 
@@ -8085,13 +8161,12 @@ namespace ALYSLC
 				secsSinceBoundWeap2HReq = 0.0f;
 				p->em->lastReqBoundWeapLH =
 				p->em->lastReqBoundWeapRH = nullptr;
-				// Clear out hand slots.
 				// Maintain desired forms.
-				p->em->EquipFists(false);
 				p->em->ReEquipHandForms();
 			}
 		}
-		else if (boundWeapLH)
+		
+		if (boundWeapLH)
 		{
 			secsSinceBoundWeapLHReq = Util::GetElapsedSeconds(p->lastBoundWeaponLHReqTP);
 			if (secsSinceBoundWeapLHReq > secsBoundWeaponLHDuration)
@@ -8107,12 +8182,11 @@ namespace ALYSLC
 				boundWeapReqLH = false;
 				secsSinceBoundWeapLHReq = 0.0f;
 				p->em->lastReqBoundWeapLH = nullptr;
-				// Clear out hand slot.
-				Util::UnequipObject(coopActor.get(), lhWeap);
 				p->em->ReEquipHandForm(false);
 			}
 		}
-		else if (boundWeapRH)
+		
+		if (boundWeapRH)
 		{
 			secsSinceBoundWeapRHReq = Util::GetElapsedSeconds(p->lastBoundWeaponRHReqTP);
 			if (secsSinceBoundWeapRHReq > secsBoundWeaponRHDuration)
@@ -8128,8 +8202,6 @@ namespace ALYSLC
 				boundWeapReqRH = false;
 				secsSinceBoundWeapRHReq = 0.0f;
 				p->em->lastReqBoundWeapRH = nullptr;
-				// Clear out hand slot.
-				Util::UnequipObject(coopActor.get(), rhWeap);
 				p->em->ReEquipHandForm(true);
 			}
 		}

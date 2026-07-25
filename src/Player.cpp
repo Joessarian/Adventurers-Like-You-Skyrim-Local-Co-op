@@ -24,6 +24,7 @@ namespace ALYSLC
 		taskInterface(SKSE::GetTaskInterface())
 	{
 		// State bools.
+		extRefreshData =
 		hasBeenDismissed =
 		isActive =
 		isBeingRevived =
@@ -250,7 +251,7 @@ namespace ALYSLC
 				"saving not allowed: {}, lockpicking menu open: {}.",
 				coopActor->GetName(),
 				player1WaitForCam,
-				ShouldTeleportToP1(true),
+				shouldTeleportToP1,
 				ui->GameIsPaused(),
 				!ui->IsSavingAllowed(),
 				fullscreenMenuOpen
@@ -358,6 +359,8 @@ namespace ALYSLC
 						Util::HandleIsValid(coopActor->GetHandle())) 
 					{
 						DBG("Moving player {} to P1.", coopActor->GetName());
+						// Signal to re-equip after resuming managers.
+						em->reEquipOnTeleport = true;
 						// Temporary solution until I figure out what triggers 
 						// the 'character controller and 3D desync warp glitch',
 						// which occurs ~0.5 seconds after unpausing
@@ -461,7 +464,8 @@ namespace ALYSLC
 		// Re-equip hand forms if invalid earlier and not P1.
 		if ((!isPlayer1) && (selfWasInvalid || !selfValid))
 		{
-			em->ReEquipHandForms();
+			/*DBG("{}: Re-equip hand forms after character was invalid.", coopActor->GetName());
+			em->ReEquipHandForms();*/
 			selfWasInvalid = false;
 		}
 
@@ -473,6 +477,34 @@ namespace ALYSLC
 	{
 		// Update this manager and then update all submanagers.
 		Manager::Update();
+
+		if (extRefreshData)
+		{
+			em->PrePauseTask();
+			mm->PrePauseTask();
+			pam->PrePauseTask();
+			tm->PrePauseTask();
+			RefreshData();
+			em->PreStartTask();
+			mm->PreStartTask();
+			pam->PreStartTask();
+			tm->PreStartTask();
+			extRefreshData = false;
+
+			// Notify the player afterward, since refreshing the targeting manager
+			// clears out the crosshair text.
+			tm->SetCrosshairMessageRequest
+			(
+				CrosshairMessageType::kGeneralNotification, 
+				fmt::format("P{}: Refreshed player managers", playerID + 1),
+				{ 
+					CrosshairMessageType::kNone, 
+					CrosshairMessageType::kStealthState, 
+					CrosshairMessageType::kTargetingState 
+				},
+				Settings::fSecsBetweenDiffCrosshairMsgs
+			);
+		}
 		
 		// NOTE: 
 		// Update funcs must be run in this order.
@@ -518,6 +550,7 @@ namespace ALYSLC
 			// Player-specific data.
 			isPlayer1 = coopActor->IsPlayerRef();
 			currentMountHandle = targetedMountHandle = RE::ActorHandle();
+			extRefreshData = 
 			hasBeenDismissed =
 			isBeingRevived =
 			isDowned =
@@ -530,7 +563,6 @@ namespace ALYSLC
 			isTransforming = false;
 			selfValid = true;
 			selfWasInvalid = false;
-			shouldTeleportToP1 = false;
 			isRevived = true;
 			// Time points.
 			expendSprintStaminaTP = SteadyClock::now();
@@ -2927,50 +2959,52 @@ namespace ALYSLC
 		// Debug option to signal all player managers to await refresh and then resume afterward, 
 		// which will refresh their data.
 
-		RequestStateChange(ManagerState::kAwaitingRefresh);
-		SteadyClock::time_point waitStartTP = SteadyClock::now();
-		float secsWaited = 0.0f;
-		// Wait until the manager's state changes to awaiting refresh.
-		// 1 second failsafe.
-		while (secsWaited < 1.0f && currentState != ManagerState::kAwaitingRefresh)
+		DBG("{}: START: Current state: {}.", coopActor->GetName(), currentState);
+		if (currentState != ManagerState::kAwaitingRefresh)
 		{
-			// Wait one frame at a time.
-			std::this_thread::sleep_for
-			(
-				std::chrono::milliseconds(static_cast<long long>(*g_deltaTimeRealTime * 1000.0f))
-			);
-			secsWaited = Util::GetElapsedSeconds(waitStartTP);
+			RequestStateChange(ManagerState::kAwaitingRefresh);
+			SteadyClock::time_point waitStartTP = SteadyClock::now();
+			float secsWaited = 0.0f;
+			// Wait until the manager's state changes to awaiting refresh.
+			// 1 second failsafe.
+			while (secsWaited < 1.0f && currentState != ManagerState::kAwaitingRefresh)
+			{
+				// Wait one frame at a time.
+				std::this_thread::sleep_for
+				(
+					std::chrono::milliseconds
+					(
+						static_cast<long long>(*g_deltaTimeRealTime * 1000.0f)
+					)
+				);
+				secsWaited = Util::GetElapsedSeconds(waitStartTP);
+			}
 		}
-
-		// Change back to running.
-		RequestStateChange(ManagerState::kRunning);
-
-		secsWaited = 0.0f;
-		// Wait until the manager's state changes to running.
-		// 3 second failsafe.
-		while (secsWaited < 3.0f && currentState != ManagerState::kRunning)
+		
+		DBG("{}: MID: Current state: {}.", coopActor->GetName(), currentState);
+		if (currentState != ManagerState::kRunning)
 		{
-			// Wait one frame at a time.
-			std::this_thread::sleep_for
-			(
-				std::chrono::milliseconds(static_cast<long long>(*g_deltaTimeRealTime * 1000.0f))
-			);
-			secsWaited = Util::GetElapsedSeconds(waitStartTP);
+			// Change back to running.
+			RequestStateChange(ManagerState::kRunning);
+			SteadyClock::time_point waitStartTP = SteadyClock::now();
+			float secsWaited = 0.0f;
+			// Wait until the manager's state changes to running.
+			// 3 second failsafe.
+			while (secsWaited < 3.0f && currentState != ManagerState::kRunning)
+			{
+				// Wait one frame at a time.
+				std::this_thread::sleep_for
+				(
+					std::chrono::milliseconds
+					(
+						static_cast<long long>(*g_deltaTimeRealTime * 1000.0f)
+					)
+				);
+				secsWaited = Util::GetElapsedSeconds(waitStartTP);
+			}
 		}
-
-		// Notify the player afterward, since refreshing the targeting manager
-		// clears out the crosshair text.
-		tm->SetCrosshairMessageRequest
-		(
-			CrosshairMessageType::kGeneralNotification, 
-			fmt::format("P{}: Refreshed player managers", playerID + 1),
-			{ 
-				CrosshairMessageType::kNone, 
-				CrosshairMessageType::kStealthState, 
-				CrosshairMessageType::kTargetingState 
-			},
-			Settings::fSecsBetweenDiffCrosshairMsgs
-		);
+		
+		DBG("{}: END: Current state: {}.", coopActor->GetName(), currentState);
 	}
 
 	void CoopPlayer::ResetCompanionPlayerStateTask

@@ -7480,8 +7480,14 @@ namespace ALYSLC
 						continue;
 					}
 					
-					bool skipMove = false;
-					if (a_skipEquippedItems)
+					// Do NOT move bound weapons. Seems to cause a freeze sometimes, 
+					// and no real reason to move bound weapons anyways.
+					bool skipMove = 
+					(
+						a_object->As<RE::TESObjectWEAP>() && 
+						a_object->As<RE::TESObjectWEAP>()->IsBound()
+					);
+					if (!skipMove && a_skipEquippedItems)
 					{
 						if (fromCompanionPlayerInvChest)
 						{

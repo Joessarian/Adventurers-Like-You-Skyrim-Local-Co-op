@@ -50,6 +50,7 @@ namespace ALYSLC
 				lastChosenHotkeyedForm = nullptr;
 				lastCycledIdleIndexPair = currentCycledIdleIndexPair;
 				lastCycledForm = nullptr;
+				reEquipOnTeleport = false;
 			}
 			
 			RefreshData();
@@ -83,6 +84,15 @@ namespace ALYSLC
 		if (p->isPlayer1)
 		{
 			return;
+		}
+
+		// Must re-equip hand forms after teleporting to P1 because the game typically unequips 
+		// whatever items are in the player's hands.
+		if (reEquipOnTeleport)
+		{
+			DBG("{}: Re-equip hand forms after teleporting.", coopActor->GetName());
+			ReEquipHandForms();
+			reEquipOnTeleport = false;
 		}
 
 		auto ui = RE::UI::GetSingleton(); 
@@ -121,7 +131,8 @@ namespace ALYSLC
 			// For companion players, move everything that isn't equipped 
 			// and already present in the inventory chest to the inventory chest
 			// if resuming after awaiting refresh or if uninitialized.
-			if (currentState == ManagerState::kAwaitingRefresh ||
+			if (p->extRefreshData ||
+				currentState == ManagerState::kAwaitingRefresh ||
 				currentState == ManagerState::kUninitialized) 
 			{
 				// Do not remove the item when unequipping because this leads to a failed transfer.
@@ -133,6 +144,16 @@ namespace ALYSLC
 				{
 					if (chestInventory.find(boundObj) == chestInventory.end())
 					{
+						DBG
+						(
+							"Removing x{} {} from {} to the inventory chest.", 
+							entry.first,
+							boundObj->GetName(),
+							coopActor->GetName()
+						);
+						// Need to find out why this function causes an inconsistent freeze 
+						// if refreshing managers rapidly nd spamming attack/sheathe
+						// while bound weapons are equipped.
 						Util::MoveAllOfItem
 						(
 							coopActor.get(), 
@@ -142,6 +163,15 @@ namespace ALYSLC
 							entry.second->extraLists, 
 							entry.first
 						);
+
+						/*coopActor->RemoveItem
+						(
+							boundObj, 
+							entry.first,
+							RE::ITEM_REMOVE_REASON::kRemove, 
+							nullptr,
+							inventoryChest.get()
+						);*/
 					}
 					else
 					{
@@ -169,8 +199,15 @@ namespace ALYSLC
 
 		// Make sure the player's inventory is ready for co-op.
 		FixInventory();
-		// Update our cached equip state.
-		RefreshEquipState(RefreshSlots::kAll);
+		// Update our cached equip state for P1 if just starting co-op.
+		if ((p->isPlayer1) && 
+			(
+				p->extRefreshData || currentState == ManagerState::kAwaitingRefresh
+			))
+		{
+			RefreshEquipState(RefreshSlots::kAll);
+		}
+
 		// "Infinite" carryweight for coop players.
 		// NOTE: 
 		// Adjusts the temporary modifier, so the previous temp buffs/debuffs are wiped.
@@ -211,7 +248,7 @@ namespace ALYSLC
 			else if (p->isPlayer1)
 			{
 				// For P1, only re-equip hand forms, as the equip state for them may be glitched.
-				ReEquipHandForms();
+				// ReEquipHandForms();
 			}
 			else
 			{
@@ -222,15 +259,6 @@ namespace ALYSLC
 				p->pam->ReadyWeapon(true);
 			}
 			
-			coopActor->UpdateHairColor();
-			coopActor->UpdateSkinColor();
-			if (auto actorBase = coopActor->GetActorBase(); actorBase)
-			{
-				actorBase->UpdateNeck(coopActor->GetFaceNodeSkinned());
-			}
-
-			coopActor->Update3DModel();
-
 			// Fixes skin glow/tone mismatches.
 			// IMPORTANT:
 			// Resetting while on horseback causes horse warp glitch upon resumption.
@@ -243,6 +271,14 @@ namespace ALYSLC
 						[this]()
 						{
 							DBG("{}: Reset3D.", coopActor->GetName());
+							coopActor->UpdateHairColor();
+							coopActor->UpdateSkinColor();
+							if (auto actorBase = coopActor->GetActorBase(); actorBase)
+							{
+								actorBase->UpdateNeck(coopActor->GetFaceNodeSkinned());
+							}
+
+							coopActor->Update3DModel();
 							coopActor->DoReset3D(true);
 						}
 					);
@@ -6429,7 +6465,6 @@ namespace ALYSLC
 	{
 		// Re-equip desired forms in this player's hands.
 
-		DBG("{}: {}.", coopActor->GetName(), a_rhSlot ? "RH" : "LH");
 
 		// Interrupts Vampire Lord levitation, 
 		// and Werewolves have no equipped items, so return here.
@@ -6442,6 +6477,13 @@ namespace ALYSLC
 		[
 			a_rhSlot ? !EquipIndex::kRightHand : !EquipIndex::kLeftHand
 		];
+		DBG
+		(
+			"{}: {}: {}.", 
+			coopActor->GetName(), 
+			a_rhSlot ? "RH" : "LH",
+			handForm ? handForm->GetName() : "NONE"
+		);
 		if (!handForm)
 		{
 			// Still unequip to clear out hand slot, since the desired form is none.
@@ -6646,7 +6688,8 @@ namespace ALYSLC
 			);
 		}
 
-		DBG
+		// CHANGE TO DEBUG
+		INF
 		(
 			"{}. Forms to re-equip: {}, {} ({:p}, {:p})", 
 			coopActor->GetName(),
@@ -8123,7 +8166,7 @@ namespace ALYSLC
 		// Update initial equip state after refreshing data and before the equip manager starts.
 		// Set and equip all the serialized desired forms.
 
-		DBG("{}.", coopActor->GetName());
+		INF("{}.", coopActor->GetName());
 
 		auto& savedEquippedForms = 
 		(
@@ -9023,7 +9066,10 @@ namespace ALYSLC
 
 		DBG
 		(
-			"{}: slot: 0x{:X}.", coopActor->GetName(), a_slot ? a_slot->formID : 0xDEAD
+			"{}: slot: {} (0x{:X}).", 
+			coopActor->GetName(), 
+			a_slot ? Util::GetEditorID(a_slot) : "NONE",
+			a_slot ? a_slot->formID : 0xDEAD
 		);
 
 		if (p->isPlayer1) 

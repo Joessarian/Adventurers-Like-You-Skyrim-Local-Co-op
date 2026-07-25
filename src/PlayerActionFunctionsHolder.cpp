@@ -809,6 +809,113 @@ namespace ALYSLC
 
 		bool Jump(const std::shared_ptr<CoopPlayer>& a_p)
 		{
+			/*
+			// Can only start jumping if not ragdolled and not getting up or staggered.
+			if (a_p->coopActor->IsInRagdollState() || 
+				a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal)
+			{
+				return false;
+			}
+
+			// NOTE: 
+			// Ignore instances where P1 has occupied furniture
+			// but is not locked into a furniture-use animation 
+			// or the furniture does not have an associated idle form
+			// (such as when near an interactable EVGAT marker).
+			bool usingFurniture = 
+			(
+				(!a_p->isPlayer1 && a_p->mm->interactionPackageRunning) ||
+				(
+					(
+						!a_p->coopActor->IsOnMount() &&
+						a_p->coopActor->GetOccupiedFurniture()
+					) && 
+					(
+						(a_p->mm->isAnimDriven) ||
+						(
+							a_p->coopActor->GetMiddleHighProcess() && 
+							a_p->coopActor->GetMiddleHighProcess()->furnitureIdle
+						)
+					)
+				)
+			);
+			// Can jump if using furniture (stops furniture use animations).
+			if (usingFurniture)
+			{
+				return true;
+			}
+
+			auto charController = a_p->mm->movementActorPtr->GetCharController(); 
+			if (!charController)
+			{
+				return false;
+			}
+
+			// Cannot start jumping if not on the ground.
+			// NOTE: 
+			// Since jumping will frequently fail to trigger when it visually should,
+			// more stringent conditions commented out for now.
+			bool stateAllowsJump = 
+			(
+				charController->context.currentState == RE::hkpCharacterStateType::kOnGround
+			);
+			if (!stateAllowsJump) 
+			{
+				return false;
+			}
+
+			// Check slope angle for the surface the player would like to jump off.
+			// Must be less than the defined max jump surface slope angle.
+			const float& zComp = charController->surfaceInfo.surfaceNormal.quad.m128_f32[2];
+			// Default to allow the jump.
+			float supportAng = 0.0f;
+			// Vector along the surface is at 90 degrees to the normal, 
+			// so subtract the normal's pitch from PI / 2.
+			if (charController->surfaceInfo.surfaceNormal.Length3() != 0.0f) 
+			{
+				supportAng = 
+				(
+					PI / 2.0f - 
+					fabsf
+					(
+						asinf(charController->surfaceInfo.surfaceNormal.quad.m128_f32[2])
+					)
+				);
+			}
+			else 
+			{
+				// Raycast hit result as a fallback option if the support surface normal data 
+				// is unavailable (0).
+				glm::vec4 start =
+				{
+					a_p->coopActor->data.location.x,
+					a_p->coopActor->data.location.y,
+					a_p->coopActor->data.location.z + a_p->coopActor->GetHeight(),
+					0.0f
+				};
+				glm::vec4 end = 
+				(
+					start - glm::vec4(0.0f, 0.0f, 1.25f * a_p->coopActor->GetHeight(), 0.0f)
+				);
+				auto result = Raycast::hkpCastRay
+				(
+					start,
+					end, 
+					std::vector<RE::TESObjectREFR*>({ a_p->coopActor.get() }),
+					std::vector<RE::FormType>
+					(
+						{ RE::FormType::Activator, RE::FormType::TalkingActivator }
+					)
+				);
+				if (result.hit)
+				{
+					supportAng = PI / 2.0f - fabsf(asinf(result.rayNormal.z));
+				}	
+			}
+
+			return supportAng < Settings::fJumpingMaxSlopeAngle;
+			*/
+
 			// Can only start getting up/jumping if not getting up.
 			if (a_p->coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kGetUp)
 			{
@@ -856,18 +963,18 @@ namespace ALYSLC
 			bool stateAllowsJump = 
 			(
 				charController->context.currentState == RE::hkpCharacterStateType::kOnGround &&
-				charController->flags.none(RE::CHARACTER_FLAGS::kTryStep) &&
+				//charController->flags.none(RE::CHARACTER_FLAGS::kTryStep) &&
 				charController->flags.all
 				(
 					RE::CHARACTER_FLAGS::kCanJump, RE::CHARACTER_FLAGS::kSupport
-				) /*&&
-				charController->surfaceInfo.supportedState.all
-				(
-					RE::hkpSurfaceInfo::SupportedState::kSupported
-				)*/
+				)
 			);
 			if (!stateAllowsJump) 
 			{
+				DBG("{}: nope: {}, 0{:b}.",
+					a_p->coopActor->GetName(), 
+					charController->context.currentState,
+					*charController->flags);
 				return false;
 			}
 
@@ -2699,29 +2806,42 @@ namespace ALYSLC
 			return canPerform;
 		}
 
-		void EquipBoundWeapon
+		void EquipBoundForm
 		(
 			const std::shared_ptr<CoopPlayer>& a_p,
-			RE::SpellItem* a_boundWeapSpell,
-			RE::TESObjectWEAP* a_boundWeap,
+			RE::SpellItem* a_boundFormSpell,
+			RE::TESForm* a_boundForm,
 			RE::BGSEquipSlot* a_slot, 
 			RE::MagicCaster* a_caster
 		)
 		{
-			// Equip the given bound weapon to the given slot,
-			// either directly or by way of the provided bound weapon spell.
-			// Set bound weapon timer and request data.
+			// Equip the given bound form to the given slot,
+			// either directly or by way of the provided bound form spell.
+			// Set bound form timer and request data.
 
 			DBG
 			(
-				"{}: Equip {} to slot 0x{:X}.", 
+				"{}: Equip {} to slot {} (0x{:X}).", 
 				a_p->coopActor->GetName(),
-				a_boundWeap ? a_boundWeap->GetName() : "NONE",
+				a_boundForm ? a_boundForm->GetName() : "NONE",
+				Util::GetEditorID(a_slot),
 				a_slot->formID
 			);
 
-			if (!a_boundWeapSpell || !a_boundWeap || !a_slot)
+			if (!a_boundFormSpell || !a_boundForm || !a_slot)
 			{
+				return;
+			}
+
+			auto boundEquipType = a_boundForm->As<RE::BGSEquipType>();
+			if (!boundEquipType)
+			{
+				DBG
+				(
+					"{}: No equip type for {}.", 
+					a_p->coopActor->GetName(),
+					a_boundForm ? a_boundForm->GetName() : "NONE"
+				);
 				return;
 			}
 
@@ -2736,7 +2856,7 @@ namespace ALYSLC
 			(
 				a_p->coopActor->GetName(),
 				__FUNCTION__,
-				[a_p, a_boundWeap, a_boundWeapSpell, a_slot, a_caster]()
+				[a_p, a_boundForm, a_boundFormSpell, a_slot, a_caster, boundEquipType]()
 				{
 					const auto scriptFactory = 
 					(
@@ -2786,7 +2906,7 @@ namespace ALYSLC
 							[
 								a_p, 
 								a_slot, 
-								a_boundWeap,
+								a_boundForm,
 								lhForm, 
 								rhForm,
 								lhExtraDataList,
@@ -2877,7 +2997,7 @@ namespace ALYSLC
 									a_p->pam->boundWeapReqLH =
 									a_p->pam->boundWeapReqRH = false;
 									a_p->em->lastReqBoundWeapLH = 
-									a_p->em->lastReqBoundWeapRH = a_boundWeap;
+									a_p->em->lastReqBoundWeapRH = a_boundForm;
 									a_p->lastBoundWeapon2HReqTP = SteadyClock::now();
 								}
 								else if (a_slot == glob.leftHandEquipSlot)
@@ -2887,7 +3007,7 @@ namespace ALYSLC
 										"{}: LH bound weap req.", a_p->coopActor->GetName()
 									);
 									a_p->pam->boundWeapReqLH = true;
-									a_p->em->lastReqBoundWeapLH = a_boundWeap;
+									a_p->em->lastReqBoundWeapLH = a_boundForm;
 									a_p->lastBoundWeaponLHReqTP = SteadyClock::now();
 								}
 								else
@@ -2897,7 +3017,7 @@ namespace ALYSLC
 										"{}: RH bound weap req.", a_p->coopActor->GetName()
 									);
 									a_p->pam->boundWeapReqRH = true;
-									a_p->em->lastReqBoundWeapRH = a_boundWeap;
+									a_p->em->lastReqBoundWeapRH = a_boundForm;
 									a_p->lastBoundWeaponRHReqTP = SteadyClock::now();
 								}
 
@@ -2916,18 +3036,22 @@ namespace ALYSLC
 						// Only applies to 1H weapons.
 						RE::BGSEquipSlot* originalEquipSlot = nullptr;
 						std::string commandStr;
-						bool isBow = a_boundWeap->IsBow();
+						bool isBow = 
+						(
+							a_boundForm->As<RE::TESObjectWEAP>() &&
+							a_boundForm->As<RE::TESObjectWEAP>()->IsBow()
+						);
 						if (isBow)
 						{
 							// Equip bound bow directly with equip console command.
 							// Equipping through casting the bound bow's spell does not work.
 							Util::AddSyncedTask
 							(
-								[&commandStr, &script, a_boundWeap, a_p]() 
+								[&commandStr, &script, a_boundForm, a_p]() 
 								{
 									commandStr = fmt::format
 									(
-										"equipitem {:X}", a_boundWeap->formID
+										"equipitem {:X}", a_boundForm->formID
 									);
 									script->SetCommand(commandStr.c_str());
 									script->CompileAndRun(a_p->coopActor.get());
@@ -2946,8 +3070,8 @@ namespace ALYSLC
 							(
 								[
 									a_p, 
-									a_boundWeapSpell,
-									a_boundWeap,
+									a_boundFormSpell,
+									boundEquipType,
 									a_slot, 
 									a_caster,
 									&originalEquipSlot
@@ -2955,15 +3079,15 @@ namespace ALYSLC
 								{
 									// If the requested slot differs from the current one,
 									// save the current equip slot to restore later.
-									if (a_slot != a_boundWeap->GetEquipSlot())
+									if (a_slot != boundEquipType->GetEquipSlot())
 									{
-										originalEquipSlot = a_boundWeap->GetEquipSlot();
-										a_boundWeap->SetEquipSlot(a_slot);
+										originalEquipSlot = boundEquipType->GetEquipSlot();
+										boundEquipType->SetEquipSlot(a_slot);
 									}
 
 									a_caster->CastSpellImmediate
 									(
-										a_boundWeapSpell, 
+										a_boundFormSpell, 
 										false,
 										a_p->coopActor.get(), 
 										1.0f, 
@@ -3063,8 +3187,8 @@ namespace ALYSLC
 						(
 							[
 								a_p, 
-								a_boundWeapSpell, 
-								a_boundWeap,
+								a_boundFormSpell, 
+								boundEquipType,
 								lhForm, 
 								rhForm,
 								lhExtraDataList,
@@ -3076,15 +3200,15 @@ namespace ALYSLC
 							{
 								// Set equip slot to either hand, if a one-handed weapon,
 								// or to both hands, if a two-handed weapon.
-								if (a_boundWeap && originalEquipSlot)
+								if (boundEquipType && originalEquipSlot)
 								{
 									if (originalEquipSlot == glob.bothHandsEquipSlot)
 									{
-										a_boundWeap->SetEquipSlot(glob.bothHandsEquipSlot);
+										boundEquipType->SetEquipSlot(glob.bothHandsEquipSlot);
 									}
 									else
 									{
-										a_boundWeap->SetEquipSlot(glob.eitherHandEquipSlot);
+										boundEquipType->SetEquipSlot(glob.eitherHandEquipSlot);
 									}
 								}
 
@@ -3092,21 +3216,21 @@ namespace ALYSLC
 								a_p->pam->ModifyAV
 								(
 									RE::ActorValue::kMagicka,
-									-a_boundWeapSpell->CalculateMagickaCost(a_p->coopActor.get()) *
+									-a_boundFormSpell->CalculateMagickaCost(a_p->coopActor.get()) *
 									Settings::vfMagickaCostMult[a_p->playerID]
 								);
 
 								// Grant XP.
 								const float baseCost = 
 								(
-									a_boundWeapSpell->CalculateMagickaCost(a_p->coopActor.get())
+									a_boundFormSpell->CalculateMagickaCost(a_p->coopActor.get())
 								);
 								if (baseCost > 0.0f)
 								{
 									GlobalCoopData::AddSkillXP
 									(
 										a_p->playerID,
-										a_boundWeapSpell->avEffectSetting->data.associatedSkill, 
+										a_boundFormSpell->avEffectSetting->data.associatedSkill, 
 										baseCost
 									);
 								}
@@ -4701,12 +4825,12 @@ namespace ALYSLC
 			return hotkeySlot;
 		}
 
-		void HandleBoundWeaponEquip
+		void HandleBoundFormEquip
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action
 		)
 		{
-			// Casting bound weapons with a co-op companion is completely bugged 
+			// Casting bound forms with a co-op companion is completely bugged 
 			// and needs all the special handling it can get.
 			// 
 			// Additional info:
@@ -4778,12 +4902,18 @@ namespace ALYSLC
 					return;
 				}
 
-				auto assocWeap = Util::GetAssociatedBoundWeap(a_spell); 
-				if (!assocWeap)
+				auto assocForm = Util::GetAssociatedBoundForm(a_spell); 
+				if (!assocForm)
 				{
 					return;
 				}
-						
+					
+				auto assocEquipType = assocForm->As<RE::BGSEquipType>();
+				if (!assocEquipType)
+				{
+					return;
+				}
+
 				// Player must have sufficient magicka.
 				float cost = 
 				(
@@ -4814,7 +4944,7 @@ namespace ALYSLC
 				// Otherwise, default to 120 seconds.
 				RE::BGSEquipSlot* slot = nullptr;
 				bool hasEffect = !a_spell->effects.empty();
-				if (assocWeap->equipSlot == glob.bothHandsEquipSlot)
+				if (assocEquipType->equipSlot == glob.bothHandsEquipSlot)
 				{
 					if (hasEffect)
 					{
@@ -4868,7 +4998,7 @@ namespace ALYSLC
 				);
 				if (slot && caster)
 				{
-					HelperFuncs::EquipBoundWeapon(a_p, a_spell, assocWeap, slot, caster);
+					HelperFuncs::EquipBoundForm(a_p, a_spell, assocForm, slot, caster);
 				}
 			};
 
@@ -7335,9 +7465,9 @@ namespace ALYSLC
 				// and evaluate to start LH casting.
 				// Has associated bound weapon.
 				auto lhSpell = a_p->em->GetLHSpell();
-				if (auto assocWeap = Util::GetAssociatedBoundWeap(lhSpell); assocWeap)
+				if (auto assocForm = Util::GetAssociatedBoundForm(lhSpell); assocForm)
 				{
-					HelperFuncs::HandleBoundWeaponEquip(a_p, InputAction::kCastLH);
+					HelperFuncs::HandleBoundFormEquip(a_p, InputAction::kCastLH);
 				}
 				else
 				{
@@ -7489,11 +7619,11 @@ namespace ALYSLC
 				// Setup RH casting variables, 
 				// add ranged package to the top of the player's package stack, 
 				// and evaluate to start RH casting.
-				// Has associated bound weapon.
+				// Has associated bound form.
 				auto rhSpell = a_p->em->GetRHSpell();
-				if (auto assocWeap = Util::GetAssociatedBoundWeap(rhSpell); assocWeap)
+				if (auto assocForm = Util::GetAssociatedBoundForm(rhSpell); assocForm)
 				{
-					HelperFuncs::HandleBoundWeaponEquip(a_p, InputAction::kCastRH);
+					HelperFuncs::HandleBoundFormEquip(a_p, InputAction::kCastRH);
 				}
 				else
 				{
@@ -8943,14 +9073,14 @@ namespace ALYSLC
 				return;
 			}
 
-			// Quick slot bound weapon equip.
+			// Quick slot bound form equip.
 			// NOTE: 
-			// For P1, not all bound weapons can be equipped with a quick slot cast.
+			// For P1, not all bound form can be equipped with a quick slot cast.
 			// If I recall correctly, the bound bow spell fails.
-			auto assocWeap = Util::GetAssociatedBoundWeap(quickSlotSpell); 
-			if (assocWeap && !a_p->isPlayer1)
+			auto assocForm = Util::GetAssociatedBoundForm(quickSlotSpell); 
+			if (assocForm && !a_p->isPlayer1)
 			{
-				HelperFuncs::HandleBoundWeaponEquip(a_p, InputAction::kQuickSlotCast);
+				HelperFuncs::HandleBoundFormEquip(a_p, InputAction::kQuickSlotCast);
 			}
 			else
 			{
@@ -9200,16 +9330,16 @@ namespace ALYSLC
 				{
 					auto lhSpell = em->GetLHSpell();
 					auto rhSpell = em->GetRHSpell();
-					auto assocWeapLH = Util::GetAssociatedBoundWeap(lhSpell);
-					auto assocWeapRH = Util::GetAssociatedBoundWeap(rhSpell);
+					auto assocFormLH = Util::GetAssociatedBoundForm(lhSpell);
+					auto assocFormRH = Util::GetAssociatedBoundForm(rhSpell);
 					bool shouldCastWithP1 = false;
 					bool justStarted = HelperFuncs::ActionJustStarted
 					(
 						a_p, InputAction::kSpecialAction
 					);
-					if (!assocWeapLH && !assocWeapRH) 
+					if (!assocFormLH && !assocFormRH) 
 					{
-						// No bound weapons to equip, so cast with both hands.
+						// No bound forms to equip, so cast with both hands.
 						HelperFuncs::SetUpCastingPackage(a_p, true, true, justStarted);
 						shouldCastWithP1 = Util::ShouldCastWithP1(lhSpell); 
 						if (shouldCastWithP1)
@@ -9229,15 +9359,15 @@ namespace ALYSLC
 							);
 						}
 					}
-					else if (assocWeapLH && assocWeapRH)
+					else if (assocFormLH && assocFormRH)
 					{
 						// Bound weaps in both hands.
-						HelperFuncs::HandleBoundWeaponEquip(a_p, InputAction::kSpecialAction);
+						HelperFuncs::HandleBoundFormEquip(a_p, InputAction::kSpecialAction);
 					}
-					else if (assocWeapLH)
+					else if (assocFormLH)
 					{
 						// Bound weap in LH, regular spell cast in RH.
-						HelperFuncs::HandleBoundWeaponEquip(a_p, InputAction::kSpecialAction);
+						HelperFuncs::HandleBoundFormEquip(a_p, InputAction::kSpecialAction);
 						HelperFuncs::SetUpCastingPackage(a_p, false, true, justStarted);
 
 						shouldCastWithP1 = Util::ShouldCastWithP1(rhSpell);
@@ -9252,7 +9382,7 @@ namespace ALYSLC
 					else
 					{
 						// Bound weap in RH, regular spell cast in LH.
-						HelperFuncs::HandleBoundWeaponEquip(a_p, InputAction::kSpecialAction);
+						HelperFuncs::HandleBoundFormEquip(a_p, InputAction::kSpecialAction);
 						HelperFuncs::SetUpCastingPackage(a_p, true, false, justStarted);
 
 						shouldCastWithP1 = Util::ShouldCastWithP1(lhSpell);
@@ -10565,7 +10695,9 @@ namespace ALYSLC
 				GlobalCoopData::StopMenuInputManager();
 			}
 
-			a_p->taskRunner->AddTask
+			a_p->extRefreshData = true;
+
+			/*a_p->taskRunner->AddTask
 			(
 				a_p->coopActor->GetName(),
 				__FUNCTION__,
@@ -10573,7 +10705,7 @@ namespace ALYSLC
 				{
 					a_p->RefreshPlayerManagersTask();
 				}
-			);
+			);*/
 		}
 
 		void DebugResetPlayer(const std::shared_ptr<CoopPlayer>& a_p)
@@ -14334,7 +14466,7 @@ namespace ALYSLC
 			}
 
 			// If not a bound weapon spell, stop casting.
-			if (auto assocWeap = Util::GetAssociatedBoundWeap(quickSlotSpell); !assocWeap)
+			if (auto assocForm = Util::GetAssociatedBoundForm(quickSlotSpell); !assocForm)
 			{
 				a_p->pam->CastSpellWithMagicCaster
 				(

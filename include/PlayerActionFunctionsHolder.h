@@ -262,12 +262,12 @@ namespace ALYSLC
 			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action
 		);
 
-		// Equip bound weapon with task.
-		void EquipBoundWeapon
+		// Equip bound form with task.
+		void EquipBoundForm
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, 
 			RE::SpellItem* a_boundWeapSpell, 
-			RE::TESObjectWEAP* a_boundWeap,
+			RE::TESForm* a_boundForm,
 			RE::BGSEquipSlot* a_slot, 
 			RE::MagicCaster* a_caster
 		);
@@ -310,9 +310,9 @@ namespace ALYSLC
 		// Get the currently selected hotkey slot based on the player's RS orientation.
 		int32_t GetSelectedHotkeySlot(const std::shared_ptr<CoopPlayer>& a_p);
 
-		// Co-op companions only. Equip bound weapon into the appropriate hand 
+		// Co-op companions only. Equip bound form into the appropriate hand 
 		// based on the player action performed.
-		void HandleBoundWeaponEquip
+		void HandleBoundFormEquip
 		(
 			const std::shared_ptr<CoopPlayer>& a_p,
 			const InputAction& a_action

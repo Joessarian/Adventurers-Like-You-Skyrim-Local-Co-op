@@ -387,7 +387,8 @@ namespace ALYSLC
 				return _EquipObject(a_this, a_actor, a_object, a_objectEquipParams);
 			}
 			
-			DBG
+			// CHANGE TO DEBUG
+			INF
 			(
 				"{}: {} (0x{:X}, type: 0x{:X}, exList: {:p}). Force equip: {}, Unks: {}, {}.", 
 				a_actor->GetName(),
@@ -510,8 +511,14 @@ namespace ALYSLC
 						(
 							(
 								(
-									p->pam->boundWeapReqLH &&
-									equipSlotToUse == glob.leftHandEquipSlot
+									(p->pam->boundWeapReqLH) &&
+									(
+										(equipSlotToUse == glob.leftHandEquipSlot) ||
+										(
+											equipSlotToUse == glob.eitherHandEquipSlot &&
+											p->em->HandIsEmpty(false)
+										)
+									)
 								) &&
 								(
 									(a_object == p->em->lastReqBoundWeapLH) ||
@@ -528,8 +535,14 @@ namespace ALYSLC
 							) ||
 							(
 								(
-									p->pam->boundWeapReqRH &&
-									equipSlotToUse == glob.rightHandEquipSlot
+									(p->pam->boundWeapReqRH) &&
+									(
+										(equipSlotToUse == glob.rightHandEquipSlot) ||
+										(
+											equipSlotToUse == glob.eitherHandEquipSlot &&
+											p->em->HandIsEmpty(true)
+										)
+									)
 								) &&
 								(
 									(a_object == p->em->lastReqBoundWeapRH) ||
@@ -546,8 +559,14 @@ namespace ALYSLC
 							) ||
 							(
 								(
-									p->pam->boundWeapReq2H &&
-									equipSlotToUse == glob.bothHandsEquipSlot
+									(p->pam->boundWeapReq2H) &&
+									(
+										(equipSlotToUse == glob.bothHandsEquipSlot) ||
+										(
+											equipSlotToUse == glob.eitherHandEquipSlot &&
+											p->em->IsUnarmed()
+										)
+									)
 								) &&
 								(
 									(a_object == p->em->lastReqBoundWeapRH) ||
@@ -565,9 +584,9 @@ namespace ALYSLC
 						);
 
 						// CHANGE TO DEBUG
-						DBG
+						INF
 						(
-							"{}: trying to equip bound weapon {} (0x{:X}) with equip slot {}. "
+							"{}: trying to equip bound weapon {} (0x{:X}) with slot {} (0x{:X}). "
 							"{}. Reqs: {}, {}, {}. Equipped objects: {}, {}, "
 							"Already equipped: {}. Ammo: {}, {}. "
 							"Last requested bound weapons: {} (0x{:X}), {} (0x{:X}), "
@@ -576,6 +595,7 @@ namespace ALYSLC
 							a_object->GetName(),
 							a_object->formID,
 							equipSlotToUse ? Util::GetEditorID(equipSlotToUse) : "NONE",
+							equipSlotToUse ? equipSlotToUse->formID : 0xDEAD,
 							reqToEquip ? "ALLOWING" : "IGNORING",
 							p->pam->boundWeapReq2H,
 							p->pam->boundWeapReqLH,
@@ -694,7 +714,8 @@ namespace ALYSLC
 			
 			// Ignore if P1, transform(ing/ed), or skipping equip processing.
 			const auto& p = glob.coopPlayers[playerIndex];
-			DBG
+			// CHANGE TO DEBUG
+			INF
 			(
 				"{}: {} (0x{:X}, type: 0x{:X}, exList: {:p}). Force equip: {}, Unks: {}, {}.", 
 				a_actor->GetName(), 
@@ -742,15 +763,18 @@ namespace ALYSLC
 				(a_object->IsWeapon() && a_object->As<RE::TESObjectWEAP>()->IsBound()) ||
 				(a_object->IsAmmo() && a_object->HasKeywordByEditorID("WeapTypeBoundArrow"))
 			);
-			if (isBound && p->coopActor->IsWeaponDrawn())
+			if (isBound) //&& p->coopActor->IsWeaponDrawn())
 			{
-				DBG
+				// CHANGE TO DEBUG
+				INF
 				(
-					"{}: trying to unequip bound weapon {}. Equip slot: {}.", 
+					"{}: trying to unequip bound weapon {}. Equip slot: {}. Drawn: {}", 
 					a_actor->GetName(),
 					a_object->GetName(), 
-					Util::GetEditorID(a_objectEquipParams.equipSlot)
+					Util::GetEditorID(a_objectEquipParams.equipSlot),
+					p->coopActor->IsWeaponDrawn()
 				);
+
 				// TODO: 
 				// Prevent the game from unequipping bound weapons if their duration 
 				// has not expired yet and the player has drawn their weapons.
@@ -765,7 +789,8 @@ namespace ALYSLC
 					if ((remainingLifetime > 0.0f) && 
 						(a_object == p->em->lastReqBoundWeapRH || a_object->IsAmmo()))
 					{
-						DBG
+						// CHANGE TO DEBUG
+						INF
 						(
 							"{}: trying to unequip bound 2H weapon/ammo {}. "
 							"Time left: {}. Ignoring.", 
@@ -787,7 +812,8 @@ namespace ALYSLC
 						a_object == p->em->lastReqBoundWeapLH &&
 						a_objectEquipParams.equipSlot == glob.leftHandEquipSlot)
 					{
-						DBG
+						// CHANGE TO DEBUG
+						INF
 						(
 							"{}: trying to unequip bound LH weapon {}. Time left: {}. Ignoring.", 
 							a_actor->GetName(),
@@ -808,7 +834,8 @@ namespace ALYSLC
 						a_object == p->em->lastReqBoundWeapRH &&
 						a_objectEquipParams.equipSlot == glob.rightHandEquipSlot)
 					{
-						DBG
+						// CHANGE TO DEBUG
+						INF
 						(
 							"{}: trying to unequip bound RH weapon {}. Time left: {}. Ignoring.", 
 							a_actor->GetName(),
@@ -2460,7 +2487,8 @@ namespace ALYSLC
 
 			if (a_fromRefr != p->em->inventoryChest.get())
 			{
-				DBG
+				// CHANGE TO DEBUG
+				INF
 				(
 					"{}: Add {} of {} to inventory chest instead. From {}.",
 					p->coopActor->GetName(),
@@ -3356,7 +3384,8 @@ namespace ALYSLC
 				return _PickUpObject(a_this, a_object, a_count, a_arg3, a_playSound);
 			}
 
-			DBG
+			// CHANGE TO DEBUG
+			INF
 			(
 				"{}: {} of {}. List: {:p}, Arg3: {}",
 				a_this->GetName(),
@@ -3373,7 +3402,8 @@ namespace ALYSLC
 			}
 			
 			const auto& p = glob.coopPlayers[playerIndex];
-			DBG
+			// CHANGE TO DEBUG
+			INF
 			(
 				"{}: Add {} of {} to inventory chest instead via P1.",
 				p->coopActor->GetName(),
@@ -3384,7 +3414,8 @@ namespace ALYSLC
 			auto owner = a_object->extraList.GetByType<RE::ExtraOwnership>(); 
 			RE::TESForm* oldOwner = a_object->extraList.GetOwner();
 			a_object->extraList.SetOwner(p->coopActor.get());
-			DBG
+			// CHANGE TO DEBUG
+			INF
 			(
 				"Adding ownerhip exData to list {:p}: {}. ExCount: {}.",
 				fmt::ptr(std::addressof(a_object->extraList)),
@@ -3431,7 +3462,8 @@ namespace ALYSLC
 			);
 			if (!shouldAddToChest)
 			{
-				DBG
+				// CHANGE TO DEBUG
+				INF
 				(
 					"Item {} is a quest/party-wide/added Enderal skillbook object. "
 					"Keeping in P1's inventory.", 
@@ -3444,7 +3476,8 @@ namespace ALYSLC
 			// No extra lists, so the item was not added on pickup.
 			if (!iter->second.second->extraLists || iter->second.second->extraLists->empty())
 			{
-				DBG
+				// CHANGE TO DEBUG
+				INF
 				(
 					"ERR: {}: No extra data lists for {} in P1's inventory after pickup.",
 					p->coopActor->GetName(),
@@ -6968,6 +7001,187 @@ namespace ALYSLC
 			return blockEvent;
 		}
 		
+		bool MenuControlsHooks::CheckForP1ActivateReq(RE::InputEvent* a_inputEvent)
+		{
+			// Check if P1 is trying to activate another player while the co-op camera is inactive
+			// and revive/gift items with the other player if so.
+			// Can revive/gift items with the 'Activate' input event 
+			// from either keyboard or controller.
+			// Return true if the event should be blocked.
+			
+			if (!glob.globalDataInit || 
+				!glob.allPlayersInit ||
+				!glob.coopSessionActive ||
+				glob.player1DID == -1 ||
+				!glob.coopPlayers[0] ||
+				glob.cam->IsRunning())
+			{
+				return false;
+			}
+
+			const auto ui = RE::UI::GetSingleton();
+			const auto ue = RE::UserEvents::GetSingleton();
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (!ui || !ue || !p1)
+			{
+				return false;
+			}
+			
+			const auto& coopP1 = glob.coopPlayers[0];
+			// Can't revive another player if downed.
+			if (coopP1->isDowned)
+			{
+				return false;
+			}
+
+			auto idEvent = a_inputEvent->AsIDEvent();
+			auto buttonEvent = a_inputEvent->AsButtonEvent();
+			bool activateToRevive = 
+			(
+				(buttonEvent && idEvent && idEvent->userEvent == ue->activate) &&
+				(
+					!glob.hybridModeActive || 
+					a_inputEvent->GetDevice() != RE::INPUT_DEVICE::kGamepad
+				)
+			);
+			if (activateToRevive)
+			{
+				auto pickData = RE::CrosshairPickData::GetSingleton();
+				if (pickData)
+				{
+					auto pIndex = GlobalCoopData::GetCoopPlayerIndex(pickData->targetActor);
+					if (pIndex != -1)
+					{
+						const auto& targetedP = glob.coopPlayers[pIndex];
+						if (targetedP->isDowned || coopP1->isRevivingPlayer)
+						{
+							DBG
+							(
+								"Activate event: {}, {}s. Pick target: {}.",
+								buttonEvent->value,
+								buttonEvent->heldDownSecs,
+								Util::HandleIsValid(pickData->targetActor) ? 
+								pickData->targetActor.get()->GetName() : 
+								"NONE"
+							);
+							coopP1->pam->RevivePlayerP1NoCoopCam
+							(
+								pIndex,
+								buttonEvent->value,
+								buttonEvent->heldDownSecs
+							);
+						}
+						else if (!targetedP->isDowned)
+						{
+							DBG
+							(
+								"Activate event: {}, {}s. Pick target: {}.",
+								buttonEvent->value,
+								buttonEvent->heldDownSecs,
+								Util::HandleIsValid(pickData->targetActor) ? 
+								pickData->targetActor.get()->GetName() : 
+								"NONE"
+							);
+							if (buttonEvent->heldDownSecs < 
+								Settings::fSecsBeforeAlternateActivation)
+							{
+								if (buttonEvent->value == 0.0f)
+								{
+									coopP1->tm->ClearCrosshairMessage();
+								}
+								else
+								{
+									coopP1->tm->SetCrosshairMessageRequest
+									(
+										CrosshairMessageType::kReviveAlert,
+										fmt::format
+										(
+											"P1: Continue holding to give items to {}", 
+											targetedP->coopActor->GetDisplayFullName()
+										),
+										{ 
+											CrosshairMessageType::kNone,
+											CrosshairMessageType::kActivationInfo, 
+											CrosshairMessageType::kStealthState, 
+											CrosshairMessageType::kTargetingState 
+										},
+										Settings::fSecsBetweenDiffCrosshairMsgs
+									);
+									coopP1->tm->UpdateCrosshairMessage();
+								}
+							}
+							else if (buttonEvent->heldDownSecs >= 
+									 Settings::fSecsBeforeAlternateActivation)
+							{
+								// Open Gift Menu on release.
+								if (buttonEvent->value == 0.0f)
+								{
+									coopP1->tm->ClearCrosshairMessage();
+									glob.onCoopHelperMenuRequest.SendEvent
+									(
+										coopP1->coopActor.get(), 
+										coopP1->deviceID, 
+										coopP1->playerID,
+										!HelperMenu::kTrade
+									);
+									glob.moarm->InsertRequest
+									(
+										coopP1->playerID, 
+										InputAction::kActivate, 
+										SteadyClock::now(),
+										RE::GiftMenu::MENU_NAME,
+										glob.coopPlayers[pIndex]->coopActor->GetHandle()
+									);
+									Util::Papyrus::ShowGiftMenu
+									(
+										glob.coopPlayers[pIndex]->coopActor.get(), 
+										true, 
+										nullptr,
+										true,
+										true
+									);
+								}
+								else
+								{
+									coopP1->tm->SetCrosshairMessageRequest
+									(
+										CrosshairMessageType::kReviveAlert,
+										fmt::format
+										(
+											"P1: Release to give items to {}",
+											targetedP->coopActor->GetDisplayFullName()
+										),
+										{ 
+											CrosshairMessageType::kNone,
+											CrosshairMessageType::kActivationInfo, 
+											CrosshairMessageType::kStealthState, 
+											CrosshairMessageType::kTargetingState 
+										},
+										Settings::fSecsBetweenDiffCrosshairMsgs
+									);
+									coopP1->tm->UpdateCrosshairMessage();
+								}
+							}
+							
+						}
+						
+						// Block this input while reviving.
+						return true;
+					}
+				}
+
+				// Failsafe:
+				// Make sure P1's don't move flag is unset on 'Activate' press and release.
+				if (buttonEvent->value == 0.0f || buttonEvent->heldDownSecs == 0.0f)
+				{
+					coopP1->mm->ClearKeepOffsetFromActor();
+					coopP1->mm->SetForceDontMove(false);
+				}
+			}
+
+			return false;
+		}
+
 		bool MenuControlsHooks::CheckForP1CoopCamToggle
 		(
 			RE::InputEvent* a_inputEvent, bool& a_newEventChainedOut
@@ -8055,88 +8269,6 @@ namespace ALYSLC
 			return false;
 		}
 
-		bool MenuControlsHooks::CheckForP1ReviveReq(RE::InputEvent* a_inputEvent)
-		{
-			// Check if P1 is trying to revive another player while the co-op camera is inactive
-			// and revive the other player if so.
-			// Can revive with the 'Activate' input event from either keyboard or controller.
-			// Return true if the event should NOT be processed by the MenuControls hook.
-			
-			if (!glob.globalDataInit || 
-				!glob.allPlayersInit ||
-				!glob.coopSessionActive ||
-				glob.player1DID == -1 ||
-				!glob.coopPlayers[0] ||
-				glob.cam->IsRunning())
-			{
-				return false;
-			}
-
-			const auto ui = RE::UI::GetSingleton();
-			const auto ue = RE::UserEvents::GetSingleton();
-			auto p1 = RE::PlayerCharacter::GetSingleton();
-			if (!ui || !ue || !p1)
-			{
-				return false;
-			}
-			
-			const auto& coopP1 = glob.coopPlayers[0];
-			// Can't revive another player if downed.
-			if (coopP1->isDowned)
-			{
-				return false;
-			}
-
-			auto idEvent = a_inputEvent->AsIDEvent();
-			auto buttonEvent = a_inputEvent->AsButtonEvent();
-			bool activateToRevive = 
-			(
-				(buttonEvent && idEvent && idEvent->userEvent == ue->activate) &&
-				(
-					!glob.hybridModeActive || 
-					a_inputEvent->GetDevice() != RE::INPUT_DEVICE::kGamepad
-				)
-			);
-			if (activateToRevive)
-			{
-				auto pickData = RE::CrosshairPickData::GetSingleton();
-				if (pickData)
-				{
-					auto pIndex = GlobalCoopData::GetCoopPlayerIndex(pickData->targetActor);
-					if (pIndex != -1 || coopP1->isRevivingPlayer)
-					{
-						DBG
-						(
-							"Activate event: {}, {}s. Pick target: {}.",
-							buttonEvent->value,
-							buttonEvent->heldDownSecs,
-							Util::HandleIsValid(pickData->targetActor) ? 
-							pickData->targetActor.get()->GetName() : 
-							"NONE"
-						);
-						coopP1->pam->RevivePlayerP1NoCoopCam
-						(
-							pIndex,
-							buttonEvent->value,
-							buttonEvent->heldDownSecs
-						);
-						// Block this input while reviving.
-						return true;
-					}
-				}
-
-				// Failsafe:
-				// Make sure P1's don't move flag is unset on 'Activate' press and release.
-				if (buttonEvent->value == 0.0f || buttonEvent->heldDownSecs == 0.0f)
-				{
-					coopP1->mm->ClearKeepOffsetFromActor();
-					coopP1->mm->SetForceDontMove(false);
-				}
-			}
-
-			return false;
-		}
-
 		std::vector<RE::InputEvent*> MenuControlsHooks::FilterInputEvents
 		(
 			RE::InputEvent** a_inputEvents
@@ -8261,7 +8393,7 @@ namespace ALYSLC
 					CheckForP1FavoritesMenuInput(inputEvent) ||
 					CheckForP1DialogueControlInput(inputEvent) ||
 					CheckForP1KeyboardTeleportReq(inputEvent) ||
-					CheckForP1ReviveReq(inputEvent) ||
+					CheckForP1ActivateReq(inputEvent) ||
 					CheckForP1QuickSaveReq(inputEvent) ||
 					CheckForMenuTriggeringInput(inputEvent, newEventChained) || 
 					CheckForP1CoopCamToggle(inputEvent, newEventChained)
@@ -8996,7 +9128,7 @@ namespace ALYSLC
 				);
 
 				// REMOVE when done debugging.
-				DBG
+				/*DBG
 				(
 					"Menu, MIM PID: {}, {}, "
 					"EVENT: {} (0x{:X}, type {}), blocked: {}, co-op player in menus: {}, "
@@ -9032,7 +9164,7 @@ namespace ALYSLC
 					allowP2RotateLock,
 					isBlockedP1RotateLockInput,
 					heldBeforeMenusClosed
-				);
+				);*/
 				
 				if (!propagateUnmodifiedEvent || !shouldProcess)
 				{
@@ -16106,6 +16238,33 @@ namespace ALYSLC
 						GlobalCoopData::CopyOverCoopPlayerData
 						(
 							false, menuName, p->coopActor->GetHandle(), nullptr
+						);
+					}
+
+					// Update entry list on after opening.
+					if (auto taskInterface = SKSE::GetTaskInterface(); taskInterface)
+					{
+						taskInterface->AddUITask
+						(
+							[]() 
+							{
+								auto ui = RE::UI::GetSingleton();
+								if (!ui)
+								{
+									return;
+								}
+
+								auto containerMenu = ui->GetMenu<RE::ContainerMenu>();
+								if (!containerMenu)
+								{
+									return;
+								}
+
+								if (containerMenu->itemList)
+								{
+									containerMenu->itemList->root.Invoke("UpdateList");
+								}
+							}
 						);
 					}
 

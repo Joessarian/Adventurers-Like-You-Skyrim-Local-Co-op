@@ -1013,6 +1013,8 @@ namespace ALYSLC
 		std::unordered_map<RE::FormID, std::set<int8_t>> hotkeyedFormsToSlotsSetMap;
 		// List of bound object and spell forms favorited by the co-op player.
 		std::vector<RE::TESForm*> favoritedForms;
+		// Should the companion player re-equip their hand forms after teleporting to P1?
+		bool reEquipOnTeleport;
 		// (Un)equipObject hooks should not perform their normal functions when this is set;
 		// also prevents changes to worn rank data for companion players when set to true.
 		// Bracket function calls/blocks of code with this flag set to true and then false afterward
