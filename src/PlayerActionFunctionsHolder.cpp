@@ -971,10 +971,6 @@ namespace ALYSLC
 			);
 			if (!stateAllowsJump) 
 			{
-				DBG("{}: nope: {}, 0{:b}.",
-					a_p->coopActor->GetName(), 
-					charController->context.currentState,
-					*charController->flags);
 				return false;
 			}
 

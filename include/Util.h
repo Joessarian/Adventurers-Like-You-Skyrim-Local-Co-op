@@ -4441,7 +4441,6 @@ namespace ALYSLC
 			RE::Actor* a_actor, RE::BGSPerk* a_perk, bool&& a_add, int32_t a_rank = -1
 		);
 		
-
 		// Allocate, construct, and return a deep copy of the given extra data list.
 		RE::ExtraDataList* CopyExtraDataList(RE::ExtraDataList* a_toCopy);
 
@@ -4883,7 +4882,7 @@ namespace ALYSLC
 
 		// Add the given perk to P1.
 		// Return true if successful.
-		bool Player1AddPerk(RE::BGSPerk* a_perk, int32_t a_rank);
+		bool Player1AddPerk(RE::BGSPerk* a_perk, int32_t a_rank = -1);
 
 		// Return true if P1 has the given perk
 		// in the P1 singleton perk list.

@@ -23,7 +23,7 @@ namespace ALYSLC
 		// Initialize or re-assign global co-op data.
 		// Called each time a save is loaded or when starting a new game.
 
-		DBG("PrepForCoop.");
+		INF("PrepForCoop.");
 		// First time initialization.
 		bool firstTimeInit = !glob.globalDataInit;
 		SetGlobalCoopData();
@@ -72,6 +72,10 @@ namespace ALYSLC
 			// P1 will have to respec all their perks manually,
 			// as the function below will not fire to import all the serialized perks.
 			ImportUnlockedPerks(p1);
+		}
+		else
+		{
+			ERR("P1 invalid, cannot import perks.");
 		}
 
 		auto ui = RE::UI::GetSingleton();
@@ -1090,7 +1094,7 @@ namespace ALYSLC
 					a_playerActor, 
 					a_enteringMenu, 
 					true,
-					true
+					true //ALYSLC::SkyrimSoulsCompat::g_installed
 				);
 				glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
 			}
@@ -1111,7 +1115,7 @@ namespace ALYSLC
 					a_playerActor,
 					a_enteringMenu,
 					true,
-					true
+					true //ALYSLC::SkyrimSoulsCompat::g_installed
 				);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
 			}
@@ -1294,28 +1298,57 @@ namespace ALYSLC
 		}
 
 		// Ensure glob perk list matches the serialized one.
-		const auto& unlockedPerksList = iter->second->GetUnlockedPerksList();
-		for (auto i = 0; i < unlockedPerksList.size(); ++i)
+		const auto& unlockedPerksSet = iter->second->GetUnlockedPerksSet();
+		auto addPerksToTree = 
+		[&unlockedPerksSet, p1](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
 		{
-			auto perkToAdd = unlockedPerksList[i];
-			bool alreadyAdded = std::any_of
-			(
-				p1->perks.begin(), p1->perks.end(),
-				[p1, perkToAdd](RE::BGSPerk* a_perk) 
-				{
-					return a_perk == perkToAdd;
-				}
-			);
-			if (!alreadyAdded)
+			if (!a_node)
 			{
-				Util::Player1AddPerk(perkToAdd, -1);
-				DBG
-				(
-					"Re-adding {} to p1's perks list. New perk count: {}",
-					perkToAdd->GetName(), p1->perks.size()
-				);
+				return;
 			}
-		}
+			
+			auto perk = a_node->perk;
+			// Must add perks from lowest rank to highest.
+			while (perk)
+			{
+				if (unlockedPerksSet.contains(perk))
+				{
+					bool alreadyAdded = std::any_of
+					(
+						p1->perks.begin(), p1->perks.end(),
+						[p1, perk](RE::BGSPerk* a_perk) 
+						{
+							return a_perk == perk;
+						}
+					);
+					if (!alreadyAdded)
+					{
+						DBG
+						(
+							"Adding back {}'s has saved unlocked perk {} (0x{:X}). "
+							"Has perk already: {}",
+							a_actor->GetName(), 
+							perk->GetName(), 
+							perk->formID, 
+							a_actor->HasPerk(perk)
+						);
+
+						// NOTE:
+						// Adding all unlocked perks again, regardless of whether or not 
+						// the Actor::HasPerk() check returns true. 
+						// Same reasoning as removing all perks above.
+						bool succ = Util::Player1AddPerk(perk);
+
+						DBG("SUCC: {}", succ);
+					}
+				}
+				
+				perk = perk->nextPerk;
+			}
+		};
+
+		// Add back all unlocked perks.
+		Util::TraverseAllPerks(p1, addPerksToTree);
 	}
 
 	void GlobalCoopData::AssignGenericKillmoves()
@@ -3003,7 +3036,6 @@ namespace ALYSLC
 		// Import all serialized perks that the player has unlocked.
 
 		DBG("{}", a_coopActor->GetName());
-
 		if (!a_coopActor)
 		{
 			return;
@@ -3018,8 +3050,16 @@ namespace ALYSLC
 		}
 
 		bool isP1 = a_coopActor == RE::PlayerCharacter::GetSingleton();
-		auto removeAllPerks = 
-		[&isP1, a_coopActor](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
+		auto& data = iter->second;
+		const auto& unlockedPerksSet = data->GetUnlockedPerksSet();
+		DBG
+		(
+			"{} has {} unlocked perks serialized for this save file.", 
+			a_coopActor->GetName(), unlockedPerksSet.size()
+		);
+
+		auto removeAllLockedPerks = 
+		[&isP1, &unlockedPerksSet](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
 		{
 			if (!a_node)
 			{
@@ -3039,7 +3079,8 @@ namespace ALYSLC
 
 			while (!perkStack.empty())
 			{
-				if (auto perkToRemove = perkStack.top(); perkToRemove)
+				auto perkToRemove = perkStack.top(); 
+				if (perkToRemove && !unlockedPerksSet.contains(perkToRemove))
 				{
 					// NOTE: 
 					// Removing all perks, regardless of whether or not the Actor::HasPerk()
@@ -3059,7 +3100,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						Util::ChangePerk(a_coopActor, perkToRemove, false);
+						Util::ChangePerk(a_actor, perkToRemove, false);
 					}
 				}
 
@@ -3067,16 +3108,111 @@ namespace ALYSLC
 			}
 		};
 
-		Util::TraverseAllPerks(a_coopActor, removeAllPerks);
+		auto addPerksToTree = 
+		[&isP1, &unlockedPerksSet](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
+		{
+			if (!a_node)
+			{
+				return;
+			}
+			
+			auto perk = a_node->perk;
+			// Must add perks from lowest rank to highest.
+			while (perk)
+			{
+				if (unlockedPerksSet.contains(perk))
+				{
+					DBG
+					(
+						"Adding back {}'s has saved unlocked perk {} (0x{:X}). "
+						"Has perk already: {}",
+						a_actor->GetName(), 
+						perk->GetName(), 
+						perk->formID, 
+						a_actor->HasPerk(perk)
+					);
 
-		auto& data = iter->second;
-		const auto& unlockedPerksList = data->GetUnlockedPerksList();
-		DBG
-		(
-			"{} has {} unlocked perks serialized for this save file.", 
-			a_coopActor->GetName(), unlockedPerksList.size()
-		);
+					// NOTE:
+					// Adding all unlocked perks again, egardless of whether or not 
+					// the Actor::HasPerk() check returns true. 
+					// Same reasoning as removing all perks above.
+					bool succ = false;
+					if (isP1)
+					{
+						succ = Util::Player1AddPerk(perk);
+					}
+					else
+					{
+						succ = Util::ChangePerk(a_actor, perk, true);
+					}
 
+					DBG("SUCC: {}", succ);
+				}
+
+				perk = perk->nextPerk;
+			}
+		};
+
+		auto checkPerkTree = 
+		[](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
+		{
+			if (!a_node)
+			{
+				return;
+			}
+			
+			auto p1 = RE::PlayerCharacter::GetSingleton(); 
+			auto perk = a_node->perk;
+			uint32_t perkIndex = 0;
+			while (perk)
+			{
+				// Selected perks do not get added to the P1 glob list 
+				// while the level up menu is open?
+				// Have to use native func check here as a result.
+				if (p1 && a_actor == p1)
+				{
+					bool nativeFuncHasPerk = p1->HasPerk(perk);
+					bool singletonListHasPerk = Util::Player1PerkListHasPerk(perk);
+					if (nativeFuncHasPerk || singletonListHasPerk)
+					{
+						DBG
+						(
+							"CHECK: {} tree: {} has perk #{} {} (0x{:X}): {}, {}.",
+							a_node->associatedSkill ? 
+							a_node->associatedSkill->enumName :
+							"NONE",
+							p1->GetName(), 
+							perkIndex, 
+							perk->GetName(), 
+							perk->formID,
+							nativeFuncHasPerk,
+							singletonListHasPerk
+						);
+					}
+				}
+				else
+				{
+					if (a_actor->HasPerk(perk))
+					{
+						DBG
+						(
+							"CHECK: {} tree: {} has perk #{} {} (0x{:X})",
+							a_node->associatedSkill ? 
+							a_node->associatedSkill->enumName :
+							"NONE",
+							a_actor->GetName(), 
+							perkIndex, 
+							perk->GetName(),
+							perk->formID
+						);
+					}
+				}
+
+				perk = perk->nextPerk;
+				++perkIndex;
+			}
+		};
+		
 		// Add any new animation event-based perks, if needed.
 		if (!ALYSLC::EnderalCompat::g_installed && Settings::bAddAnimEventSkillPerks)
 		{
@@ -3155,79 +3291,20 @@ namespace ALYSLC
 				data->InsertUnlockedPerk(glob.sneakRollPerk);
 			}
 		}
-
+		
 		// Add back all unlocked perks.
-		for (const auto perk : unlockedPerksList)
-		{
-			DBG
-			(
-				"Adding back {}'s has saved unlocked perk {} (0x{:X}). "
-				"Has perk already: {}",
-				a_coopActor->GetName(), perk->GetName(), perk->formID, a_coopActor->HasPerk(perk)
-			);
-			// NOTE:
-			// Adding all unlocked perks again, regardless of whether or not the Actor::HasPerk()
-			// check returns true. Same reasoning as removing all perks above.
-			if (isP1)
-			{
-				Util::Player1AddPerk(perk, -1);
-			}
-			else
-			{
-				Util::ChangePerk(a_coopActor, perk, true);
-			}
-		}
+		Util::TraverseAllPerks(a_coopActor, addPerksToTree);
 
-		// Prints out all unlocked perks in the perk tree.
 		// REMOVE after debugging.
 #ifdef ALYSLC_DEBUG_MODE
-		auto checkPerkTree = 
-		[](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
-		{
-			if (!a_node)
-			{
-				return;
-			}
-			
-			auto p1 = RE::PlayerCharacter::GetSingleton(); 
-			auto perk = a_node->perk;
-			uint32_t perkIndex = 0;
-			while (perk)
-			{
-				// Selected perks do not get added to the P1 glob list 
-				// while the level up menu is open?
-				// Have to use native func check here as a result.
-				if (p1 && a_actor == p1)
-				{
-					bool nativeFuncHasPerk = p1->HasPerk(perk);
-					bool singletonListHasPerk = Util::Player1PerkListHasPerk(perk);
-					if (nativeFuncHasPerk || singletonListHasPerk)
-					{
-						DBG
-						(
-							"AFTER IMPORT: {} has perk #{} {} (0x{:X}): {}, {}.",
-							p1->GetName(), perkIndex, perk->GetName(), perk->formID,
-							nativeFuncHasPerk, singletonListHasPerk
-						);
-					}
-				}
-				else
-				{
-					if (a_actor->HasPerk(perk))
-					{
-						DBG
-						(
-							"AFTER IMPORT: {} has perk #{} {} (0x{:X})",
-							a_actor->GetName(), perkIndex, perk->GetName(), perk->formID
-						);
-					}
-				}
+		Util::TraverseAllPerks(a_coopActor, checkPerkTree);
+#endif
 
-				perk = perk->nextPerk;
-				++perkIndex;
-			}
-		};
-
+		// Remove all locked perks if they're added to P1.
+		Util::TraverseAllPerks(a_coopActor, removeAllLockedPerks);
+		
+		// REMOVE after debugging.
+#ifdef ALYSLC_DEBUG_MODE
 		Util::TraverseAllPerks(a_coopActor, checkPerkTree);
 #endif
 	}
@@ -5339,7 +5416,7 @@ namespace ALYSLC
 									perk->GetName(), 
 									perk->formID
 								);
-								Util::Player1AddPerk(perk, -1);
+								Util::Player1AddPerk(perk);
 							}
 						}
 					}
@@ -5363,7 +5440,7 @@ namespace ALYSLC
 							);
 							if (singletonListHasPerk)
 							{
-								Util::Player1AddPerk(perk, -1);
+								Util::Player1AddPerk(perk);
 							}
 							else
 							{
@@ -5387,7 +5464,7 @@ namespace ALYSLC
 							nativeFuncHasPerk, 
 							singletonListHasPerk
 						);
-						Util::Player1AddPerk(perk, -1);
+						Util::Player1AddPerk(perk);
 						data->InsertUnlockedPerk(perk);
 					}
 					else
@@ -9039,6 +9116,64 @@ namespace ALYSLC
 				);
 				AdjustPerkDataForCompanionPlayer(requestingPlayer.get(), a_info->shouldImport);
 			}
+
+			/*
+			if (!ALYSLC::SkyrimSoulsCompat::g_installed)
+			{
+				if (a_info->shouldImport)
+				{
+					DBG
+					(
+						"Stats Menu: Should copy over name, race name, and HMS."
+					);
+					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
+					{
+						DBG("Import Name.");
+						CopyOverActorBaseData
+						(
+							requestingPlayer.get(), a_info->shouldImport, true, false
+						);
+						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kName);
+					}
+
+					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kRaceName))
+					{
+						DBG("Import Race Name.");
+						CopyOverActorBaseData
+						(
+							requestingPlayer.get(), a_info->shouldImport, false, true
+						);
+						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kRaceName);
+					}
+				}
+				else
+				{
+					DBG
+					(
+						"Stats Menu: Should restore name, race name, and HMS."
+					);
+					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
+					{
+						DBG("Export Name.");
+						CopyOverActorBaseData
+						(
+							requestingPlayer.get(), a_info->shouldImport, true, false
+						);
+						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kName);
+					}
+
+					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kRaceName))
+					{
+						DBG("Export Race Name.");
+						CopyOverActorBaseData
+						(
+							requestingPlayer.get(), a_info->shouldImport, false, true
+						);
+						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kRaceName);
+					}
+				}
+			}
+			*/
 		}
 		else if (menuNameHash == Hash(RE::TrainingMenu::MENU_NAME))
 		{
@@ -9606,7 +9741,7 @@ namespace ALYSLC
 		RE::Actor* a_coopActor,
 		const bool& a_shouldImport,
 		const bool& a_shouldCopyChanges,
-		bool&& a_onlySkills
+		bool a_onlySkills
 	)
 	{
 		// Copy over actor values (HMS and skills) between the companion player and P1.
@@ -10973,62 +11108,21 @@ namespace ALYSLC
 			
 				DBG("IMPORT: Move all P1 items to storage chest.");
 				p1ChestExChanges->changes = p1ExChanges->changes;
-
-				DBG("IMPORT: Move all co-op companion items to P1.");
-				/*p1->extraList.Remove
-				(
-					RE::ExtraDataType::kContainerChanges, p1ChestExChanges
-				);
-				p1->GetInventoryChanges();
-				p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();*/
-				// Adds back base container objects?
+				DBG("IMPORT: Move all co-op companion items to P1. {}'s chest has {} gold.",
+					p->coopActor->GetName(),
+					Util::GetInventoryItemCount(p->em->inventoryChest.get(), goldObj));
 				p1ExChanges->changes = companionChestExChanges->changes;
-				if (p1ExChanges->changes && p1ExChanges->changes->entryList)
-				{
-					// Import P1 gold.
-					bool setFromEntry = false;
-					for (auto invEntry : *p1ExChanges->changes->entryList)
-					{
-						if (invEntry && 
-							invEntry->object->IsGold() &&
-							goldObj && 
-							p1InventoryGoldAmount > 0)
-						{
-							DBG
-							(
-								"IMPORT: Set P1 inventory changes gold amount to {} "
-								"from {} total and {} from base container. Was {}.",
-								p1InventoryGoldAmount,
-								p1GoldCount,
-								p1ContainerGoldAmount,
-								invEntry->countDelta
-							);
-							invEntry->countDelta = p1InventoryGoldAmount;
-							setFromEntry = true;
-							break;
-						}
-					}
-
-					if (!setFromEntry && goldObj && p1InventoryGoldAmount > 0)
-					{
-						DBG("IMPORT: Add {} gold to P1 directly (not in inventory).", 
-							p1GoldCount);
-						p1->AddObjectToContainer(goldObj, nullptr, p1InventoryGoldAmount, nullptr);
-					}
-				}
-			
-				DBG("IMPORT: P1 now has {} gold.", p1->GetGoldAmount());
-
+				
 				// Set P1's chest as temp owner of P1's inventory changes.
 				if (p1ChestExChanges->changes)
 				{
-					p1ChestExChanges->changes ->owner = p1StorageChestRefrPtr.get();
+					p1ChestExChanges->changes->owner = p1StorageChestRefrPtr.get();
 				}
 
 				// Set P1 as the owner of the newly imported inventory changes.
 				if (p1ExChanges->changes)
 				{
-					p1ExChanges->changes ->owner = p1;
+					p1ExChanges->changes->owner = p1;
 				}
 
 				DBG
@@ -11043,7 +11137,8 @@ namespace ALYSLC
 			else
 			{
 				// Init, if needed, is a private func, but retrieving the changes 
-				// will also init if needed, so get the inventory changes for each container we need.
+				// will also init if needed, so get the inventory changes 
+				// for each container we need.
 				auto p1InvChanges = p1->GetInventoryChanges();
 				auto p1ChestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
 				auto companionChestInvChanges = p->em->inventoryChest->GetInventoryChanges();
@@ -11072,47 +11167,45 @@ namespace ALYSLC
 					return;
 				}
 			
-				// Remove all the gold from P1 first before moving items 
-				// back to companion player's inventory chest.
-				DBG("EXPORT: Remove {} gold on exit. Gold before: {}", 
-					p1GoldCount, p1->GetGoldAmount());
-				p1->RemoveItem
-				(
-					goldObj, p1GoldCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
-				);
-
 				DBG
 				(
-					"EXPORT: Move all P1 items to co-op companion. Gold is now: {}.",
+					"EXPORT: Move all P1 items to co-op companion. Gold is initially: {}.",
 					p1->GetGoldAmount()
 				);
 				companionChestExChanges->changes = p1ExChanges->changes;
-
-				DBG("EXPORT: Move all P1 items from storage chest to P1.");
-				// Adds back base container gold amount?
+				DBG("EXPORT: Move all P1 items from P1 to storage cheet.");
 				p1ExChanges->changes = p1ChestExChanges->changes;
+				
+				auto companionChestGoldInvEntry = Util::GetInventoryEntryDataForObject
+				(
+					p->em->inventoryChest.get(), goldObj, nullptr
+				);
+				// Zero out companion player's gold since they should not have any.
+				// All gold is shared and pooled in P1's inventory.
+				if (companionChestGoldInvEntry)
+				{
+					int32_t exDataListCountTotal = 0;
+					if (companionChestGoldInvEntry->extraLists)
+					{
+						for (const auto list : *companionChestGoldInvEntry->extraLists)
+						{
+							if (!list)
+							{
+								continue;
+							}
 
-				// Remove all gold again before adding the gold total on menu closing.
-				DBG
-				(
-					"EXPORT: Remove {} gold after importing back from chest.", p1->GetGoldAmount()
-				);
-				p1->RemoveItem
-				(
-					goldObj, p1->GetGoldAmount(), RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
-				);
-
-				DBG
-				(
-					"EXPORT: Add {} gold after clearing out all gold. Gold before: {}.", 
-					p1GoldCount - p1ContainerGoldAmount, p1->GetGoldAmount()
-				);
-				p1->AddObjectToContainer
-				(
-					goldObj, nullptr, p1GoldCount - p1ContainerGoldAmount, nullptr
-				);
-
-				DBG("EXPORT: P1 now has {} gold.", p1->GetGoldAmount());
+							exDataListCountTotal += list->GetCount();
+							list->SetCount(0);
+						}
+					}
+					
+					DBG("EXPORT: {}'s chest inv entry has {} gold ({} + {}).", 
+						p->coopActor->GetName(),
+						companionChestGoldInvEntry->countDelta + exDataListCountTotal,
+						companionChestGoldInvEntry->countDelta,
+						exDataListCountTotal);
+					companionChestGoldInvEntry->countDelta = 0;
+				}
 
 				// Clear, remove, and re-init P1 chest inventory changes 
 				// after we've moved everything back.
@@ -11136,9 +11229,9 @@ namespace ALYSLC
 
 				if (p1ChestExChanges->changes)
 				{
-					p1ChestExChanges->changes ->owner = p1StorageChestRefrPtr.get();
+					p1ChestExChanges->changes->owner = p1StorageChestRefrPtr.get();
 				}
-				
+
 				DBG
 				(
 					"EXPORT: P1 inv changes: {}: Owner is now {}.", 
@@ -11148,6 +11241,68 @@ namespace ALYSLC
 					"NONE"
 				);
 			}
+
+			// Set P1's gold delta to saved value.
+			auto p1GoldInvEntry = Util::GetInventoryEntryDataForObject(p1, goldObj, nullptr);
+			if (p1GoldInvEntry)
+			{
+				int32_t exDataListCountTotal = 0;
+				if (p1GoldInvEntry->extraLists)
+				{
+					for (const auto list : *p1GoldInvEntry->extraLists)
+					{
+						if (!list)
+						{
+							continue;
+						}
+
+						exDataListCountTotal += list->GetCount();
+						list->SetCount(0);
+					}
+				}
+					
+				DBG
+				(
+					"{}: P1's inv entry has {} gold ({} + {}). "
+					"Set gold delta to {}.",
+					a_shouldImport ? "IMPORT" : "EXPORT",
+					p1GoldInvEntry->countDelta + exDataListCountTotal,
+					p1GoldInvEntry->countDelta,
+					exDataListCountTotal,
+					p1InventoryGoldAmount
+				);
+				p1GoldInvEntry->countDelta = p1InventoryGoldAmount;
+			}
+			else if (p1InventoryGoldAmount != 0)
+			{
+				// Create a gold entry by adding gold.
+				p1->AddObjectToContainer(goldObj, nullptr, 0, nullptr);
+				p1GoldInvEntry = Util::GetInventoryEntryDataForObject(p1, goldObj, nullptr);
+				DBG
+				(
+					"{}: No gold inventory entry. New entry: {}. "
+					"Set gold delta to {}.", 
+					a_shouldImport ? "IMPORT" : "EXPORT",
+					(bool)p1GoldInvEntry, 
+					p1InventoryGoldAmount
+				);
+				// Set delta of the new entry to the original inventory gold delta.
+				if (p1GoldInvEntry)
+				{
+					p1GoldInvEntry->countDelta = p1InventoryGoldAmount;
+				}
+			}
+
+			DBG("{}: P1 now has {} gold, {} in chest. {} has {} gold, {} in chest.", 
+				a_shouldImport ? "IMPORT" : "EXPORT",
+				p1->GetGoldAmount(),
+				Util::GetInventoryItemCount(p1StorageChestRefrPtr.get(), goldObj),
+				p->coopActor->GetName(),
+				Util::GetInventoryItemCount(p->coopActor.get(), goldObj),
+				Util::GetInventoryItemCount(p->em->inventoryChest.get(), goldObj));
+
+			DBG("{}: P1 now has {} gold.",
+				a_shouldImport ? "IMPORT" : "EXPORT", p1->GetGoldAmount());
 		}
 		else
 		{
@@ -11200,12 +11355,6 @@ namespace ALYSLC
 				p1ChestExChanges->changes = p1ExChanges->changes;
 
 				DBG("IMPORT: Move all co-op companion items to P1.");
-				/*p1->extraList.Remove
-				(
-					RE::ExtraDataType::kContainerChanges, p1ChestExChanges
-				);
-				p1->GetInventoryChanges();
-				p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();*/
 				p1ExChanges->changes = companionChestExChanges->changes;
 
 				// Set P1's chest as temp owner of P1's inventory changes.
@@ -11336,7 +11485,7 @@ namespace ALYSLC
 				if ((a_shouldImport && coopPlayerUnlockedPerksSet.contains(perk)) ||
 					(!a_shouldImport && p1UnlockedPerksSet.contains(perk)))
 				{
-					Util::Player1AddPerk(perk, -1);
+					Util::Player1AddPerk(perk);
 				}
 
 				perkStack.push(perk);
@@ -11596,7 +11745,7 @@ namespace ALYSLC
 						// Ensure P1 singleton perk list and actor perk list are in sync on import.
 						if (nativeFuncP1HasPerk != singletonListHasPerk)
 						{
-							bool succ2 = Util::Player1AddPerk(perk, -1);
+							bool succ2 = Util::Player1AddPerk(perk);
 							// I think I'm going insane, but sometimes the has-perk booleans 
 							// are not equal in the comparison above 
 							// but both print as 'true' below (???).
@@ -11663,7 +11812,7 @@ namespace ALYSLC
 					{
 						if (singletonListHasPerk)
 						{
-							Util::Player1AddPerk(perk, -1);
+							Util::Player1AddPerk(perk);
 						}
 						else
 						{
@@ -11759,7 +11908,7 @@ namespace ALYSLC
 			{
 				if (coopPlayerUnlockedPerksSet.contains(perk)) 
 				{
-					Util::Player1AddPerk(perk, -1);
+					Util::Player1AddPerk(perk);
 				}
 
 				perkStack.push(perk);
@@ -11812,7 +11961,7 @@ namespace ALYSLC
 			{
 				if (p1UnlockedPerksSet.contains(perk)) 
 				{
-					Util::Player1AddPerk(perk, -1);
+					Util::Player1AddPerk(perk);
 				}
 
 				if (coopPlayerUnlockedPerksSet.contains(perk)) 

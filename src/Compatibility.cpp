@@ -355,15 +355,6 @@ namespace ALYSLC
 
 			INF("Gained access to all required TDM APIs.");
 		}
-		else
-		{
-			g_installed = false;
-			ERR
-			(
-				"Could not find prerequisite mod 'True Directional Movement'. "
-				"Please ensure it is installed."
-			);
-		}
 	}
 
 	void TrueHUDCompat::RequestTrueHUDAPIs(const SKSE::LoadInterface* a_loadInterface) 

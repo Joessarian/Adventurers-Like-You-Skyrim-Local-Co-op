@@ -40,15 +40,13 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		ALYSLC::QuickLootCompat::CheckForQuickLoot(g_loadInterface);
 		ALYSLC::RaceMenuCompat::CheckForRaceMenu(g_loadInterface);
 		ALYSLC::RequiemCompat::CheckForRequiem(g_loadInterface);
+		ALYSLC::SkyrimSoulsCompat::CheckForSkyrimSouls();
 		ALYSLC::SkyrimsParagliderCompat::CheckForParaglider();
 		ALYSLC::TKDodgeCompat::CheckForTKDodge();
 		ALYSLC::TrueDirectionalMovementCompat::RequestTrueDirectionalMovementAPIs(g_loadInterface);
 		ALYSLC::TrueHUDCompat::RequestTrueHUDAPIs(g_loadInterface);
 		ALYSLC::UseOrTakeCompat::CheckForUseOrTake();
-		// Import all settings after setting the plugin name to use
-		// in ALYSLC::EnderalCompat::CheckForEnderalSSE().
 		ALYSLC::EnderalCompat::CheckForEnderalSSE();
-		//ALYSLC::Settings::ImportAllSettings();
 		break;
 	}
 	case SKSE::MessagingInterface::kNewGame:

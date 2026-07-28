@@ -1820,11 +1820,12 @@ namespace ALYSLC
 			if (auto actorBase = a_actor->GetActorBase(); actorBase)
 			{
 				// Credits to po3 for perk application/removal methods.
-				//https://github.com/powerof3/PapyrusExtenderSSE/blob/master/include/Serialization/Services.h#L54
+				//https://github.com/powerof3/PapyrusExtenderSSE/blob/master/src/Serialization/Manager.cpp#L18
 				if (a_add)
 				{
 					// Add perk and apply perk entry first.
-					if (succ = actorBase->AddPerk(a_perk, a_rank); succ)
+					// Rank < 0 can fail to add the perk to P1.
+					if (succ = actorBase->AddPerk(a_perk, 1); succ)
 					{
 						for (auto& perkEntry : a_perk->perkEntries)
 						{
@@ -1862,7 +1863,7 @@ namespace ALYSLC
 					}
 				}*/
 			}
-
+			
 			if (a_actor->IsPlayerRef()) 
 			{
 				// Call actor add/remove perk function for P1.
@@ -1872,7 +1873,7 @@ namespace ALYSLC
 				{
 					if (a_add) 
 					{
-						p1->AddPerk(a_perk, a_rank);
+						p1->AddPerk(a_perk);
 					}
 					else
 					{
@@ -7681,7 +7682,7 @@ namespace ALYSLC
 			// NOTE:
 			// Have to use both funcs since neither consistently
 			// removes/adds perks in time on their own before the Stats Menu opens.
-			ChangePerk(p1, a_perk, true);
+			ChangePerk(p1, a_perk, true, a_rank);
 			return p1->HasPerk(a_perk);
 		}
 

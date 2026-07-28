@@ -5123,7 +5123,7 @@ namespace ALYSLC
 			}
 
 			// CHANGE TO DEBUG
-			INF
+			DBG
 			(
 				"{}: {} requested form {} (0x{:X}). Current form: {} (0x{:X}), "
 				"current copied spell: {} (0x{:X}). Placeholder magic changed: {}.",
@@ -6689,7 +6689,7 @@ namespace ALYSLC
 		}
 
 		// CHANGE TO DEBUG
-		INF
+		DBG
 		(
 			"{}. Forms to re-equip: {}, {} ({:p}, {:p})", 
 			coopActor->GetName(),
@@ -7256,7 +7256,7 @@ namespace ALYSLC
 		// as well as whether or not it is now equipped.
 
 		// CHANGE TO DEBUG
-		INF
+		DBG
 		(
 			"{}: slots to refresh: {}, form: {}, is equipped: {}. "
 			"Manager states: P: {}, PAM: {}, EM: {}, MM: {}, TM: {}", 

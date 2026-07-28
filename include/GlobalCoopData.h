@@ -1095,7 +1095,7 @@ namespace ALYSLC
 			RE::Actor* a_coopActor,
 			const bool& a_shouldImport, 
 			const bool& a_shouldCopyChanges,
-			bool&& a_onlySkills
+			bool a_onlySkills
 		);
 
 		// WIP: Needs more testing for long term side effects, and may need a rework if a better 

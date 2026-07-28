@@ -388,7 +388,7 @@ namespace ALYSLC
 			}
 			
 			// CHANGE TO DEBUG
-			INF
+			DBG
 			(
 				"{}: {} (0x{:X}, type: 0x{:X}, exList: {:p}). Force equip: {}, Unks: {}, {}.", 
 				a_actor->GetName(),
@@ -584,7 +584,7 @@ namespace ALYSLC
 						);
 
 						// CHANGE TO DEBUG
-						INF
+						DBG
 						(
 							"{}: trying to equip bound weapon {} (0x{:X}) with slot {} (0x{:X}). "
 							"{}. Reqs: {}, {}, {}. Equipped objects: {}, {}, "
@@ -715,7 +715,7 @@ namespace ALYSLC
 			// Ignore if P1, transform(ing/ed), or skipping equip processing.
 			const auto& p = glob.coopPlayers[playerIndex];
 			// CHANGE TO DEBUG
-			INF
+			DBG
 			(
 				"{}: {} (0x{:X}, type: 0x{:X}, exList: {:p}). Force equip: {}, Unks: {}, {}.", 
 				a_actor->GetName(), 
@@ -766,7 +766,7 @@ namespace ALYSLC
 			if (isBound) //&& p->coopActor->IsWeaponDrawn())
 			{
 				// CHANGE TO DEBUG
-				INF
+				DBG
 				(
 					"{}: trying to unequip bound weapon {}. Equip slot: {}. Drawn: {}", 
 					a_actor->GetName(),
@@ -790,7 +790,7 @@ namespace ALYSLC
 						(a_object == p->em->lastReqBoundWeapRH || a_object->IsAmmo()))
 					{
 						// CHANGE TO DEBUG
-						INF
+						DBG
 						(
 							"{}: trying to unequip bound 2H weapon/ammo {}. "
 							"Time left: {}. Ignoring.", 
@@ -813,7 +813,7 @@ namespace ALYSLC
 						a_objectEquipParams.equipSlot == glob.leftHandEquipSlot)
 					{
 						// CHANGE TO DEBUG
-						INF
+						DBG
 						(
 							"{}: trying to unequip bound LH weapon {}. Time left: {}. Ignoring.", 
 							a_actor->GetName(),
@@ -835,7 +835,7 @@ namespace ALYSLC
 						a_objectEquipParams.equipSlot == glob.rightHandEquipSlot)
 					{
 						// CHANGE TO DEBUG
-						INF
+						DBG
 						(
 							"{}: trying to unequip bound RH weapon {}. Time left: {}. Ignoring.", 
 							a_actor->GetName(),
@@ -2487,19 +2487,47 @@ namespace ALYSLC
 
 			if (a_fromRefr != p->em->inventoryChest.get())
 			{
-				// CHANGE TO DEBUG
-				INF
-				(
-					"{}: Add {} of {} to inventory chest instead. From {}.",
-					p->coopActor->GetName(),
-					a_count, 
-					a_object->GetName(),
-					a_fromRefr ? a_fromRefr->GetName() : "NONE"
-				);
-				p->em->inventoryChest->AddObjectToContainer
-				(
-					a_object, a_extraList, a_count, a_fromRefr
-				);
+				// Add party-wide items to P1.
+				if (Util::IsPartyWideItem(a_object))
+				{
+					// CHANGE TO DEBUG
+					DBG
+					(
+						"{}: Add {} of {} to P1 instead. From {}.",
+						p->coopActor->GetName(),
+						a_count, 
+						a_object->GetName(),
+						a_fromRefr ? a_fromRefr->GetName() : "NONE"
+					);
+					p1->AddObjectToContainer
+					(
+						a_object, a_extraList, a_count, 
+						a_fromRefr == p1 ? 
+						nullptr : 
+						a_fromRefr
+					);
+				}
+				else
+				{
+					// CHANGE TO DEBUG
+					DBG
+					(
+						"{}: Add {} of {} to inventory chest instead. From {}.",
+						p->coopActor->GetName(),
+						a_count, 
+						a_object->GetName(),
+						a_fromRefr ? a_fromRefr->GetName() : "NONE"
+					);
+					p->em->inventoryChest->AddObjectToContainer
+					(
+						a_object, 
+						a_extraList, 
+						a_count, 
+						a_fromRefr == p->em->inventoryChest.get() ? 
+						nullptr : 
+						a_fromRefr
+					);
+				}
 			}
 			else
 			{
@@ -3385,7 +3413,7 @@ namespace ALYSLC
 			}
 
 			// CHANGE TO DEBUG
-			INF
+			DBG
 			(
 				"{}: {} of {}. List: {:p}, Arg3: {}",
 				a_this->GetName(),
@@ -3403,7 +3431,7 @@ namespace ALYSLC
 			
 			const auto& p = glob.coopPlayers[playerIndex];
 			// CHANGE TO DEBUG
-			INF
+			DBG
 			(
 				"{}: Add {} of {} to inventory chest instead via P1.",
 				p->coopActor->GetName(),
@@ -3415,7 +3443,7 @@ namespace ALYSLC
 			RE::TESForm* oldOwner = a_object->extraList.GetOwner();
 			a_object->extraList.SetOwner(p->coopActor.get());
 			// CHANGE TO DEBUG
-			INF
+			DBG
 			(
 				"Adding ownerhip exData to list {:p}: {}. ExCount: {}.",
 				fmt::ptr(std::addressof(a_object->extraList)),
@@ -3463,7 +3491,7 @@ namespace ALYSLC
 			if (!shouldAddToChest)
 			{
 				// CHANGE TO DEBUG
-				INF
+				DBG
 				(
 					"Item {} is a quest/party-wide/added Enderal skillbook object. "
 					"Keeping in P1's inventory.", 
@@ -3477,7 +3505,7 @@ namespace ALYSLC
 			if (!iter->second.second->extraLists || iter->second.second->extraLists->empty())
 			{
 				// CHANGE TO DEBUG
-				INF
+				DBG
 				(
 					"ERR: {}: No extra data lists for {} in P1's inventory after pickup.",
 					p->coopActor->GetName(),
@@ -6408,6 +6436,18 @@ namespace ALYSLC
 				(glob.coopSessionActive && glob.cam->IsRunning()) &&
 				(glob.coopPlayers[0]->IsRunning() || !ui  || ui->GameIsPaused())
 			);
+			DBG
+			(
+				"Event: {}, Skyrim Souls RE: {}, session active: {}, cam running: {}, "
+				"P1 managers active: {}, UI: {}, game is paused: {}",
+				buttonEvent->QUserEvent(), 
+				ALYSLC::SkyrimSoulsCompat::g_installed,
+				glob.coopSessionActive,
+				glob.cam->IsRunning(),
+				glob.coopPlayers[0]->IsRunning(),
+				(bool)ui,
+				ui ? ui->GameIsPaused() : false
+			);
 			// Will not trigger any menus or perform its original function
 			// if sent by P2 in hybrid mode (P1's controller).
 			// Allow the held time and state flags to update to ensure a smooth transition of state
@@ -8000,12 +8040,12 @@ namespace ALYSLC
 				}
 			}
 
-			// Only handle pause/journal bind presses and only if just pressed.
-			bool releasedPauseBind = 
-			{
-				(buttonEvent->value == 0.0f && buttonEvent->heldDownSecs > 0.0f) &&
+			// Block all pause bind presses while in the Favorites Menu.
+			// Check for an equip to the quick slot if the bind was just released.
+			bool isPauseBind =
+			(
+				(buttonEvent->idCode != 0xFF) &&
 				(
-					(buttonEvent->idCode != 0xFF) &&
 					(
 						buttonEvent->idCode == 
 						controlMap->GetMappedKey(ue->pause, RE::INPUT_DEVICE::kGamepad)
@@ -8015,12 +8055,21 @@ namespace ALYSLC
 						controlMap->GetMappedKey(ue->journal, RE::INPUT_DEVICE::kGamepad)
 					)
 				)
-			};
-			if (releasedPauseBind)
+			);
+			bool releasedPauseBind = 
 			{
-				DBG("Event: {}, id code: {}, equip P1 QS form.", 
-					buttonEvent->QUserEvent(), buttonEvent->idCode);
-				glob.mim->EquipP1QSForm();
+				isPauseBind && buttonEvent->value == 0.0f && buttonEvent->heldDownSecs > 0.0f
+			};
+			if (isPauseBind)
+			{
+				if (releasedPauseBind)
+				{
+					DBG("Event: {}, id code: {}, equip P1 QS form.", 
+						buttonEvent->QUserEvent(), buttonEvent->idCode);
+					glob.mim->EquipP1QSForm();
+				}
+
+				return true;
 			}
 
 			// To hotkey an entry,
@@ -9128,7 +9177,7 @@ namespace ALYSLC
 				);
 
 				// REMOVE when done debugging.
-				/*DBG
+				DBG
 				(
 					"Menu, MIM PID: {}, {}, "
 					"EVENT: {} (0x{:X}, type {}), blocked: {}, co-op player in menus: {}, "
@@ -9164,7 +9213,7 @@ namespace ALYSLC
 					allowP2RotateLock,
 					isBlockedP1RotateLockInput,
 					heldBeforeMenusClosed
-				);*/
+				);
 				
 				if (!propagateUnmodifiedEvent || !shouldProcess)
 				{
@@ -18379,7 +18428,6 @@ namespace ALYSLC
 
 			return _ProcessMessage(a_this, a_message);
 		}
-
 		void StatsMenuHooks::AdvanceMovie
 		(
 			RE::StatsMenu* a_this, float a_interval, uint32_t a_currentTime
@@ -18628,12 +18676,6 @@ namespace ALYSLC
 				)
 			);
 			
-			// Same solution with/without Extended UI installed for now.
-			// Keeping the else block because I remember there being an issue
-			// with SetPlayerInfo on a previous setup and may have to revert.
-			//if (ALYSLC::ExtendedUICompat::g_installed)
-			//{
-
 			RE::GFxValue root{ };
 			bool base1Set = false;
 			RE::GFxValue base{ };
@@ -18667,173 +18709,176 @@ namespace ALYSLC
 				);
 			}
 
-			RE::GFxValue playerName{ };
-			RE::GFxValue playerRace{ };
+			RE::GFxValue playerName{ playerInMenusPtr->GetName() };
+			RE::GFxValue playerRace{ playerInMenusPtr->race->GetName() };
 			if (base.IsNull() || base.IsUndefined())
 			{
 				return;
 			}
-\
-			view->SetVariable("_root.StatsMenuBaseInstance.playerName", playerName);
-			view->SetVariable("_root.StatsMenuBaseInstance.playerRace", playerRace);
-			std::array<RE::GFxValue, 13> args{ };
-			args[0] = playerInMenusPtr->GetName();
-			// Subtract 1 when the LevelUp Menu is set to open because P1's level
-			// is incremented before the menu opens 
-			// and before P1 can even choose a stat,
-			// meaning once P1 reaches 0 more available level ups, 
-			// their final level will have displayed twice.
-			args[1] = 
-			(
-				p1->skills->data->xp < p1->skills->data->levelThreshold ?
-				p1->GetLevel() : 
-				max(p1->GetLevel() - 1, 1)
-			);
-			args[2] = std::clamp
-			(
-				100.0 * p1->skills->data->xp / p1->skills->data->levelThreshold,
-				0.0,
-				100.0
-			);
-			args[3] = playerInMenusPtr->race->GetName();
 
-			// Magicka (current, full, color).
-			float tempAndPermMod = 
-			(
-				playerInMenusPtr->GetActorValueModifier
+			// Same solution with/without Extended UI installed for now.
+			// Keeping the else block because I remember there being an issue
+			// with SetPlayerInfo on a previous setup and may have to revert.
+			if (ALYSLC::SkyrimSoulsCompat::g_installed)
+			{
+				view->SetVariable("_root.StatsMenuBaseInstance.playerName", playerName);
+				view->SetVariable("_root.StatsMenuBaseInstance.playerRace", playerRace);
+				std::array<RE::GFxValue, 13> args{ };
+				args[0] = playerInMenusPtr->GetName();
+				// Subtract 1 when the LevelUp Menu is set to open because P1's level
+				// is incremented before the menu opens 
+				// and before P1 can even choose a stat,
+				// meaning once P1 reaches 0 more available level ups, 
+				// their final level will have displayed twice.
+				args[1] = 
 				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary,
-					RE::ActorValue::kMagicka
-				) + 
-				playerInMenusPtr->GetActorValueModifier
+					p1->skills->data->xp < p1->skills->data->levelThreshold ?
+					p1->GetLevel() : 
+					max(p1->GetLevel() - 1, 1)
+				);
+				args[2] = std::clamp
 				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent,
-					RE::ActorValue::kMagicka
-				) 	
-			);
+					100.0 * p1->skills->data->xp / p1->skills->data->levelThreshold,
+					0.0,
+					100.0
+				);
+				args[3] = playerInMenusPtr->race->GetName();
 
-			// FULL:
-			// Companion player's recorded base amount + 
-			// their recorded increase so far +
-			// the current change while in the Stats Menu + 
-			// any temporary and permanent modifiers from gear, perks, etc.
-			// (applied to P1 until export when the menu closes).
-			float fullValue = 
-			(
-				data->hmsBasePointsList[1] + 
-				data->hmsPointIncreasesList[1] +
+				// Magicka (current, full, color).
+				float tempAndPermMod = 
 				(
-					p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
-					data->p1HMSBaseAVsOnMenuEntry[1]
-				) + 
-				tempAndPermMod
-			);
-			// CURRENT:
-			// The max value above modified by the companion player's 
-			// current damage AV modifier.
-			float currentValue = 
-			(
-				fullValue + 
-				playerInMenusPtr->GetActorValueModifier
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary,
+						RE::ActorValue::kMagicka
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent,
+						RE::ActorValue::kMagicka
+					) 	
+				);
+
+				// FULL:
+				// Companion player's recorded base amount + 
+				// their recorded increase so far +
+				// the current change while in the Stats Menu + 
+				// any temporary and permanent modifiers from gear, perks, etc.
+				// (applied to P1 until export when the menu closes).
+				float fullValue = 
 				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
-				)
-			);
+					data->hmsBasePointsList[1] + 
+					data->hmsPointIncreasesList[1] +
+					(
+						p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
+						data->p1HMSBaseAVsOnMenuEntry[1]
+					) + 
+					tempAndPermMod
+				);
+				// CURRENT:
+				// The max value above modified by the companion player's 
+				// current damage AV modifier.
+				float currentValue = 
+				(
+					fullValue + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+					)
+				);
 			
-			args[4] = RE::GFxValue(std::roundf(currentValue));
-			args[5] = RE::GFxValue(std::roundf(fullValue));
-			args[6] = RE::GFxValue
-			(
-				tempAndPermMod == 0.0f ? 0xFFFFFF : 
-				tempAndPermMod < 0.0f ? 0xFF0000 :
-				0x00FF00
-			);
+				args[4] = RE::GFxValue(std::roundf(currentValue));
+				args[5] = RE::GFxValue(std::roundf(fullValue));
+				args[6] = RE::GFxValue
+				(
+					tempAndPermMod == 0.0f ? 0xFFFFFF : 
+					tempAndPermMod < 0.0f ? 0xFF0000 :
+					0x00FF00
+				);
 
-			// Health (current, full, color).
-			tempAndPermMod = 
-			(
-				playerInMenusPtr->GetActorValueModifier
+				// Health (current, full, color).
+				tempAndPermMod = 
 				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary,
-					RE::ActorValue::kHealth
-				) + 
-				playerInMenusPtr->GetActorValueModifier
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary,
+						RE::ActorValue::kHealth
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent,
+						RE::ActorValue::kHealth
+					) 	
+				);
+				fullValue = 
 				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent,
-					RE::ActorValue::kHealth
-				) 	
-			);
-			fullValue = 
-			(
-				data->hmsBasePointsList[0] + 
-				data->hmsPointIncreasesList[0] +
+					data->hmsBasePointsList[0] + 
+					data->hmsPointIncreasesList[0] +
+					(
+						p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
+						data->p1HMSBaseAVsOnMenuEntry[0]
+					) + 
+					tempAndPermMod
+				);
+				currentValue = 
 				(
-					p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
-					data->p1HMSBaseAVsOnMenuEntry[0]
-				) + 
-				tempAndPermMod
-			);
-			currentValue = 
-			(
-				fullValue + 
-				playerInMenusPtr->GetActorValueModifier
+					fullValue + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+					)
+				);
+				args[7] = RE::GFxValue(std::roundf(currentValue));
+				args[8] = RE::GFxValue(std::roundf(fullValue));
+				args[9] = RE::GFxValue
 				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
-				)
-			);
-			args[7] = RE::GFxValue(std::roundf(currentValue));
-			args[8] = RE::GFxValue(std::roundf(fullValue));
-			args[9] = RE::GFxValue
-			(
-				tempAndPermMod == 0.0f ? 0xFFFFFF : 
-				tempAndPermMod < 0.0f ? 0xFF0000 :
-				0x00FF00
-			);
+					tempAndPermMod == 0.0f ? 0xFFFFFF : 
+					tempAndPermMod < 0.0f ? 0xFF0000 :
+					0x00FF00
+				);
 
-			// Stamina (current, max, color).
-			tempAndPermMod = 
-			(
-				playerInMenusPtr->GetActorValueModifier
+				// Stamina (current, max, color).
+				tempAndPermMod = 
 				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary,
-					RE::ActorValue::kStamina
-				) + 
-				playerInMenusPtr->GetActorValueModifier
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary,
+						RE::ActorValue::kStamina
+					) + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent,
+						RE::ActorValue::kStamina
+					) 	
+				);
+				fullValue = 
 				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent,
-					RE::ActorValue::kStamina
-				) 	
-			);
-			fullValue = 
-			(
-				data->hmsBasePointsList[2] + 
-				data->hmsPointIncreasesList[2] +
+					data->hmsBasePointsList[2] + 
+					data->hmsPointIncreasesList[2] +
+					(
+						p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
+						data->p1HMSBaseAVsOnMenuEntry[2]
+					) + 
+					tempAndPermMod
+				);
+				currentValue = 
 				(
-					p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
-					data->p1HMSBaseAVsOnMenuEntry[2]
-				) + 
-				tempAndPermMod
-			);
-			currentValue = 
-			(
-				fullValue + 
-				playerInMenusPtr->GetActorValueModifier
+					fullValue + 
+					playerInMenusPtr->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+					)
+				);
+				args[10] = RE::GFxValue(std::roundf(currentValue));
+				args[11] = RE::GFxValue(std::roundf(fullValue));
+				args[12] = RE::GFxValue
 				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
-				)
-			);
-			args[10] = RE::GFxValue(std::roundf(currentValue));
-			args[11] = RE::GFxValue(std::roundf(fullValue));
-			args[12] = RE::GFxValue
-			(
-				tempAndPermMod == 0.0f ? 0xFFFFFF : 
-				tempAndPermMod < 0.0f ? 0xFF0000 :
-				0x00FF00
-			);
+					tempAndPermMod == 0.0f ? 0xFFFFFF : 
+					tempAndPermMod < 0.0f ? 0xFF0000 :
+					0x00FF00
+				);
 
-			base.Invoke("SetPlayerInfo", args);
-
-			/*
+				base.Invoke("SetPlayerInfo", args);
 			}
 			else
 			{
@@ -18996,7 +19041,7 @@ namespace ALYSLC
 					0x00FF00
 				);
 				base.Invoke("SetMeter", nullptr, args, 4);
-			}*/
+			}
 		}
 
 		RE::UI_MESSAGE_RESULTS StatsMenuHooks::ProcessMessage

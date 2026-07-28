@@ -5807,8 +5807,9 @@ namespace ALYSLC
 		{
 			adjustedAfterReachingDialoguePos = false;
 		}
-		else if (camAdjMode != CamAdjustmentMode::kNone)
+		else if (camAdjMode == CamAdjustmentMode::kZoom)
 		{
+			// Keep zoomed out after a player attempts to adjust zoom.
 			adjustedAfterReachingDialoguePos = true;
 		}
 

@@ -87,7 +87,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					DBG
+					INF
 					(
 						"No controller connected at index {}. Result #{}.", 
 						controllerIndex, errorNum
@@ -106,7 +106,11 @@ namespace ALYSLC
 			// if no controllers are plugged in.
 			if (numInputDevices == 1 && inputDeviceIDs[0] >= ALYSLC_MAX_CONTROLLER_COUNT)
 			{
-				DBG("Only the keyboard and mouse is connected. Cannot start co-op.");
+				INF("Only the keyboard and mouse is connected. Cannot start co-op.");
+			}
+			else
+			{
+				INF("Too few input devices connected. Cannot start co-op.");
 			}
 
 			// For now, return an empty list since at least two input devices must be connected.
@@ -115,13 +119,13 @@ namespace ALYSLC
 		else if (numInputDevices == 2 && inputDeviceIDs[0] >= ALYSLC_MAX_CONTROLLER_COUNT)
 		{
 			// Hybrid mode active when only 1 controller is plugged in.
-			DBG("Hybrid mode active. Device IDs are {} and {}.",
+			INF("Hybrid mode active. Device IDs are {} and {}.",
 				inputDeviceIDs[0], inputDeviceIDs[1]);
 			glob.hybridModeActive = true;
 		}
 		else
 		{
-			DBG("Hybrid mode inactive. {} input devices. First CID: {}", 
+			INF("Hybrid mode inactive. {} input devices. First CID: {}", 
 				inputDeviceIDs.size(), inputDeviceIDs[0]);
 			glob.hybridModeActive = false;
 		}
@@ -383,6 +387,9 @@ namespace ALYSLC
 				// First press.
 				if (!state.isPressed) 
 				{
+					// REMOVE when done debugging.
+					DBG("Controller {}, player {}: Just started pressing {}.",
+						a_controllerID, a_playerID, static_cast<InputAction>(i));
 					state.isPressed = true;
 					state.justPressed = true;
 					state.pressedMag = 1.0f;
