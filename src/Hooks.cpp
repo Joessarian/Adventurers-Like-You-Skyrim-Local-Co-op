@@ -3599,7 +3599,7 @@ namespace ALYSLC
 			// Prevent the game force-running packages that can play idles 
 			// or equip gear on the companion player's character.
 
-			if (!glob.globalDataInit || !glob.allPlayersInit)
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				return _PutCreatedPackage(a_this, a_package, a_tempPackage, a_createdPackage);
 			}
@@ -4134,13 +4134,470 @@ namespace ALYSLC
 
 		void CharacterHooks::Update(RE::Character* a_this, float a_delta)
 		{
-			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
+			if (!glob.globalDataInit)
+			{
+				return _Update(a_this, a_delta);
+			}
+
+			// No chatting when outside of co-op. Otherwise, 
+			// player characters will repeatedly inform P1 that they are, in fact, still here.
+			if (!glob.coopSessionActive &&
+				GlobalCoopData::IsCoopCharacter(a_this) && 
+				a_this->Is3DLoaded() &&
+				a_this->currentProcess &&
+				a_this->currentProcess->high)
+			{
+				_Update(a_this, a_delta);
+				auto high = a_this->currentProcess->high;
+				high->checkToTalkTimer = FLT_MAX;
+				high->greetingPlayer = false;
+				high->greetActor = RE::ObjectRefHandle();
+				high->greetingTimer = FLT_MAX;
+
+				auto ui = RE::UI::GetSingleton();
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				auto menuTopicMgr = RE::MenuTopicManager::GetSingleton(); 
+				auto actorBase = a_this->GetActorBase();
+				auto dataHandler = RE::TESDataHandler::GetSingleton();
+				if (!ui || !p1 || !menuTopicMgr || !dataHandler || !actorBase) 
+				{
+					return;
+				}
+
+				if (ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) || glob.isSummoningPlayers)
+				{
+					return;
+				}
+
+				// Unsure if there's another way of checking if an actor 
+				// is currently a P1 follower.
+				// CurrentFollowerFaction or nwsFF_FollwerFac.
+				bool isFollower = 
+				(
+					(a_this->IsInFaction(glob.currentFollowerFaction)) ||
+					(
+						ALYSLC::NFFCompat::g_installed && 
+						a_this->IsInFaction
+						(
+							dataHandler->LookupForm<RE::TESFaction>
+							(
+								0x16EB3, "nwsFollowerFramework.esp"
+							)
+						)
+					)
+				);
+				// Sometimes not set as follower 
+				// (removed from actor followers list in ExFollower data)
+				// when running a combat override package. Ugh. Why?
+				// So we'll check to see if they're running a vanilla follower package.
+				if (isFollower && 
+					actorBase->actorData.actorBaseFlags.any
+					(
+						RE::ACTOR_BASE_DATA::Flag::kInvulnerable, 
+						RE::ACTOR_BASE_DATA::Flag::kIsGhost,
+						RE::ACTOR_BASE_DATA::Flag::kDoesntBleed
+					))
+				{
+					DBG
+					(
+						"{}: Stand up, son. Teammate: {}, follower: {}.",
+						a_this->GetName(),
+						a_this->IsPlayerTeammate(),
+						Util::IsFollower(a_this)
+					);
+					Util::ToggleActorDormantState(a_this, false);
+				}
+				else if (!isFollower && 
+						 !actorBase->actorData.actorBaseFlags.all
+						 (
+							 RE::ACTOR_BASE_DATA::Flag::kInvulnerable, 
+							 RE::ACTOR_BASE_DATA::Flag::kIsGhost,
+							 RE::ACTOR_BASE_DATA::Flag::kDoesntBleed
+						 ))
+				{
+					// Set as dormant when not listed as a follower and also not a player teammate
+					// to avoid the situation where a run-once package is running,
+					// which is not a follower package, and the follower exData entry is removed.
+					DBG
+					(
+						"{}: Sit down, son. Teammate: {}, follower: {}.",
+						a_this->GetName(),
+						a_this->IsPlayerTeammate(),
+						Util::IsFollower(a_this)
+					);
+					Util::ToggleActorDormantState(a_this, true);
+				}
+
+				/*if (isFollower && !runningFollowerPackage)
+				{
+					DBG
+					(
+						"{}: Stand up, son. Teammate: {}, follower: {}.",
+						a_this->GetName(),
+						a_this->IsPlayerTeammate(),
+						Util::IsFollower(a_this)
+					);
+					Util::ToggleActorDormantState(a_this, false);
+				}
+				else if (!isFollower && runningFollowerPackage)
+				{
+					DBG
+					(
+						"{}: Sit down, son. Teammate: {}, follower: {}.",
+						a_this->GetName(),
+						a_this->IsPlayerTeammate(),
+						Util::IsFollower(a_this)
+					);
+					Util::ToggleActorDormantState(a_this, true);
+				}
+				*/
+
+				// NOTE:
+				// This will function without making the player character a follower.
+				// Kept commented out but serves as a fallback if adding the character as a follower 
+				// creates too many problems.
+				/*
+				if (!a_this->IsInFaction(glob.currentFollowerFaction))
+				{
+					a_this->AddToFaction(glob.currentFollowerFaction, 0);
+				}
+
+				int32_t characterID = Util::GetEditorID(actorBase).back() - '0';
+				if (characterID <= 0 || 2 * characterID + 1 >= glob.coopPackageFormlists.size())
+				{
+					ERR
+					(
+						"ERR: {}'s character ID is outside the package form list range: "
+						"2 x {} not in range [1, {}]",
+						a_this->GetName(),
+						characterID,
+						glob.coopPackageFormlists.size()
+					);
+					return;
+				}
+
+				// Sandbox fallback when sitting idle fails to play.
+				auto defPackageList = glob.coopPackageFormlists[2 * characterID];
+				auto combatPackageList = glob.coopPackageFormlists[2 * characterID + 1];
+				if (!defPackageList)
+				{
+					ERR
+					(
+						"ERR: {}'s default package form list is invalid.", a_this->GetName()
+					);
+					return;
+				}
+
+				if (!combatPackageList)
+				{
+					ERR
+					(
+						"ERR: {}'s combat package form list is invalid.", a_this->GetName()
+					);
+					return;
+				}
+				
+				DBG
+				(
+					"{}'s default/combat package form list has {}, {} packages. ID: {}", 
+					a_this->GetName(),
+					defPackageList->forms.size(),
+					combatPackageList->forms.size(),
+					characterID
+				);
+
+				auto currentPackage = a_this->GetCurrentPackage();
+				// Sandbox when not sitting or added as a follower.
+				// Only if Sandbox When Idle is installed.
+				bool isIdle = false;
+				bool isExteriorCell = p1->parentCell && p1->parentCell->IsExteriorCell();
+				bool inCombat = a_this->IsInCombat() || p1->IsInCombat();
+				bool shouldEvaluatePackage = false;
+				if ((!inCombat && RE::PlayerCamera::GetSingleton()->idleTimer > 15.0f) && 
+					(
+						currentPackage == glob.followerPackage ||
+						currentPackage == glob.followerCombatOverrideExteriorPackage ||
+						currentPackage == glob.followerCombatOverrideInteriorPackage
+					))
+				{
+					a_this->DrawWeaponMagicHands(false);
+					currentPackage->packData.packFlags.reset
+					(
+						RE::PACKAGE_DATA::GeneralFlag::kWeaponDrawn
+					);
+
+					bool shouldSandboxInstead = false;
+					if (ALYSLC::SandboxWhenIdleCompat::g_installed)
+					{
+						auto exteriorPackage = RE::TESForm::LookupByEditorID<RE::TESPackage>
+						(
+							"SandboxWhenIdleExterior"
+						);
+						auto interiorPackage = RE::TESForm::LookupByEditorID<RE::TESPackage>
+						(
+							"SandboxWhenIdleInterior"
+						);
+						auto p1 = RE::PlayerCharacter::GetSingleton();
+						if (exteriorPackage && interiorPackage && p1 && p1->parentCell)
+						{
+							if (!defPackageList->forms.empty())
+							{
+								defPackageList->forms.clear();
+							}
+			
+							if (!combatPackageList->forms.empty())
+							{
+								combatPackageList->forms.clear();
+							}
+
+							if (isExteriorCell)
+							{
+								DBG("{}: YES OUT", a_this->GetName());
+								defPackageList->forms.emplace_back(exteriorPackage);
+								combatPackageList->forms.emplace_back(exteriorPackage);
+							}
+							else
+							{
+								DBG("{}: YES IN", a_this->GetName());
+								defPackageList->forms.emplace_back(interiorPackage);
+								combatPackageList->forms.emplace_back(interiorPackage);
+							}
+
+							shouldSandboxInstead = true;
+						}
+					}
+					
+					// Sit down if not sandboxing.
+					if (!shouldSandboxInstead)
+					{
+						DBG("{}: YES SIT", a_this->GetName());
+						bool succ = Util::PlayIdle(glob.dormantStateIdle, a_this);
+						if (succ && a_this->currentProcess->high)
+						{
+							a_this->currentProcess->high->currentProcessIdle = 
+							glob.dormantStateIdle;
+						}
+
+						if (!defPackageList->forms.empty())
+						{
+							defPackageList->forms.clear();
+						}
+			
+						if (!combatPackageList->forms.empty())
+						{
+							combatPackageList->forms.clear();
+						}
+					}
+
+					isIdle = true;
+					shouldEvaluatePackage = true;
+				}
+				else if (RE::PlayerCamera::GetSingleton()->idleTimer <= 15.0f)
+				{
+					if (currentPackage != glob.followerPackage &&
+						currentPackage != glob.followerCombatOverrideExteriorPackage &&
+						currentPackage != glob.followerCombatOverrideInteriorPackage)
+					{
+						DBG("{}: YES GET UP", a_this->GetName());
+						a_this->currentProcess->SetRunOncePackage(nullptr, a_this);
+						a_this->currentProcess->StopCurrentIdle(a_this, true);
+						Util::PlayIdle("ResetRoot", a_this);
+					
+						if (!defPackageList->forms.empty())
+						{
+							defPackageList->forms.clear();
+						}
+			
+						if (!combatPackageList->forms.empty())
+						{
+							combatPackageList->forms.clear();
+						}
+
+						if (inCombat)
+						{
+							DBG("{}: YES COMBAT", a_this->GetName());
+							if (isExteriorCell)
+							{
+								defPackageList->forms.emplace_back
+								(
+									glob.followerCombatOverrideExteriorPackage
+								);
+								combatPackageList->forms.emplace_back
+								(
+									glob.followerCombatOverrideExteriorPackage
+								);
+							}
+							else
+							{
+								defPackageList->forms.emplace_back
+								(
+									glob.followerCombatOverrideInteriorPackage
+								);
+								combatPackageList->forms.emplace_back
+								(
+									glob.followerCombatOverrideInteriorPackage
+								);
+							}
+						}
+						else
+						{
+							DBG("{}: YES NO COMBAT", a_this->GetName());
+							defPackageList->forms.emplace_back(glob.followerPackage);
+							combatPackageList->forms.emplace_back(glob.followerPackage);
+						}
+						
+						shouldEvaluatePackage = true;
+					}
+					else 
+					{
+						if (inCombat && currentPackage == glob.followerPackage)
+						{
+							if (!defPackageList->forms.empty())
+							{
+								defPackageList->forms.clear();
+							}
+			
+							if (!combatPackageList->forms.empty())
+							{
+								combatPackageList->forms.clear();
+							}
+
+							DBG("{}: YES COMBAT SWITCH", a_this->GetName());
+							if (isExteriorCell)
+							{
+								defPackageList->forms.emplace_back
+								(
+									glob.followerCombatOverrideExteriorPackage
+								);
+								combatPackageList->forms.emplace_back
+								(
+									glob.followerCombatOverrideExteriorPackage
+								);
+							}
+							else
+							{
+								defPackageList->forms.emplace_back
+								(
+									glob.followerCombatOverrideInteriorPackage
+								);
+								combatPackageList->forms.emplace_back
+								(
+									glob.followerCombatOverrideInteriorPackage
+								);
+							}
+							
+							shouldEvaluatePackage = true;
+						}
+						else if ((!inCombat) &&
+								 (currentPackage == glob.followerCombatOverrideExteriorPackage ||
+								 currentPackage == glob.followerCombatOverrideInteriorPackage))
+						{
+							if (!defPackageList->forms.empty())
+							{
+								defPackageList->forms.clear();
+							}
+			
+							if (!combatPackageList->forms.empty())
+							{
+								combatPackageList->forms.clear();
+							}
+
+							DBG("{}: YES NO COMBAT SWITCH", a_this->GetName());
+							defPackageList->forms.emplace_back(glob.followerPackage);
+							combatPackageList->forms.emplace_back(glob.followerPackage);
+							shouldEvaluatePackage = true;
+						}
+					}
+				}
+				
+				if (currentPackage)
+				{
+					bool packSneak = currentPackage->packData.packFlags.all
+					(
+						RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak
+					);
+					bool packDrawn = currentPackage->packData.packFlags.all
+					(
+						RE::PACKAGE_DATA::GeneralFlag::kWeaponDrawn
+					);
+					if ((p1->IsWeaponDrawn() && !a_this->IsWeaponDrawn()) || 
+						(!p1->IsWeaponDrawn() && a_this->IsWeaponDrawn()))
+					{
+						if (p1->IsWeaponDrawn())
+						{
+							currentPackage->packData.packFlags.set
+							(
+								RE::PACKAGE_DATA::GeneralFlag::kWeaponDrawn
+							);
+						}
+						else
+						{
+							currentPackage->packData.packFlags.reset
+							(
+								RE::PACKAGE_DATA::GeneralFlag::kWeaponDrawn
+							);
+						}
+						
+						shouldEvaluatePackage = true;
+					}
+
+					if ((p1->IsSneaking() && !a_this->IsSneaking()) || 
+						(!p1->IsSneaking() && a_this->IsSneaking()))
+					{
+						Util::RunPlayerActionCommand
+						(
+							RE::DEFAULT_OBJECT::kActionSneak, a_this
+						);
+						a_this->actorState1.sneaking = p1->IsSneaking() ? 1 : 0;
+						a_this->actorState2.forceSneak = p1->IsSneaking() ? 1 : 0;
+						shouldEvaluatePackage = true;
+					}
+				}
+				
+				if (shouldEvaluatePackage)
+				{
+					a_this->EvaluatePackage(true, true);
+				}
+				*/
+
+				/*DBG
+				(
+					"{}: NO CO-OP: Current package: {} (0x{:X}). Teammate: {}, follower: {}.",
+					a_this->GetName(), 
+					a_this->GetCurrentPackage() ? 
+					Util::GetEditorID(a_this->GetCurrentPackage()) :
+					"NONE",
+					a_this->GetCurrentPackage() ? 
+					a_this->GetCurrentPackage()->formID :
+					0xDEAD,
+					a_this->IsPlayerTeammate(),
+					Util::IsFollower(a_this)
+				);*/
+
+				return;
+			}
+
+			// Skip further processing if players are not initialized or if co-op is not active.
+			if (!glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				return _Update(a_this, a_delta);
 			}
 
 			if (GlobalCoopData::IsCoopPlayer(a_this))
 			{
+				/*DBG
+				(
+					"{}: CO-OP: Current package: {} (0x{:X}). Teammate: {}, follower: {}.",
+					a_this->GetName(), 
+					a_this->GetCurrentPackage() ? 
+					Util::GetEditorID(a_this->GetCurrentPackage()) :
+					"NONE",
+					a_this->GetCurrentPackage() ? 
+					a_this->GetCurrentPackage()->formID :
+					0xDEAD,
+					a_this->IsPlayerTeammate(),
+					Util::IsFollower(a_this)
+				);*/
 				const auto& p = glob.coopPlayers[GlobalCoopData::GetCoopPlayerIndex(a_this)];
 
 				// IMPORTANT NOTE:
@@ -4295,6 +4752,12 @@ namespace ALYSLC
 				bool gamePaused = ui->GameIsPaused();
 				if (high && !gamePaused && p->mm->IsRunning())
 				{
+					// No chatting.
+					high->checkToTalkTimer = FLT_MAX;
+					high->greetingPlayer = false;
+					high->greetActor = RE::ObjectRefHandle();
+					high->greetingTimer = FLT_MAX;
+
 					auto paraMT = glob.paraglidingMT;
 					auto& speeds = 
 					(
@@ -5072,7 +5535,7 @@ namespace ALYSLC
 				return _GetActorValue(a_this, a_akValue);
 			}
 
-			for (const auto actorPtr : glob.coopEntityBlacklist)
+			for (const auto actorPtr : glob.coopPlayerCharacters)
 			{
 				if (actorPtr && a_this == actorPtr.get())
 				{
@@ -5102,7 +5565,7 @@ namespace ALYSLC
 				return _GetBaseActorValue(a_this, a_akValue);
 			}
 
-			for (const auto actorPtr : glob.coopEntityBlacklist)
+			for (const auto actorPtr : glob.coopPlayerCharacters)
 			{
 				if (actorPtr && a_this == actorPtr.get())
 				{
@@ -5132,7 +5595,7 @@ namespace ALYSLC
 				return _GetPermanentActorValue(a_this, a_akValue);
 			}
 
-			for (const auto actorPtr : glob.coopEntityBlacklist)
+			for (const auto actorPtr : glob.coopPlayerCharacters)
 			{
 				if (actorPtr && a_this == actorPtr.get())
 				{
@@ -5162,7 +5625,7 @@ namespace ALYSLC
 				return _ModActorValue(a_this, a_akValue, a_value);
 			}
 
-			for (const auto actorPtr : glob.coopEntityBlacklist)
+			for (const auto actorPtr : glob.coopPlayerCharacters)
 			{
 				if (actorPtr && a_this == actorPtr.get())
 				{
@@ -5193,7 +5656,7 @@ namespace ALYSLC
 				return _RestoreActorValue(a_this, a_modifier, a_akValue, a_value);
 			}
 
-			for (const auto actorPtr : glob.coopEntityBlacklist)
+			for (const auto actorPtr : glob.coopPlayerCharacters)
 			{
 				if (actorPtr && a_this == actorPtr.get())
 				{
@@ -5312,7 +5775,7 @@ namespace ALYSLC
 				return _SetActorValue(a_this, a_akValue, a_value);
 			}
 
-			for (const auto actorPtr : glob.coopEntityBlacklist)
+			for (const auto actorPtr : glob.coopPlayerCharacters)
 			{
 				if (actorPtr && a_this == actorPtr.get())
 				{
@@ -5340,7 +5803,7 @@ namespace ALYSLC
 				return _SetBaseActorValue(a_this, a_akValue, a_value);
 			}
 
-			for (const auto actorPtr : glob.coopEntityBlacklist)
+			for (const auto actorPtr : glob.coopPlayerCharacters)
 			{
 				// Not a player.
 				if (!actorPtr || a_this != actorPtr.get())
@@ -5381,22 +5844,33 @@ namespace ALYSLC
 						1 : 
 						2
 					);
-					serializedBaseValue = 
+					data->hmsBasePointsList[index] = a_value - data->hmsPointIncreasesList[index];
+					DBG
 					(
-						data->hmsBasePointsList[index] + data->hmsPointIncreasesList[index]
+						"{}: Trying to set attribute {}'s base value to {}. "
+						"Set serialized value to {} from inc of {}.",
+						actorPtr->GetName(), 
+						Util::GetActorValueName(a_akValue),
+						a_value, 
+						data->hmsBasePointsList[index],
+						data->hmsPointIncreasesList[index]
 					);
-					if (a_value != serializedBaseValue)
-					{
-						// CHANGE TO DEBUG
-						DBG
-						(
-							"{}: Trying to set attribute {}'s base value to {}. Set to {} instead.",
-							actorPtr->GetName(), 
-							Util::GetActorValueName(a_akValue),
-							a_value, 
-							serializedBaseValue
-						);
-					}
+					//serializedBaseValue = 
+					//(
+					//	data->hmsBasePointsList[index] + data->hmsPointIncreasesList[index]
+					//);
+					//if (a_value != serializedBaseValue)
+					//{
+					//	// CHANGE TO DEBUG
+					//	DBG
+					//	(
+					//		"{}: Trying to set attribute {}'s base value to {}. Set to {} instead.",
+					//		actorPtr->GetName(), 
+					//		Util::GetActorValueName(a_akValue),
+					//		a_value, 
+					//		serializedBaseValue
+					//	);
+					//}
 				}
 				// May be unnecessary to commented out for now.
 				//else
@@ -6872,6 +7346,9 @@ namespace ALYSLC
 								"Summoning menu binds pressed but not triggered. "
 								"Opening menu now."
 							);
+							// Stop the current session first.
+							DBG("Stop co-op session");
+							GlobalCoopData::StopCoopSession(false, true);
 							glob.onSummoningMenuRequest.SendEvent();
 						}
 					}
@@ -16290,7 +16767,7 @@ namespace ALYSLC
 						);
 					}
 
-					// Update entry list on after opening.
+					// Update entry list after opening.
 					if (auto taskInterface = SKSE::GetTaskInterface(); taskInterface)
 					{
 						taskInterface->AddUITask
@@ -18437,6 +18914,137 @@ namespace ALYSLC
 
 			// Run the game's update first and then overwrite its changes.
 			_AdvanceMovie(a_this, a_interval, a_currentTime);
+			//UpdateStats();
+		}
+
+		RE::UI_MESSAGE_RESULTS StatsMenuHooks::ProcessMessage
+		(
+			RE::StatsMenu* a_this, RE::UIMessage& a_message
+		)
+		{
+			auto result = _ProcessMessage(a_this, a_message);
+			auto strings = RE::InterfaceStrings::GetSingleton();
+			auto ui = RE::UI::GetSingleton();
+			// IMPORTANT:
+			// Figure out why two 'hide' messages are sent to close the Stats Menu 
+			// per 'show' message used to open it.
+			// The first message is ignored.
+			// Seriously, why?
+			/*DBG
+			(
+				"Menu: {}, type: {}. Open: {}, result: {}.", 
+				a_message.menu, 
+				*a_message.type, 
+				ui && ui->IsMenuOpen(a_this->MENU_NAME),
+				result
+			);*/
+			if (glob.globalDataInit &&
+				glob.coopSessionActive &&
+				glob.menuPID > 0 &&
+				ui &&
+				ui->IsMenuOpen(a_this->MENU_NAME) &&
+				strings &&
+				a_message.menu == strings->topMenu &&
+				*a_message.type == RE::UI_MESSAGE_TYPE::kUpdate)
+			{
+				// IMPORTANT:
+				// Figure out how to run directly after this call via task 
+				// if calling it here causes crashes.
+				UpdateStats();
+				return result;
+			}
+
+			bool ignored = result == RE::UI_MESSAGE_RESULTS::kIgnore;
+			// Nothing to do here, since the message is ignored, global data is not initialized, 
+			// or serializable data is not available. 
+			if (ignored || !glob.globalDataInit || glob.serializablePlayerData.empty())
+			{
+				return result;
+			}
+
+			// P1 must be valid below.
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (!p1)
+			{
+				return result;
+			}
+
+			bool opening = *a_message.type == RE::UI_MESSAGE_TYPE::kShow;
+			bool closing = 
+			(
+				*a_message.type == RE::UI_MESSAGE_TYPE::kHide || 
+				*a_message.type == RE::UI_MESSAGE_TYPE::kForceHide
+			);
+			if (!opening && !closing)
+			{
+				return result;
+			}
+			
+			// TODO: 
+			// Implement Vampire Lord and Werewolf perk sync when co-op players are transformed.
+			// So for now, do not modify perk data if P1 is transformed.
+			bool p1IsTransformed = Util::IsWerewolf(p1) || Util::IsVampireLord(p1);
+
+			// Is P1 requesting to open the StatsMenu?
+			// Have to also adjust perk data for P1 when outside of co-op.
+			bool p1Req = !glob.coopSessionActive;
+			if (glob.coopSessionActive)
+			{
+				bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
+				RE::ActorPtr playerInMenusPtr{ nullptr };
+				// Do not modify the requests queue, 
+				// since the menu input manager still needs this info
+				// when setting the request and menu player IDs when this menu opens/closes.
+				glob.lastResolvedMenuPID = glob.moarm->ResolveMenuPlayerID
+				(
+					a_this->MENU_NAME, false
+				);
+
+				DBG
+				(
+					"Current menu PID: {}, resolved menu PID: {}. "
+					"Opening: {}, closing: {}, has copied data: {}.",
+					glob.menuPID, glob.lastResolvedMenuPID, opening, closing, hasCopiedData
+				);
+
+				// Control is/was requested by a companion player.
+				if (glob.lastResolvedMenuPID != -1 && 
+					glob.lastResolvedMenuPID != 0 && 
+					!p1IsTransformed)
+				{
+					// Copy back player data only if data was already copied.
+					// Ignore subsequent hide messages once P1's data is restored.
+					closing &= hasCopiedData;
+					if (opening || closing)
+					{
+						const auto& p = glob.coopPlayers[glob.lastResolvedMenuPID];
+						const RE::BSFixedString menuName = a_this->MENU_NAME;
+						// Copy over player data.
+						GlobalCoopData::CopyOverCoopPlayerData
+						(
+							opening, menuName, p->coopActor->GetHandle(), nullptr
+						);
+					}
+				}
+				else
+				{
+					// If another player is not requesting control, default to P1.
+					p1Req = true;
+				}
+			}
+
+			// Don't adjust data if Enderal is installed.
+			if ((p1Req && !p1IsTransformed && !ALYSLC::EnderalCompat::g_installed) && 
+				(opening || closing))
+			{
+				GlobalCoopData::AdjustPerkDataForPlayer1(opening);
+			}
+
+			return result;
+		}
+
+		void StatsMenuHooks::UpdateStats()
+		{
 			auto ui = RE::UI::GetSingleton();
 			auto p1 = RE::PlayerCharacter::GetSingleton();
 			if (!ui || !p1 || !glob.coopSessionActive || glob.menuPID <= 0)
@@ -18444,7 +19052,18 @@ namespace ALYSLC
 				return;
 			}
 
-			auto view = a_this->uiMovie;
+			if (!ui->IsMenuOpen(RE::StatsMenu::MENU_NAME))
+			{
+				return;
+			}
+
+			auto statsMenu = ui->GetMenu<RE::StatsMenu>();
+			if (!statsMenu)
+			{
+				return;
+			}
+
+			auto view = statsMenu->uiMovie;
 			if (!view)
 			{
 				return;
@@ -19042,270 +19661,6 @@ namespace ALYSLC
 				);
 				base.Invoke("SetMeter", nullptr, args, 4);
 			}
-		}
-
-		RE::UI_MESSAGE_RESULTS StatsMenuHooks::ProcessMessage
-		(
-			RE::StatsMenu* a_this, RE::UIMessage& a_message
-		)
-		{
-			auto view = a_this->uiMovie;
-			RE::UI_MESSAGE_RESULTS result = RE::UI_MESSAGE_RESULTS::kPassOn;
-			// True if this update modifies P1's name, race name, and HMS meters.
-			// Want to undo this update's changes while a companion player is controlling menus
-			// and should have their data imported onto P1.
-			bool modifiedNames = false;
-			if (view)
-			{
-				RE::GFxValue root{ };
-				bool base1Set = false;
-				RE::GFxValue base{ };
-				// Sometimes there's two base instances with modded Stats Menus. 
-				// Modify both, idk anymore.
-				RE::GFxValue base2{ };
-				view->GetVariable
-				(
-					std::addressof(root), "_root"
-				);
-				if (!root.IsNull() && !root.IsUndefined())
-				{
-					root.VisitMembers
-					(
-						[&base, &base2, &base1Set](const char* a_name, const RE::GFxValue& a_value)
-						{
-							if (Hash(a_name) == "StatsMenuBaseInstance"_h)
-							{
-								if (base1Set)
-								{
-									base2 = a_value;
-								}
-								else
-								{
-									base1Set = true;
-									base = a_value;
-								}
-							}
-						}
-					);
-				}
-
-				if (base.IsNull() || base.IsUndefined())
-				{
-					return _ProcessMessage(a_this, a_message);;
-				}
-
-				// REMOVE when done debugging.
-				/*base.VisitMembers
-				(
-					[](const char* a_name, const RE::GFxValue& a_value)
-					{
-						DBG
-						(
-							"Base has member {}: {}.", 
-							a_name, 
-							!a_value.IsNull() &&
-							!a_value.IsUndefined() ? 
-							a_value.GetType() :
-							RE::GFxValue::ValueType::kUndefined
-						);
-					}
-				);*/
-
-				RE::GFxValue playerName{ };
-				RE::GFxValue playerRace{ };
-				if (ALYSLC::ExtendedUICompat::g_installed)
-				{
-					RE::BSFixedString nameBefore{ };
-					RE::BSFixedString raceNameBefore{ };
-					base.GetMember("playerName", std::addressof(playerName));
-					if (!playerName.IsNull() && !playerName.IsUndefined())
-					{
-						nameBefore = playerName.GetString();
-					}
-					
-					base.GetMember("playerRace", std::addressof(playerRace));
-					if (!playerRace.IsNull() && !playerRace.IsUndefined())
-					{
-						raceNameBefore = playerRace.GetString();
-					}
-					// Let the other handlers process the message first 
-					// before we potentially modify the UI or import another player's data.
-					result = _ProcessMessage(a_this, a_message);
-					
-					base.GetMember("playerName", std::addressof(playerName));
-					if (!playerName.IsNull() && !playerName.IsUndefined())
-					{
-						modifiedNames = nameBefore != playerName.GetString();
-					}
-					
-					base.GetMember("playerRace", std::addressof(playerRace));
-					if (!playerRace.IsNull() && !playerRace.IsUndefined())
-					{
-						modifiedNames |= nameBefore != playerRace.GetString();
-					}
-				}
-				else
-				{
-					RE::BSFixedString nameBefore{ };
-					RE::BSFixedString raceNameBefore{ };
-					view->GetVariable
-					(
-						std::addressof(playerName),
-						"_root.StatsMenuBaseInstance.TopPlayerInfo.FirstLastLabel"
-					);
-					if (!playerName.IsNull() && !playerName.IsUndefined())
-					{
-						RE::GFxValue text{ };
-						playerName.GetMember("htmlText", std::addressof(text));
-						nameBefore = text.GetString();
-					}
-
-					view->GetVariable
-					(
-						std::addressof(playerRace),
-						"_root.StatsMenuBaseInstance.TopPlayerInfo.RacevalueLabel"
-					);
-					if (!playerRace.IsNull() && !playerRace.IsUndefined())
-					{
-						RE::GFxValue text{ };
-						playerRace.GetMember("htmlText", std::addressof(text));
-						raceNameBefore = text.GetString();
-					}
-
-					// Let the other handlers process the message first 
-					// before we potentially modify the UI or import another player's data.
-					result = _ProcessMessage(a_this, a_message);
-
-					view->GetVariable
-					(
-						std::addressof(playerName),
-						"_root.StatsMenuBaseInstance.TopPlayerInfo.FirstLastLabel"
-					);
-					if (!playerName.IsNull() && !playerName.IsUndefined())
-					{
-						RE::GFxValue text{ };
-						playerName.GetMember("htmlText", std::addressof(text));
-						modifiedNames = nameBefore != text.GetString();
-					}
-
-					view->GetVariable
-					(
-						std::addressof(playerRace),
-						"_root.StatsMenuBaseInstance.TopPlayerInfo.RacevalueLabel"
-					);
-					if (!playerRace.IsNull() && !playerRace.IsUndefined())
-					{
-						RE::GFxValue text{ };
-						playerRace.GetMember("htmlText", std::addressof(text));
-						modifiedNames |= nameBefore != text.GetString();
-					}
-				}
-			}
-			else
-			{
-				result = _ProcessMessage(a_this, a_message);
-			}
-
-			bool ignored = result == RE::UI_MESSAGE_RESULTS::kIgnore;
-			// Nothing to do here, since the message is ignored, global data is not initialized, 
-			// or serializable data is not available. 
-			if (ignored || !glob.globalDataInit || glob.serializablePlayerData.empty())
-			{
-				return result;
-			}
-
-			// P1 must be valid below.
-			auto p1 = RE::PlayerCharacter::GetSingleton();
-			if (!p1)
-			{
-				return result;
-			}
-
-			// TODO: 
-			// Implement Vampire Lord and Werewolf perk sync when co-op players are transformed.
-			// So for now, do not modify perk data if P1 is transformed.
-			bool p1IsTransformed = Util::IsWerewolf(p1) || Util::IsVampireLord(p1);
-
-			// Is P1 requesting to open the StatsMenu?
-			// Have to also adjust perk data for P1 when outside of co-op.
-			bool p1Req = !glob.coopSessionActive;
-			bool opening = *a_message.type == RE::UI_MESSAGE_TYPE::kShow;
-			bool closing = 
-			(
-				*a_message.type == RE::UI_MESSAGE_TYPE::kHide || 
-				*a_message.type == RE::UI_MESSAGE_TYPE::kForceHide
-			);
-			if (glob.coopSessionActive)
-			{
-				bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
-				RE::ActorPtr playerInMenusPtr{ nullptr };
-				if (opening || closing)
-				{
-					// Do not modify the requests queue, 
-					// since the menu input manager still needs this info
-					// when setting the request and menu player IDs when this menu opens/closes.
-					glob.lastResolvedMenuPID = glob.moarm->ResolveMenuPlayerID
-					(
-						a_this->MENU_NAME, false
-					);
-
-					DBG
-					(
-						"Current menu PID: {}, resolved menu PID: {}. "
-						"Opening: {}, closing: {}, has copied data: {}.",
-						glob.menuPID, glob.lastResolvedMenuPID, opening, closing, hasCopiedData
-					);
-				}
-				else 
-				{
-					// No need to handle cases where the menu is opening or closing below here.
-					// Set as handled if the player's name or race name were modified back to P1's.
-					// Do not want any other handlers to re-apply P1's data 
-					// over the companion player's.
-					if (modifiedNames)
-					{
-						return RE::UI_MESSAGE_RESULTS::kHandled;
-					}
-					else
-					{
-						return result;
-					}
-				}
-
-				// Control is/was requested by a companion player.
-				if (glob.lastResolvedMenuPID != -1 && 
-					glob.lastResolvedMenuPID != 0 && 
-					!p1IsTransformed)
-				{
-					// Copy back player data only if data was already copied.
-					// Ignore subsequent hide messages once P1's data is restored.
-					closing &= hasCopiedData;
-					if (opening || closing)
-					{
-						const auto& p = glob.coopPlayers[glob.lastResolvedMenuPID];
-						const RE::BSFixedString menuName = a_this->MENU_NAME;
-						// Copy over player data.
-						GlobalCoopData::CopyOverCoopPlayerData
-						(
-							opening, menuName, p->coopActor->GetHandle(), nullptr
-						);
-					}
-				}
-				else
-				{
-					// If another player is not requesting control, default to P1.
-					p1Req = true;
-				}
-			}
-
-			// Don't adjust data if Enderal is installed.
-			if ((p1Req && !p1IsTransformed && !ALYSLC::EnderalCompat::g_installed) && 
-				(opening || closing))
-			{
-				GlobalCoopData::AdjustPerkDataForPlayer1(opening);
-			}
-
-			return result;
 		}
 
 		RE::UI_MESSAGE_RESULTS TrainingMenuHooks::ProcessMessage

@@ -158,34 +158,6 @@ namespace ALYSLC
 			return ManagerState::kPaused;
 		}
 
-		// Controller error check.
-		/*
-		XINPUT_STATE tempState{ };
-		ZeroMemory(&tempState, sizeof(XINPUT_STATE));
-		if (XInputGetState(deviceID, &tempState) != ERROR_SUCCESS)
-		{
-			DBG
-			(
-				"{}: controller input error for DID {}. "
-				"About to pause all managers and end the co-op session.",
-				coopActor->GetName(), deviceID
-			);
-
-			RE::DebugNotification
-			(
-				fmt::format
-				(
-					"[ALYSLC] ERROR: Controller {} not found. Ending session.", deviceID
-				).data()
-			);
-			GlobalCoopData::TearDownCoopSession(true, true);
-
-			// Must re-assign P1 device ID upon re-summoning.
-			glob.player1DID = -1;
-			return ManagerState::kAwaitingRefresh;
-		}
-		*/
-
 		// Player dismissed or no co-op session active.
 		if ((currentState != ManagerState::kUninitialized) && 
 			(hasBeenDismissed || !glob.coopSessionActive)) 
@@ -611,7 +583,7 @@ namespace ALYSLC
 			// Ensure all players' factions are equivalent to P1's.
 			SyncPlayerFactions();
 			// Set player actor flags.
-			SetCoopPlayerFlags();
+			GlobalCoopData::SetCoopCharacterFlags(coopActor.get(), true);
 			// Add serialized perks to the player.
 			GlobalCoopData::ImportUnlockedPerks(coopActor.get());
 
@@ -1449,7 +1421,10 @@ namespace ALYSLC
 		// Reset 'ghost' flag used for I-frames.
 		if (auto actorBase = coopActor->GetActorBase(); actorBase)
 		{
-			actorBase->actorData.actorBaseFlags.reset(RE::ACTOR_BASE_DATA::Flag::kIsGhost);
+			Util::NativeFunctions::SetActorBaseFlag
+			(
+				actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, false, false
+			);
 		}
 	}
 
@@ -1956,81 +1931,6 @@ namespace ALYSLC
 		);
 	}
 
-	void CoopPlayer::SetCoopPlayerFlags()
-	{
-		// Set actor flags to prepare this player for co-op.
-		
-		// Set essential flags and bleedout override if using the revive system.
-		auto actorBase = coopActor->GetActorBase();
-		if (actorBase)
-		{
-			if (Settings::bUseReviveSystem)
-			{
-				if (!isPlayer1 || Settings::bCanRevivePlayer1)
-				{
-					DBG("{} is now set as essential.", coopActor->GetName());
-					// Not P1 or can revive P1, so set as essential.
-					Util::ChangeEssentialStatus(coopActor.get(), true, !glob.p1IsEssential);
-				}
-				else
-				{
-					DBG
-					(
-						"Cannot revive P1. P1 essential designation: {}.", glob.p1IsEssential
-					);
-					// Is P1 and cannot revive P1, so defer to previous essential designation.
-					Util::ChangeEssentialStatus
-					(
-						coopActor.get(), glob.p1IsEssential, !glob.p1IsEssential
-					);
-				}
-			}
-			else
-			{
-				if (isPlayer1)
-				{
-					DBG
-					(
-						"Cannot revive players. P1 essential designation: {}.", glob.p1IsEssential
-					);
-					// Defer to previous essential designation for P1.
-					Util::ChangeEssentialStatus
-					(
-						coopActor.get(), glob.p1IsEssential, glob.p1IsEssential
-					);
-				}
-				else
-				{
-					DBG
-					(
-						"Cannot revive players {} unset as essential.", coopActor->GetName()
-					);
-					// Player revive disabled, so clear essential flags.
-					Util::ChangeEssentialStatus(coopActor.get(), false, true);
-				}
-			}
-		}
-		
-		// Make sure the player is not paralyzed.
-		coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
-		// Extra flags to modify for companion players.
-		if (!isPlayer1)
-		{
-			// Set as teammate to prevent friendly fire and pickpocketing.
-			coopActor->boolBits.set(RE::Actor::BOOL_BITS::kPlayerTeammate);
-			// Allow rotation.
-			coopActor->boolBits.set(RE::Actor::BOOL_BITS::kShouldRotateToTrack);
-			// Make sure the companion player is tagged as persistent.
-			coopActor->formFlags |= RE::Actor::RecordFlags::kPersistent;
-			// Ensure co-op companion players do not start combat with P1.
-			coopActor->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
-			// Prevent P1 from talking to this companion player.
-			coopActor->AllowPCDialogue(false);
-			// No talking while downed.
-			coopActor->AllowBleedoutDialogue(false);
-		}
-	}
-	
 	void CoopPlayer::SetDefaultRacialAppearance(bool a_setFemale, bool a_setOppositeGenderAnims)
 	{
 		// Import default racial headparts, update gender, animations, skin tone,
@@ -2214,11 +2114,12 @@ namespace ALYSLC
 			coopActor->AddToFaction(coopFaction, 0);
 			DBG
 			(
-				"{} added to co-op faction {} (0x{:X}): {}.",
+				"{} added to co-op faction {} (0x{:X}): {}. Rank: {}",
 				coopActor->GetName(),
 				coopFaction->GetName(),
 				coopFaction->formID,
-				coopActor->IsInFaction(coopFaction)
+				coopActor->IsInFaction(coopFaction),
+				coopActor->GetFactionRank(coopFaction, false)
 			);
 		}
 
@@ -2235,11 +2136,12 @@ namespace ALYSLC
 
 					DBG
 					(
-						"{} now is in faction {} (0x{:X}): {}.",
+						"{} now is in faction {} (0x{:X}): {}. Rank: {}",
 						coopActor->GetName(),
 						a_faction->GetName(),
 						a_faction->formID,
-						coopActor->IsInFaction(a_faction)
+						coopActor->IsInFaction(a_faction),
+						coopActor->GetFactionRank(a_faction, false)
 					);
 
 					return false;
@@ -2254,11 +2156,12 @@ namespace ALYSLC
 			{
 				DBG
 				(
-					"{} is in faction {} (0x{:X}): {}.",
+					"{} is in faction {} (0x{:X}): {}. Rank: {}",
 					coopActor->GetName(),
 					a_faction->GetName(),
 					a_faction->formID,
-					coopActor->IsInFaction(a_faction)
+					coopActor->IsInFaction(a_faction),
+					coopActor->GetFactionRank(a_faction, false)
 				);
 
 				/*if ((a_faction->formID & 0x00FFFFFF) == 0x016EB3)
@@ -2541,7 +2444,8 @@ namespace ALYSLC
 				glob.partyWiped = true;
 				// End co-op session, but keep the co-op camera active
 				// to transition over to the death camera state.
-				GlobalCoopData::TearDownCoopSession(true, false);
+				DBG("Stop co-op session");
+				GlobalCoopData::StopCoopSession(false, false);
 			}
 		}
 		else
@@ -3453,7 +3357,10 @@ namespace ALYSLC
 				// Reset 'ghost' flag used for I-frames.
 				if (auto actorBase = coopActor->GetActorBase(); actorBase)
 				{
-					actorBase->actorData.actorBaseFlags.reset(RE::ACTOR_BASE_DATA::Flag::kIsGhost);
+					Util::NativeFunctions::SetActorBaseFlag
+					(
+						actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, false, false
+					);
 				}
 
 				// Re-equip everything. Clean inventory slate.

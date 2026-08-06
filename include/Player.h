@@ -107,7 +107,7 @@ namespace ALYSLC
 
 		// Debug option to reset P1's state via resurrection and re-equipping hand forms.
 		void ResetPlayer1();
-		
+
 		// Revert to saved pre-transformation race.
 		bool RevertTransformation();
 
@@ -118,11 +118,6 @@ namespace ALYSLC
 		// Set this player as downed and reset all downed player state
 		// in preparation for updating the player until they are revived or the co-op session ends.
 		void SetAsDowned();
-
-		// Set up player for co-op by changing various actorbase data and form flags.
-		void SetCoopPlayerFlags();
-
-		// Set all customization options for the player.
 
 		// Import default racial headparts, update gender, animations, skin tone,
 		// and refresh the player actor's 3D model when done.

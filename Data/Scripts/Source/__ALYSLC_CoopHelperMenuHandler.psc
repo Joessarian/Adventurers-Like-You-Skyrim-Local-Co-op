@@ -209,7 +209,7 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int a
 
                 If (TeleportTarget)
                     ALYSLC.Log("[CHMH SCRIPT] Teleporting " + PlayerInMenu.GetDisplayName() + " to " + TeleportTarget.GetDisplayName())
-                    ALYSLC.TeleportToPlayerToActor(PlayerInMenuPID, TeleportTarget)
+                    ALYSLC.TeleportPlayerToActor(PlayerInMenuPID, TeleportTarget)
                 EndIf
             ElseIf (aiMenuType == TRADE_PLAYER_SELECTION_MENU)
                 If (DisplaySelectionMenu)

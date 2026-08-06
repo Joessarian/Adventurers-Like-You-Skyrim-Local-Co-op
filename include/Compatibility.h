@@ -78,6 +78,12 @@ namespace ALYSLC
 		static void CheckForRequiem(const SKSE::LoadInterface* a_loadInterface);
 		static bool g_installed;
 	};
+	
+	struct SandboxWhenIdleCompat
+	{
+		static void CheckForSandboxWhenIdle(const SKSE::LoadInterface* a_loadInterface);
+		static bool g_installed;
+	};
 
 	struct SkyrimSoulsCompat
 	{

@@ -163,18 +163,6 @@ namespace ALYSLC
 				}
 
 				p->extRefreshData = true;
-				// Might cause a freeze.
-				//p->taskRunner->AddTask
-				//(
-				//	p->coopActor->GetName(),
-				//	__FUNCTION__,
-				//	[&p]()
-				//	{ 
-				//		p->SetCoopPlayerFlags();
-				//		p->RefreshPlayerManagersTask();
-				//		// GlobalCoopData::RestartCoopCameraTask();
-				//	}
-				//);
 			}
 		}
 

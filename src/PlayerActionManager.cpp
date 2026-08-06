@@ -1288,24 +1288,47 @@ namespace ALYSLC
 
 			// Reset packages to default.
 			if (packageStackMap[PackageIndex::kDefault] && 
-				glob.coopPackages[!PackageIndex::kTotal * playerID + !PackageIndex::kDefault]) 
+				glob.coopPackages
+				[!PackageIndex::kTotal * p->playerID + !PackageIndex::kDefault]) 
 			{
-				packageStackMap[PackageIndex::kDefault]->forms[0] = 
-				(
-					glob.coopPackages
-					[!PackageIndex::kTotal * playerID + !PackageIndex::kDefault]
-				);
+				if (packageStackMap[PackageIndex::kDefault]->forms.empty())
+				{
+					packageStackMap[PackageIndex::kDefault]->forms.emplace_back
+					(
+						glob.coopPackages
+						[!PackageIndex::kTotal * p->playerID + !PackageIndex::kDefault]
+					);
+				}
+				else
+				{
+					packageStackMap[PackageIndex::kDefault]->forms[0] = 
+					(
+						glob.coopPackages
+						[!PackageIndex::kTotal * p->playerID + !PackageIndex::kDefault]
+					);
+				}
 			}
 
 			if (packageStackMap[PackageIndex::kCombatOverride] && 
 				glob.coopPackages
-				[!PackageIndex::kTotal * playerID + !PackageIndex::kCombatOverride]) 
+				[!PackageIndex::kTotal * p->playerID + !PackageIndex::kCombatOverride]) 
 			{
-				packageStackMap[PackageIndex::kCombatOverride]->forms[0] = 
-				(
-					glob.coopPackages
-					[!PackageIndex::kTotal * playerID + !PackageIndex::kCombatOverride]
-				);
+				if (packageStackMap[PackageIndex::kCombatOverride]->forms.empty())
+				{
+					packageStackMap[PackageIndex::kCombatOverride]->forms.emplace_back
+					(
+						glob.coopPackages
+						[!PackageIndex::kTotal * p->playerID + !PackageIndex::kCombatOverride]
+					);
+				}
+				else
+				{
+					packageStackMap[PackageIndex::kCombatOverride]->forms[0] = 
+					(
+						glob.coopPackages
+						[!PackageIndex::kTotal * p->playerID + !PackageIndex::kCombatOverride]
+					);
+				}
 			}
 		}
 
@@ -1333,7 +1356,7 @@ namespace ALYSLC
 		// Update player flags if data was refreshed.
 		if (p->extRefreshData || currentState == ManagerState::kAwaitingRefresh)
 		{
-			p->SetCoopPlayerFlags();
+			GlobalCoopData::SetCoopCharacterFlags(coopActor.get(), true);
 		}
 
 		if (p->isPlayer1) 
@@ -1356,25 +1379,49 @@ namespace ALYSLC
 			// Reset packages to default, since players may have changed their
 			// character assignment order 
 			// (ie. P2 chooses P3's character and P3 chooses P2's character).
+			// Reset packages to default.
 			if (packageStackMap[PackageIndex::kDefault] && 
-				glob.coopPackages[!PackageIndex::kTotal * playerID + !PackageIndex::kDefault]) 
+				glob.coopPackages
+				[!PackageIndex::kTotal * p->playerID + !PackageIndex::kDefault]) 
 			{
-				packageStackMap[PackageIndex::kDefault]->forms[0] = 
-				(
-					glob.coopPackages
-					[!PackageIndex::kTotal * playerID + !PackageIndex::kDefault]
-				);
+				if (packageStackMap[PackageIndex::kDefault]->forms.empty())
+				{
+					packageStackMap[PackageIndex::kDefault]->forms.emplace_back
+					(
+						glob.coopPackages
+						[!PackageIndex::kTotal * p->playerID + !PackageIndex::kDefault]
+					);
+				}
+				else
+				{
+					packageStackMap[PackageIndex::kDefault]->forms[0] = 
+					(
+						glob.coopPackages
+						[!PackageIndex::kTotal * p->playerID + !PackageIndex::kDefault]
+					);
+				}
 			}
 
 			if (packageStackMap[PackageIndex::kCombatOverride] && 
 				glob.coopPackages
-				[!PackageIndex::kTotal * playerID + !PackageIndex::kCombatOverride]) 
+				[!PackageIndex::kTotal * p->playerID + !PackageIndex::kCombatOverride]) 
 			{
-				packageStackMap[PackageIndex::kCombatOverride]->forms[0] = 
-				(
-					glob.coopPackages
-					[!PackageIndex::kTotal * playerID + !PackageIndex::kCombatOverride]
-				);
+				if (packageStackMap[PackageIndex::kCombatOverride]->forms.empty())
+				{
+					packageStackMap[PackageIndex::kCombatOverride]->forms.emplace_back
+					(
+						glob.coopPackages
+						[!PackageIndex::kTotal * p->playerID + !PackageIndex::kCombatOverride]
+					);
+				}
+				else
+				{
+					packageStackMap[PackageIndex::kCombatOverride]->forms[0] = 
+					(
+						glob.coopPackages
+						[!PackageIndex::kTotal * p->playerID + !PackageIndex::kCombatOverride]
+					);
+				}
 			}
 			
 			SetAndEveluatePackage();
@@ -1774,7 +1821,7 @@ namespace ALYSLC
 		// Set player binds.
 		UpdatePlayerBinds();
 		// Copy shared AV levels from P1 to to companion players.
-		CopyOverSharedSkillAVs();
+		GlobalCoopData::CopyOverSharedSkillAVs(coopActor.get());
 		// Reset time points.
 		ResetTPs();
 
@@ -3823,31 +3870,6 @@ namespace ALYSLC
 		}
 	}
 
-	void PlayerActionManager::CopyOverSharedSkillAVs()
-	{
-		// Copy over the highest skill AV level among all players for each shared skill.
-		// Also save the highest skill AV level to the player's serialized skill base levels list.
-
-		for (const auto& av : glob.SHARED_SKILL_AVS_SET)
-		{
-			auto value = GlobalCoopData::GetHighestSharedAVLevel(av); 
-			if (value == -1.0f) 
-			{
-				continue;
-			}
-			const auto iter = glob.serializablePlayerData.find(coopActor->formID);
-			// Update the serialized value.
-			if (iter != glob.serializablePlayerData.end())
-			{
-				const auto index = GlobalCoopData::AV_TO_SKILL_MAP.at(av);
-				iter->second->skillBaseLevelsList[index] = value;
-				iter->second->skillLevelIncreasesList[index] = 0.0f;
-			}
-
-			coopActor->SetBaseActorValue(av, value);
-		}
-	}
-
 	void PlayerActionManager::EvaluatePackage() 
 	{
 		// Evaluate the package atop this player's package stack.
@@ -3874,7 +3896,8 @@ namespace ALYSLC
 		// or ranged attack package.
 		// Just evaluate otherwise.
 		bool shouldInterruptCast = false;
-		if (packageStack[0] == defPackage || packageStack[0] == rangedAttackPackage) 
+		if ((!packageStack.empty()) && 
+			(packageStack[0] == defPackage || packageStack[0] == rangedAttackPackage))
 		{
 			auto lhCasting = castingGlobVars[!CastingGlobIndex::kLH];
 			auto rhCasting = castingGlobVars[!CastingGlobIndex::kRH];
@@ -4236,7 +4259,12 @@ namespace ALYSLC
 			packageStackMap[PackageIndex::kCombatOverride]->forms :
 			packageStackMap[PackageIndex::kDefault]->forms 
 		);
-		return packageStack[0] ? packageStack[0]->As<RE::TESPackage>() : nullptr;
+		return 
+		(
+			!packageStack.empty() && packageStack[0] ?
+			packageStack[0]->As<RE::TESPackage>() : 
+			nullptr
+		);
 	}
 
 	RE::TESPackage* PlayerActionManager::GetDefaultPackage()
@@ -6701,12 +6729,20 @@ namespace ALYSLC
 
 		// To make sure the package is run, modify both stacks.
 		// Only set if different.
-		if (packageStackMap[PackageIndex::kDefault]->forms[0] != a_package)
+		if (packageStackMap[PackageIndex::kDefault]->forms.empty())
+		{
+			packageStackMap[PackageIndex::kDefault]->forms.emplace_back(a_package);
+		}
+		else if (packageStackMap[PackageIndex::kDefault]->forms[0] != a_package)
 		{
 			packageStackMap[PackageIndex::kDefault]->forms[0] = a_package;
 		}
 
-		if (packageStackMap[PackageIndex::kCombatOverride]->forms[0] != a_package)
+		if (packageStackMap[PackageIndex::kCombatOverride]->forms.empty())
+		{
+			packageStackMap[PackageIndex::kCombatOverride]->forms.emplace_back(a_package);
+		}
+		else if (packageStackMap[PackageIndex::kCombatOverride]->forms[0] != a_package)
 		{
 			packageStackMap[PackageIndex::kCombatOverride]->forms[0] = a_package;
 		}

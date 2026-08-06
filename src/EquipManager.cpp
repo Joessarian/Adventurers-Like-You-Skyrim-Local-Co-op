@@ -208,21 +208,6 @@ namespace ALYSLC
 			RefreshEquipState(RefreshSlots::kAll);
 		}
 
-		// "Infinite" carryweight for coop players.
-		// NOTE: 
-		// Adjusts the temporary modifier, so the previous temp buffs/debuffs are wiped.
-		float permMod = coopActor->GetActorValueModifier
-		(
-			RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kCarryWeight
-		);
-		float tempMod = coopActor->GetActorValueModifier
-		(
-			RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kCarryWeight
-		);
-		float damageMod = coopActor->GetActorValueModifier
-		(
-			RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight
-		);
 		// Don't re-equip items when transformed or when just unpausing without a data refresh.
 		if (!p->isTransformed && currentState != ManagerState::kPaused) 
 		{

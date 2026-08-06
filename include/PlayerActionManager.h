@@ -746,10 +746,6 @@ namespace ALYSLC
 		// Update combat skills data when the player starts/stops performing a combat skill.
 		void CheckIfPerformingCombatSkills();
 
-		// Copy the highest shared skill level among all players 
-		// to this player for all shared skills.
-		void CopyOverSharedSkillAVs();
-
 		// Evaluate the current package atop the player's package stack.
 		void EvaluatePackage();
 

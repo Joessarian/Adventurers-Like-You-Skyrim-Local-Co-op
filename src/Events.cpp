@@ -425,7 +425,7 @@ namespace ALYSLC
 
 		bool fromCoopEntity = 
 		(
-			glob.coopEntityBlacklistFIDSet.contains(a_containerChangedEvent->oldContainer) || 
+			glob.coopPlayerCharactersFIDSet.contains(a_containerChangedEvent->oldContainer) || 
 			fromChestIndex != -1
 		);
 		int32_t fromCoopPlayerIndex = 
@@ -1689,10 +1689,44 @@ namespace ALYSLC
 	void CoopLoadGameEventHandler::Register()
 	{
 		auto scriptEventSourceHolder = RE::ScriptEventSourceHolder::GetSingleton();
+
 		if (scriptEventSourceHolder)
 		{
+			auto singleton = GetSingleton();
 			scriptEventSourceHolder->AddEventSink(CoopLoadGameEventHandler::GetSingleton());
 			INF("Registered for load game events.");
+			auto source = scriptEventSourceHolder->GetEventSource<RE::TESLoadGameEvent>();
+			if (!source)
+			{
+				return;
+			}
+
+			// Find our added sink.
+			int32_t sinkIndex = -1;
+			for (auto i = 0; i < source->sinks.size(); ++i)
+			{
+				if (source->sinks[i] == singleton)
+				{
+					sinkIndex = i;
+				}
+			}
+
+			if (sinkIndex == -1)
+			{
+				ERR("Could not get registered load game event sink.");
+			}
+			else
+			{
+				DBG("Load game event sink found at index {}. Move to index {}", 
+					sinkIndex, source->sinks.size() - 1);
+				// Move our sink to the back so it processes events last.
+				for (auto i = sinkIndex; i < source->sinks.size() - 1; ++i)
+				{
+					source->sinks[i] = source->sinks[i + 1]; 
+				}
+
+				source->sinks[source->sinks.size() - 1] = singleton;
+			}
 		}
 		else
 		{
@@ -1705,14 +1739,15 @@ namespace ALYSLC
 		const RE::TESLoadGameEvent* a_loadGameEvent, RE::BSTEventSource<RE::TESLoadGameEvent>*
 	)
 	{
-		// Tear down any active co-op session when P1 loads a save.
+		// Loads around when the Papyrus ReferenceAlias script 'OnInit' event fires. 
+		// If death overhaul mods change P1's essential status to true, 
+		// we should store this updated essential status after the script(s) execute.
 
-		DBG("Load game event. Co-op session active: {}.", glob.coopSessionActive);
-		if (glob.coopSessionActive && a_loadGameEvent)
-		{
-			GlobalCoopData::TearDownCoopSession(false, true);
-		}
-
+		DBG("Load game event. Co-op session active: {}. P1 essential: {}.", 
+			glob.coopSessionActive,
+			RE::PlayerCharacter::GetSingleton() ? 
+			RE::PlayerCharacter::GetSingleton()->IsEssential() :
+			false);
 		return EventResult::kContinue;
 	}
 
@@ -1778,8 +1813,7 @@ namespace ALYSLC
 		// even after P1's current level increases by 1,
 		// so we have to do it after the menu closes 
 		// and the game is fully done leveling up P1.
-		if (!ALYSLC::EnderalCompat::g_installed &&
-			Settings::fLevelUpXPThresholdMult != 1.0f) 
+		if (!ALYSLC::EnderalCompat::g_installed) //&& Settings::fLevelUpXPThresholdMult != 1.0f) 
 		{
 			bool statsMenuOpening = 
 			(
@@ -2358,8 +2392,41 @@ namespace ALYSLC
 		// Used to clear grabbed actors/released refrs before P1 moves
 		// and then move companion players to P1 when P1 is finished moving.
 		
-		if (!glob.globalDataInit || !glob.coopSessionActive)
+		if (!glob.globalDataInit)
 		{
+			return EventResult::kContinue;
+		}
+
+		if (!glob.coopSessionActive)
+		{
+			if (a_positionPlayerEvent->type == RE::PositionPlayerEvent::EVENT_TYPE::kFinish)
+			{
+				auto taskInterface = SKSE::GetTaskInterface();
+				if (taskInterface)
+				{
+					taskInterface->AddTask
+					(
+						[]()
+						{
+							for (const auto playerActorPtr : glob.coopPlayerCharacters)
+							{
+								if (!playerActorPtr || playerActorPtr->IsPlayerRef())
+								{
+									continue;
+								}
+
+								// Sit back down if not a player follower.
+								if (!playerActorPtr->IsPlayerTeammate() &&
+									!Util::IsFollower(playerActorPtr.get()))
+								{
+									Util::ToggleActorDormantState(playerActorPtr.get(), true);
+								}
+							}
+						}
+					);
+				}
+			}
+
 			return EventResult::kContinue;
 		}
 

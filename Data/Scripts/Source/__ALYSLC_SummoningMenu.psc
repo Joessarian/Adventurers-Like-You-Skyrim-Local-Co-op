@@ -1237,7 +1237,7 @@ State SummonState
             Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot summon players.")
             ALYSLC.Log("[SUMMON SCRIPT] Critical Error: P1's actor is invalid. Cannot summon players. P1 actor set as " + PlayerRef + ", game player set as " + Game.GetPlayer())
             ALYSLC.SetIsSummoningFlag(False)
-            ALYSLC.ChangeCoopSessionState(False)
+            ; ALYSLC.StopCoopSession()
             GotoState("")
             Return
         EndIf
@@ -1248,7 +1248,7 @@ State SummonState
             Debug.Notification("[ALYSLC] Please wait... Initialization in progress.")
             ALYSLC.Log("[SUMMON SCRIPT] Cannot start summoning until initialization is complete.")
             ALYSLC.SetIsSummoningFlag(False)
-            ALYSLC.ChangeCoopSessionState(False)
+            ; ALYSLC.StopCoopSession()
             GotoState("")
             Return
         EndIf
@@ -1276,7 +1276,7 @@ State SummonState
         ; End any active co-op session, pause all player managers, dismiss any companions.
         Int PrevNumCompanions = StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)
         ALYSLC.Log("[SUMMON SCRIPT] About to dismiss all previously summoned players: " + (PrevNumCompanions + 1) + " total.")
-        ALYSLC.SignalWaitForUpdate(True)
+        ; ALYSLC.SignalWaitForUpdate(True)
 
         ; Game settings to change for co-op.
         ; Set the minimum jump fall height for NPCs (default 450.0)
@@ -1347,7 +1347,7 @@ State SummonState
         ALYSLC.SetPartyInvincibility(True)
         ; Signal that the co-op session has started.
         StorageUtil.SetIntValue(None, "ALYSLC_CoopStarted", 1)
-        ALYSLC.ChangeCoopSessionState(True)
+        ALYSLC.StartCoopSession()
         
         ; Enable the co-op camera.
         ALYSLC.ToggleCoopCamera(True)

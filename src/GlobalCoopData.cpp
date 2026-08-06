@@ -14,9 +14,9 @@ namespace ALYSLC
 		return glob;
 	}
 
-	void GlobalCoopData::PrepForCoop()
+	void GlobalCoopData::OnLoadGame()
 	{
-		// Set all global co-op data and clean up in preparation for co-op.
+		// Set all global co-op data, reset player 1, and clean up the previous co-op session.
 
 		auto& glob = GetSingleton();
 
@@ -26,18 +26,14 @@ namespace ALYSLC
 		INF("PrepForCoop.");
 		// First time initialization.
 		bool firstTimeInit = !glob.globalDataInit;
+
+		// Set all global co-op data.
 		SetGlobalCoopData();
-			
-		// Import all settings after initializing co-op data.
-		ALYSLC::Settings::ImportAllSettings();
-		// Re-register for script events.
-		UnregisterEvents();
-		RegisterEvents();
-		// Reset crosshair text and position.
-		SetCrosshairText(true);
-		// Reset supported menu open state because it won't reset
-		// properly if the previous co-op session ended while a supported menu was open.
-		ResetMenuState();
+		// Reset P1 for singleplayer.
+		PrepP1ForSingleplayer();
+		// Prep all companion players for singleplayer after retrieving all players
+		// and other global data.
+		PrepCompanionPlayersForSingleplayer();
 		// Make sure no players have co-op keywords from a previous session.
 		// Don't want an inactive player character to keep an active player's co-op player keyword;
 		// will mess with executing the ranged attack package and sneaking.
@@ -45,10 +41,18 @@ namespace ALYSLC
 		// Reset collisions for all players in case they were toggled off 
 		// or a player is still paralyzed.
 		ResetCoopEntityCollisions();
+			
+		// Import all settings after initializing co-op data.
+		ALYSLC::Settings::ImportAllSettings();
+		// Re-register for script events.
+		UnregisterEvents();
+		RegisterEvents();
+
 		// Stop any active co-op session.
-		SignalWaitForUpdate(true);
-		// Re-enable any controls for P1 that might have been disabled.
-		Util::ToggleAllControls(true);
+		// Do not teleport players away.
+		DBG("Stop co-op session");
+		StopCoopSession(false, true);
+
 		// Clear any lingering queued input events.
 		for (auto& ptr : glob.reqInputEvents)
 		{
@@ -222,19 +226,26 @@ namespace ALYSLC
 		// Default values.
 		float fXPLevelUpMult = glob.defXPLevelUpMult;
 		float fXPLevelUpBase = glob.defXPLevelUpBase;
-		float thresholdAtLevel = Settings::fLevelUpXPThresholdMult *
+		const float xpThresholdMult = 
+		(
+			glob.coopSessionActive ? Settings::fLevelUpXPThresholdMult : 1.0f
+		);
+		float thresholdAtLevel = xpThresholdMult *
 		(
 			fXPLevelUpBase + (fXPLevelUpMult * expectedLevelAfterLevelUp)
 		);
 		float remainingXP = p1->skills->data->xp;
 		DBG
 		(
-			"Current level: {}, remaining XP: {}, threshold: {}. Base and mult: {}, {}.",
+			"Current level: {}, remaining XP: {}, threshold: {}. Base and mult: {}, {}. "
+			"Level-up threshold mult: {}. To use: {}.",
 			currentLevel,
 			remainingXP,
 			thresholdAtLevel,
 			fXPLevelUpBase,
-			fXPLevelUpMult
+			fXPLevelUpMult,
+			Settings::fLevelUpXPThresholdMult,
+			xpThresholdMult
 		);
 		// Increment the expected level until there is not enough remaining XP to advance a level.
 		while (remainingXP >= thresholdAtLevel)
@@ -242,7 +253,7 @@ namespace ALYSLC
 			remainingXP -= thresholdAtLevel;
 			expectedLevelAfterLevelUp++;
 			// Set the level up XP threshold for the next level.
-			thresholdAtLevel = Settings::fLevelUpXPThresholdMult *
+			thresholdAtLevel = xpThresholdMult *
 			(
 				fXPLevelUpBase + (fXPLevelUpMult * expectedLevelAfterLevelUp)
 			);
@@ -450,7 +461,6 @@ namespace ALYSLC
 		// Also update the last serialized player level if it differs from the cached one.
 
 		auto& glob = GetSingleton();
-
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		if (!p1 || !a_playerActor) 
 		{
@@ -485,9 +495,60 @@ namespace ALYSLC
 				p1->GetBaseActorValue(RE::ActorValue::kStamina),
 				data->firstSavedLevel
 			);
+
+			const auto currentBaseHMS = std::vector<float>
+			{
+				a_playerActor->GetBaseActorValue(RE::ActorValue::kHealth),
+				a_playerActor->GetBaseActorValue(RE::ActorValue::kHealth),
+				a_playerActor->GetBaseActorValue(RE::ActorValue::kHealth),
+			};
+
+			data->hmsBasePointsList[0] = 
+			(
+				a_playerActor->GetBaseActorValue(RE::ActorValue::kHealth) - 
+				data->hmsPointIncreasesList[0]
+			);
+			data->hmsBasePointsList[1] = 
+			(
+				a_playerActor->GetBaseActorValue(RE::ActorValue::kMagicka) - 
+				data->hmsPointIncreasesList[1]
+			);
+			data->hmsBasePointsList[2] = 
+			(
+				a_playerActor->GetBaseActorValue(RE::ActorValue::kStamina) - 
+				data->hmsPointIncreasesList[2]
+			);
+
+			DBG
+			(
+				"Setting {}'s base HMS values to ({}, {}, {}) "
+				"from current base ({}, {}, {}) - increments ({}, {}, {})",
+				a_playerActor->GetName(),
+				data->hmsBasePointsList[0],
+				data->hmsBasePointsList[1],
+				data->hmsBasePointsList[2],
+				a_playerActor->GetBaseActorValue(RE::ActorValue::kHealth),
+				a_playerActor->GetBaseActorValue(RE::ActorValue::kMagicka),
+				a_playerActor->GetBaseActorValue(RE::ActorValue::kStamina),
+				data->hmsPointIncreasesList[0],
+				data->hmsPointIncreasesList[1],
+				data->hmsPointIncreasesList[2]
+			);
 		}
 		else
 		{
+			// IMPORTANT:
+			// Stats Menu 'hide' message can be sent twice for each 'show' message.
+			// Prevent doubling the increases below by checking if the increases
+			// were already updated following the first 'hide' message.
+
+			if (data->p1HMSBaseAVsOnMenuEntry[0] == -1.0f &&
+				data->p1HMSBaseAVsOnMenuEntry[1] == -1.0f &&
+				data->p1HMSBaseAVsOnMenuEntry[2] == -1.0f)
+			{
+				return;
+			}
+
 			// Set co-op HMS skill increases based on P1's HMS AV changes in the Stats Menu.
 			// Done before restoring P1's HMS values later.
 			data->hmsPointIncreasesList[0] += 
@@ -515,6 +576,11 @@ namespace ALYSLC
 				p1->GetBaseActorValue(RE::ActorValue::kMagicka) - data->p1HMSBaseAVsOnMenuEntry[1],
 				p1->GetBaseActorValue(RE::ActorValue::kStamina) - data->p1HMSBaseAVsOnMenuEntry[2]
 			);
+
+			// Reset to indicate that the player's data was already exported.
+			data->p1HMSBaseAVsOnMenuEntry[0] = 
+			data->p1HMSBaseAVsOnMenuEntry[1] = 
+			data->p1HMSBaseAVsOnMenuEntry[2] = -1.0f;
 		}
 
 		// Update serialized player level if it does not match the current one.
@@ -574,19 +640,26 @@ namespace ALYSLC
 		// Default values.
 		float fXPLevelUpMult = glob.defXPLevelUpMult;
 		float fXPLevelUpBase = glob.defXPLevelUpBase;
-		float thresholdAtLevel = Settings::fLevelUpXPThresholdMult *
+		const float xpThresholdMult = 
+		(
+			glob.coopSessionActive ? Settings::fLevelUpXPThresholdMult : 1.0f
+		);
+		float thresholdAtLevel = xpThresholdMult *
 		(
 			fXPLevelUpBase + (fXPLevelUpMult * expectedLevelAfterLevelUp)
 		);
 		float remainingXP = p1->skills->data->xp;
 		DBG
 		(
-			"Current level: {}, remaining XP: {}, threshold: {}. Base and mult: {}, {}.",
+			"Current level: {}, remaining XP: {}, threshold: {}. Base and mult: {}, {}. "
+			"Level-up threshold mult: {}. To use: {}.",
 			currentLevel,
 			remainingXP,
 			thresholdAtLevel,
 			fXPLevelUpBase,
-			fXPLevelUpMult
+			fXPLevelUpMult,
+			Settings::fLevelUpXPThresholdMult,
+			xpThresholdMult
 		);
 		// Increment the expected level until there is not enough remaining XP 
 		// to advance a level.
@@ -595,7 +668,7 @@ namespace ALYSLC
 			remainingXP -= thresholdAtLevel;
 			expectedLevelAfterLevelUp++;
 			// Set the level up XP threshold for the next level.
-			thresholdAtLevel = Settings::fLevelUpXPThresholdMult *
+			thresholdAtLevel = xpThresholdMult *
 			(
 				fXPLevelUpBase + (fXPLevelUpMult * expectedLevelAfterLevelUp)
 			);
@@ -744,7 +817,7 @@ namespace ALYSLC
 			float defMult = glob.defXPLevelUpMult;
 			float defBase = glob.defXPLevelUpBase;
 			float stepLevel = targetDipLevel;
-			float thresholdAtLevel = (defBase + (defMult * stepLevel));
+			float thresholdAtLevel = xpThresholdMult * (defBase + (defMult * stepLevel));
 			float xpInc = 0.0f;
 			// Accumulate the required XP to return to the pre-dip level.
 			while (stepLevel < playerLevel)
@@ -753,7 +826,7 @@ namespace ALYSLC
 				// before adding up XP increments per level.
 				thresholdAtLevel = 
 				(
-					Settings::fLevelUpXPThresholdMult * 
+					xpThresholdMult * 
 					(defBase + (defMult * stepLevel))
 				);
 				xpInc += thresholdAtLevel;
@@ -787,12 +860,14 @@ namespace ALYSLC
 			DBG
 			(
 				"After dip: current XP, threshold: {}, {}, "
-				"current level: {}, xpInc: {} from prev {}.",
+				"current level: {}, xpInc: {} from prev {}. P1 health is now {} / {}.",
 				p1->skills->data->xp, 
 				p1->skills->data->levelThreshold,
 				p1->GetLevel(),
 				xpInc, 
-				savedPlayerXP
+				savedPlayerXP,
+				p1->GetActorValue(RE::ActorValue::kHealth),
+				Util::GetFullAVAmount(p1, RE::ActorValue::kHealth)
 			);
 		}
 
@@ -1058,7 +1133,7 @@ namespace ALYSLC
 			AdjustAllPlayerPerkCounts();
 			// Rescale from new base actor values before copying 
 			// and checking base actor value data.
-			RescaleActivePlayerAVs();
+			RescaleAllPlayerAVs();
 
 			// Dip P1's level, as necessary, 
 			// to open the required number of LevelUp menus.
@@ -1075,7 +1150,7 @@ namespace ALYSLC
 					"About to rescale all companions' AVs "
 					"after dipping P1's level to spawn level up menus."
 				);
-				RescaleActivePlayerAVs();
+				RescaleAllPlayerAVs();
 			}
 
 			// Copy perk tree and then skill AVs.
@@ -1139,7 +1214,7 @@ namespace ALYSLC
 
 			// Rescale HMS and skill AVs up 
 			// from the new base actor values for all active players.
-			RescaleActivePlayerAVs();
+			RescaleAllPlayerAVs();
 			// Sync changes to shared perks on menu exit.
 			SyncSharedPerks();
 			// Adjust Legendary leveling data.
@@ -1211,7 +1286,7 @@ namespace ALYSLC
 					"About to rescale all companions' AVs after dipping P1's level "
 					"to spawn level up menus."
 				);
-				RescaleActivePlayerAVs();
+				RescaleAllPlayerAVs();
 			}
 		}
 		else
@@ -1220,7 +1295,7 @@ namespace ALYSLC
 			AdjustBaseHMSData(p1, a_enteringMenu);
 			// Rescale HMS and skill AVs up 
 			// from the new base actor values for all active players.
-			RescaleActivePlayerAVs();
+			RescaleAllPlayerAVs();
 			// Save the previous unlocked perks set to diff.
 			auto oldUnlockedPerksSet = data->GetUnlockedPerksSet();
 			// Save all unlocked perks afterward. This updates the unlocked perks set and list.
@@ -1280,7 +1355,8 @@ namespace ALYSLC
 		// allowing unlocked perk nodes to glow properly in the Stats Menu.
 
 		auto& glob = GetSingleton();
-		if (!glob.globalDataInit)
+		// Not necessary to apply serialized perks since we're just recording them outside of co-op.
+		if (!glob.globalDataInit || !glob.coopSessionActive)
 		{
 			return;
 		}
@@ -2848,7 +2924,7 @@ namespace ALYSLC
 				// Only rescale if P1 leveled up during a co-op session.
 				if (glob.coopSessionActive && p1Data->level < glob.playerLevelGlob->value)
 				{
-					RescaleActivePlayerAVs();
+					RescaleAllPlayerAVs();
 
 					// Send message box menu control request for P1 
 					// to gain control of the Enderal level up menu 
@@ -3449,7 +3525,7 @@ namespace ALYSLC
 			}
 		}
 
-		return glob.coopEntityBlacklistFIDSet.contains(a_refr->formID);
+		return glob.coopPlayerCharactersFIDSet.contains(a_refr->formID);
 	}
 
 	bool GlobalCoopData::IsCoopEntity(const RE::TESObjectREFRPtr& a_refrPtr)
@@ -3910,6 +3986,7 @@ namespace ALYSLC
 		// The XP levelup mult gamesetting is changed each level
 		// to indirectly get the desired level up XP threshold.
 
+		DBG("Set for co-op: {}.", a_setForCoop);
 		auto& glob = GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		auto p1Skills = p1->skills;
@@ -3993,7 +4070,8 @@ namespace ALYSLC
 	{
 		// Modify the XP per skill level up multiplier based on the number of players.
 		// Inversely proportional to the number of living players.
-
+		
+		DBG("Set for co-op: {}.", a_setForCoop);
 		auto& glob = GetSingleton();
 		// Scale down skill levelup XP mult, based on the co-op party size.
 		// Defaults to 1.0.
@@ -4005,7 +4083,7 @@ namespace ALYSLC
 			currentXPMult = valueOpt.value();
 		}
 
-		if (a_setForCoop)
+		if (a_setForCoop && glob.livingPlayers > 0)
 		{
 			newXPMult = 1.0f / glob.livingPlayers;
 		}
@@ -4537,6 +4615,74 @@ namespace ALYSLC
 		}
 	}
 
+	void GlobalCoopData::PrepCompanionPlayersForSingleplayer()
+	{
+		// Set all player characters' flags outside of co-op.
+		
+		auto& glob = GetSingleton();
+		DBG("Global data init: {}, co-op session active: {}, is summoning: {}.",
+			glob.globalDataInit, glob.coopSessionActive, glob.isSummoningPlayers);
+		if (!glob.globalDataInit || glob.coopSessionActive || glob.isSummoningPlayers)
+		{
+			return;
+		}
+
+		for (const auto playerActorPtr : glob.coopPlayerCharacters)
+		{
+			if (!playerActorPtr || playerActorPtr->IsPlayerRef())
+			{
+				continue;
+			}
+			
+			SetCoopCharacterFlags(playerActorPtr.get(), false);
+			// No need to remove follower status, 
+			// just fix factions if they're not in sync with follower state,
+			// which is only a problem with existing saves before 1.0.7.
+			Util::ResetFollowerStatus(playerActorPtr.get(), false);
+			Util::ToggleActorDormantState(playerActorPtr.get(), true);
+		}
+	}
+
+	void GlobalCoopData::PrepP1ForSingleplayer()
+	{
+		// Undo co-op changes to player 1 and the camera for singleplayer.
+		// Ensure that player 1 can move because this call persists through save games.
+		// If summoning companions and then saving before the co-op session begins,
+		// loading the save will result in player 1 still being stuck in the "don't move" state.
+
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		auto playerCam = RE::PlayerCamera::GetSingleton();
+		if (!p1 || !playerCam)
+		{
+			ERR("ERR: Could not get P1 ({}) and/or player cam ({}).", (bool)p1, (bool)playerCam);
+			return;
+		}
+			
+		DBG("{}", p1->GetName());
+		Util::NativeFunctions::SetDontMove(p1, false);
+
+		p1->SetActorValue(RE::ActorValue::kSpeedMult, 100.0);
+		p1->RestoreActorValue
+		(
+			RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f
+		);
+		p1->RestoreActorValue
+		(
+			RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f
+		);
+		p1->SetActorValue(RE::ActorValue::kWeaponSpeedMult, 0.0f);
+		p1->SetActorValue(RE::ActorValue::kAttackDamageMult, 1.0f);
+
+		// Ensure that the camera is reset to default.
+		// If cam target was somehow set to another actor when saving,
+		// and that actor is not loaded when this script fires,
+		// all the world geometry will load in at the lowest LOD
+		// and no objects will be visible.
+		playerCam->ForceThirdPerson();
+		playerCam->cameraTarget = p1->GetHandle();
+		SetCoopCharacterFlags(p1, false);
+	}
+
 	void GlobalCoopData::RegisterEvents()
 	{
 		// Register the P1 ref alias for script events.
@@ -4592,7 +4738,7 @@ namespace ALYSLC
 			return;
 		}
 
-		for (const auto playerActor : glob.coopEntityBlacklist)
+		for (const auto playerActor : glob.coopPlayerCharacters)
 		{
 			if (!playerActor)
 			{
@@ -4646,7 +4792,7 @@ namespace ALYSLC
 		}
 	}
 	
-	void GlobalCoopData::RescaleActivePlayerAVs()
+	void GlobalCoopData::RescaleAllPlayerAVs()
 	{
 		// Rescale active player HMS and skill AVs to serialized values. 
 		// Should be performed after the game auto-scales any of these values.
@@ -4657,43 +4803,81 @@ namespace ALYSLC
 			return;
 		}
 
-		for (const auto& p : glob.coopPlayers)
+		if (glob.coopSessionActive)
 		{
-			if (!p->isActive)
+			for (const auto& p : glob.coopPlayers)
 			{
-				continue;
-			}
+				if (!p->isActive)
+				{
+					continue;
+				}
 
-			// Ensure active player's FID is used to index into serializable data map.
-			const auto iter = glob.serializablePlayerData.find(p->coopActor->formID);
-			if (iter == glob.serializablePlayerData.end()) 
-			{
-				DBG
-				(
-					"Could not index serialized data with {}'s form ID (0x{:X}).",
-					p->coopActor->GetName(), p->coopActor->formID
-				);
-				continue;
-			}
+				// Ensure active player's FID is used to index into serializable data map.
+				const auto iter = glob.serializablePlayerData.find(p->coopActor->formID);
+				if (iter == glob.serializablePlayerData.end()) 
+				{
+					DBG
+					(
+						"CO-OP: Could not index serialized data with {}'s form ID (0x{:X}).",
+						p->coopActor->GetName(), p->coopActor->formID
+					);
+					continue;
+				}
 
-			// NOTE for Enderal:
-			// No need to rescale HMS AVs for P1,
-			// and companion player HMS values are only affected by the player's class as of now.
-			if (!p->isPlayer1)
+				// NOTE for Enderal:
+				// No need to rescale HMS AVs for P1,
+				// and companion player HMS values are only affected by the player's class as of now.
+				if (!p->isPlayer1)
+				{
+					DBG("CO-OP: About to rescale HMS for {}.", p->coopActor->GetName());
+					// Skill AVs first.
+					RescaleSkillAVs(p->coopActor.get());
+					if (!ALYSLC::EnderalCompat::g_installed)
+					{
+						const auto& data = iter->second;
+						RescaleHMS(p->coopActor.get(), data->firstSavedLevel);
+					}
+				}
+				else if (!ALYSLC::EnderalCompat::g_installed)
+				{
+					DBG("CO-OP: About to rescale HMS for P1.");
+					RescaleHMS(p->coopActor.get());
+				}
+			}
+		}
+		else
+		{
+			for (const auto playerActorPtr : glob.coopPlayerCharacters)
 			{
-				DBG("About to rescale HMS for {}.", p->coopActor->GetName());
+				// No need to rescale P1's HMS outside of co-op.
+				if (!playerActorPtr || playerActorPtr->IsPlayerRef())
+				{
+					continue;
+				}
+
+				// Ensure player's FID is used to index into serializable data map.
+				const auto iter = glob.serializablePlayerData.find(playerActorPtr->formID);
+				if (iter == glob.serializablePlayerData.end()) 
+				{
+					DBG
+					(
+						"NO CO-OP: Could not index serialized data with {}'s form ID (0x{:X}).",
+						playerActorPtr->GetName(), playerActorPtr->formID
+					);
+					continue;
+				}
+
+				// NOTE for Enderal:
+				// No need to rescale HMS AVs for P1,
+				// and companion player HMS values are only affected by the player's class as of now.
+				DBG("NO CO-OP: About to rescale HMS for {}.", playerActorPtr->GetName());
 				// Skill AVs first.
-				RescaleSkillAVs(p->coopActor.get());
+				RescaleSkillAVs(playerActorPtr.get());
 				if (!ALYSLC::EnderalCompat::g_installed)
 				{
 					const auto& data = iter->second;
-					RescaleHMS(p->coopActor.get(), data->firstSavedLevel);
+					RescaleHMS(playerActorPtr.get(), data->firstSavedLevel);
 				}
-			}
-			else if (!ALYSLC::EnderalCompat::g_installed)
-			{
-				DBG("About to rescale HMS for P1.");
-				RescaleHMS(p->coopActor.get());
 			}
 		}
 	}
@@ -4872,125 +5056,50 @@ namespace ALYSLC
 			data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
 		);
 
-		// Has recorded level up.
-		if (a_baseLevel != 0) 
-		{
-			a_playerActor->SetBaseActorValue
-			(
-				RE::ActorValue::kHealth, 
-				data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
-			);
-			DBG
-			(
-				"{}'s health AV at base level {} is {}. Health inc: {}, setting health to {}",
-				a_playerActor->GetName(),
-				a_baseLevel,
-				data->hmsBasePointsList[0],
-				data->hmsPointIncreasesList[0],
-				data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
-			);
+		a_playerActor->SetBaseActorValue
+		(
+			RE::ActorValue::kHealth, 
+			data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
+		);
+		DBG
+		(
+			"{}'s health AV at base level {} is {}. Health inc: {}, setting health to {}",
+			a_playerActor->GetName(),
+			a_baseLevel,
+			data->hmsBasePointsList[0],
+			data->hmsPointIncreasesList[0],
+			data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
+		);
 
-			a_playerActor->SetBaseActorValue
-			(
-				RE::ActorValue::kMagicka, 
-				data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
-			);
-			DBG
-			(
-				"{}'s magicka AV at base level {} is {}. Magicka inc: {}, setting magicka to {}",
-				a_playerActor->GetName(),
-				a_baseLevel,
-				data->hmsBasePointsList[1],
-				data->hmsPointIncreasesList[1],
-				data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
-			);
+		a_playerActor->SetBaseActorValue
+		(
+			RE::ActorValue::kMagicka, 
+			data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
+		);
+		DBG
+		(
+			"{}'s magicka AV at base level {} is {}. Magicka inc: {}, setting magicka to {}",
+			a_playerActor->GetName(),
+			a_baseLevel,
+			data->hmsBasePointsList[1],
+			data->hmsPointIncreasesList[1],
+			data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
+		);
 
-			a_playerActor->SetBaseActorValue
-			(
-				RE::ActorValue::kStamina, 
-				data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
-			);
-			DBG
-			(
-				"{}'s stamina AV at base level {} is {}. Stamina inc: {}, setting stamina to {}",
-				a_playerActor->GetName(),
-				a_baseLevel,
-				data->hmsBasePointsList[2],
-				data->hmsPointIncreasesList[2],
-				data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
-			);
-		}
-		else if (a_playerActor->GetRace() && a_playerActor->GetActorBase())
-		{
-			// Before first level up, use sum of the race's starting HMS AVs 
-			// and the actor base's HMS offsets.
-			data->hmsBasePointsList[0] = 
-			(
-				a_playerActor->race->data.startingHealth + 
-				a_playerActor->GetActorBase()->actorData.healthOffset
-			);
-			data->hmsBasePointsList[1] =
-			(
-				a_playerActor->race->data.startingMagicka + 
-				a_playerActor->GetActorBase()->actorData.magickaOffset
-			);
-			data->hmsBasePointsList[2] = 
-			(
-				a_playerActor->race->data.startingStamina +
-				a_playerActor->GetActorBase()->actorData.staminaOffset
-			);
-			DBG
-			(
-				"{} has not leveled up in co-op yet. "
-				"Scaling HMS AVs down to their base values: {}, {}, {}.",
-				a_playerActor->GetName(),
-				data->hmsBasePointsList[0],
-				data->hmsBasePointsList[1],
-				data->hmsBasePointsList[2]
-			);
-
-			a_playerActor->SetBaseActorValue
-			(
-				RE::ActorValue::kHealth, data->hmsBasePointsList[0]
-			);
-			DBG
-			(
-				"{}'s health AV at base level {} is {}. Health inc: {}, setting health to {}",
-				a_playerActor->GetName(),
-				a_baseLevel,
-				data->hmsBasePointsList[0],
-				data->hmsPointIncreasesList[0],
-				data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
-			);
-
-			a_playerActor->SetBaseActorValue
-			(
-				RE::ActorValue::kMagicka, data->hmsBasePointsList[1]
-			);
-			DBG
-			(
-				"{}'s magicka AV at base level {} is {}. Magicka inc: {}, setting magicka to {}",
-				a_playerActor->GetName(),
-				a_baseLevel,
-				data->hmsBasePointsList[1],
-				data->hmsPointIncreasesList[1],
-				data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
-			);
-
-			a_playerActor->SetBaseActorValue
-			(
-				RE::ActorValue::kStamina, data->hmsBasePointsList[2]
-			);
-			DBG
-			(
-				"{}'s stamina AV at base level {} is {}. Stamina inc: {}, setting stamina to {}",
-				a_playerActor->GetName(),
-				a_baseLevel,
-				data->hmsBasePointsList[2],
-				data->hmsPointIncreasesList[2],
-				data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
-			);
-		}
+		a_playerActor->SetBaseActorValue
+		(
+			RE::ActorValue::kStamina, 
+			data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
+		);
+		DBG
+		(
+			"{}'s stamina AV at base level {} is {}. Stamina inc: {}, setting stamina to {}",
+			a_playerActor->GetName(),
+			a_baseLevel,
+			data->hmsBasePointsList[2],
+			data->hmsPointIncreasesList[2],
+			data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
+		);
 
 		// Restore old HMS values by re-applying the old damage modifiers.
 		a_playerActor->RestoreActorValue
@@ -5012,7 +5121,7 @@ namespace ALYSLC
 		// Toggle collisions on and remove paralysis flag for all players.
 
 		auto& glob = GetSingleton();
-		for (const auto playerActor : glob.coopEntityBlacklist)
+		for (const auto playerActor : glob.coopPlayerCharacters)
 		{
 			if (!playerActor || playerActor->IsDisabled() || !playerActor->Is3DLoaded())
 			{
@@ -5591,6 +5700,204 @@ namespace ALYSLC
 		);
 	}
 
+	void GlobalCoopData::SetCoopCharacterFlags(RE::Actor* a_coopActor, bool a_inCoop)
+	{
+		// Set player characters' flags and packages when in/out of co-op.
+		// Player 1: 
+		// Update essential status when in co-op and un-paralyze either way.
+		// Companion players: 
+		// Update essential status to match P1's when in c-op, 
+		// set as essential when out of co-op,
+		// remove paralysis,
+		// and either set/evaluate default package in co-op,
+		// or remove co-op packages and evaluate when outside co-op.
+		
+		if (!a_coopActor)
+		{
+			return;
+		}
+
+		auto& glob = GetSingleton();
+		if (!glob.globalDataInit || !IsCoopCharacter(a_coopActor))
+		{
+			return;
+		}
+		
+		DBG
+		(
+			"Set flags and packages for {}. {}. "
+			"All playeres init: {}, co-op session active: {}, is summoning: {}, is active: {}.", 
+			a_coopActor->GetName(),
+			a_inCoop ? "IN CO-OP" : "OUTSIDE CO-OP",
+			glob.allPlayersInit,
+			glob.coopSessionActive,
+			glob.isSummoningPlayers,
+			glob.allPlayersInit && GetCoopPlayerIndex(a_coopActor) != -1
+		);
+		bool isPlayer1 = a_coopActor->IsPlayerRef();
+		// Set essential flags and bleedout override if using the revive system
+		// or if setting flags for a companion player outside of co-op.
+		if (a_inCoop)
+		{
+			auto actorBase = a_coopActor->GetActorBase();
+			if (actorBase)
+			{
+				if (Settings::bUseReviveSystem)
+				{
+					if (!isPlayer1 || Settings::bCanRevivePlayer1)
+					{
+						DBG("{} is now set as essential.", a_coopActor->GetName());
+						// Not P1 or can revive P1, so set as essential.
+						Util::ChangeEssentialStatus(a_coopActor, true, !glob.p1IsEssential);
+					}
+					else
+					{
+						DBG
+						(
+							"Cannot revive P1. P1 essential designation: {}.", glob.p1IsEssential
+						);
+						// Is P1 and cannot revive P1, so defer to previous essential designation.
+						Util::ChangeEssentialStatus
+						(
+							a_coopActor, glob.p1IsEssential, !glob.p1IsEssential
+						);
+					}
+				}
+				else
+				{
+					if (isPlayer1)
+					{
+						DBG
+						(
+							"Cannot revive players. P1 essential designation: {}.", 
+							glob.p1IsEssential
+						);
+						// Defer to previous essential designation for P1.
+						Util::ChangeEssentialStatus
+						(
+							a_coopActor, glob.p1IsEssential, glob.p1IsEssential
+						);
+					}
+					else
+					{
+						DBG
+						(
+							"Cannot revive players {} unset as essential.", a_coopActor->GetName()
+						);
+						// Player revive disabled, so clear essential flags.
+						Util::ChangeEssentialStatus(a_coopActor, false, true);
+					}
+				}
+			}
+		}
+		else 
+		{
+			//if (isPlayer1)
+			//{
+			//	DBG("P1 is now set as {} outside of co-op.", 
+			//		glob.p1IsEssential ? "essential" : "NOT essential");
+			//	// Defer to previous essential designation for P1.
+			//	Util::ChangeEssentialStatus(a_coopActor, glob.p1IsEssential, glob.p1IsEssential);
+			//}
+			//else
+			if (!isPlayer1)
+			{
+				DBG("{} is now set as essential outside of co-op.", a_coopActor->GetName());
+				// Do not allow companion players characters to die.
+				Util::ChangeEssentialStatus(a_coopActor, true, false);
+			}
+		}
+		
+		// Make sure the player is not paralyzed.
+		a_coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+		// Extra flags to modify for companion players.
+		if (!isPlayer1)
+		{
+			// When in co-op, set as teammate to prevent friendly fire and pickpocketing.
+			// Outside of co-op we'll unset the flag and check if it is later set,
+			// meaning the player character was added as a follower.
+			if (a_inCoop)
+			{
+				a_coopActor->boolBits.set(RE::Actor::BOOL_BITS::kPlayerTeammate);
+				a_coopActor->AllowPCDialogue(false);
+			}
+			else
+			{
+				a_coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kPlayerTeammate);
+				a_coopActor->AllowPCDialogue(true);
+			}
+
+			// Allow rotation.
+			a_coopActor->boolBits.set(RE::Actor::BOOL_BITS::kShouldRotateToTrack);
+			// Make sure the companion player is tagged as persistent.
+			a_coopActor->formFlags |= RE::Actor::RecordFlags::kPersistent;
+			// Ensure co-op companion players do not start combat with P1.
+			a_coopActor->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
+			// Prevent P1 from talking to this companion player in co-op.
+			// In singleplayer, since the companion player reverts to a follower,
+			// P1 must have the option to talk to them.
+			// No talking while downed.
+			a_coopActor->AllowBleedoutDialogue(false);
+
+			int32_t pIndex = glob.allPlayersInit && a_inCoop ? GetCoopPlayerIndex(a_coopActor) : -1;
+			// Set default/combat packages, and evaluate directly when in co-op.
+			if (pIndex != -1)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				// Clear out all co-op packages when not in co-op, 
+				// or set up the package stacks when in co-op.
+				// Reset packages to default, since players may have changed their
+				// character assignment order 
+				// (ie. P2 chooses P3's character and P3 chooses P2's character).
+				if (p->pam->packageStackMap[PackageIndex::kDefault] && 
+					glob.coopPackages
+					[!PackageIndex::kTotal * p->playerID + !PackageIndex::kDefault]) 
+				{
+					if (p->pam->packageStackMap[PackageIndex::kDefault]->forms.empty())
+					{
+						p->pam->packageStackMap[PackageIndex::kDefault]->forms.emplace_back
+						(
+							glob.coopPackages
+							[!PackageIndex::kTotal * p->playerID + !PackageIndex::kDefault]
+						);
+					}
+					else
+					{
+						p->pam->packageStackMap[PackageIndex::kDefault]->forms[0] = 
+						(
+							glob.coopPackages
+							[!PackageIndex::kTotal * p->playerID + !PackageIndex::kDefault]
+						);
+					}
+				}
+
+				if (p->pam->packageStackMap[PackageIndex::kCombatOverride] && 
+					glob.coopPackages
+					[!PackageIndex::kTotal * p->playerID + !PackageIndex::kCombatOverride]) 
+				{
+					if (p->pam->packageStackMap[PackageIndex::kCombatOverride]->forms.empty())
+					{
+						p->pam->packageStackMap[PackageIndex::kCombatOverride]->forms.emplace_back
+						(
+							glob.coopPackages
+							[!PackageIndex::kTotal * p->playerID + !PackageIndex::kCombatOverride]
+						);
+					}
+					else
+					{
+						p->pam->packageStackMap[PackageIndex::kCombatOverride]->forms[0] = 
+						(
+							glob.coopPackages
+							[!PackageIndex::kTotal * p->playerID + !PackageIndex::kCombatOverride]
+						);
+					}
+				}
+			
+				p->pam->SetAndEveluatePackage();
+			}
+		}
+	}
+
 	void GlobalCoopData::SetCrosshairText(bool&& a_shouldReset)
 	{
 		// Credits to Ryan-rsm-McKenzie and his quick loot repo for
@@ -6120,13 +6427,14 @@ namespace ALYSLC
 		{
 			ERR("ERR: Could not get data handler. Some global co-op data will not be set.");
 		}
-
+		
+		auto p1 = RE::PlayerCharacter::GetSingleton();
 		auto& glob = GetSingleton(); 
 		// P1 data may change on loading a save (if another player character's save is loaded),
 		// so we must update the alias.
 		SetPlayer1RefAlias();
-
-		// If already initialized, we don't need to update all the data.
+		// If already initialized, we don't need to update all the data,
+		// just data that must be reset upon loading another save.
 		if (glob.globalDataInit)
 		{
 			// Must also ensure the camera manager is not running on save load.
@@ -6164,7 +6472,6 @@ namespace ALYSLC
 		glob.isCameraShakeActive = false;
 		glob.isInCoopCombat = false;
 		glob.isSummoningPlayers = false;
-		glob.p1IsEssential = false;
 		glob.partyWiped = false;
 		glob.activePlayers = 0;
 		glob.livingPlayers = 0;
@@ -6193,13 +6500,14 @@ namespace ALYSLC
 		glob.charGenRace = nullptr;
 		glob.charGenEquippedForms.fill(nullptr);
 		glob.charGenSkillDataList.clear();
-		glob.coopEntityBlacklist.clear();
-		glob.coopEntityBlacklistFIDSet.clear();
 		glob.coopInventoryChests.clear();
 		glob.coopPackages.clear();
 		glob.coopPackageFormlists.clear();
+		glob.coopPlayerCharacters.clear();
+		glob.coopPlayerCharactersFIDSet.clear();
 		glob.coopPlayerFactions.clear();
 		glob.coopPlayerKeywords.clear();
+		glob.nwsFollowerPackQuestList.clear();
 		glob.p1FavoritedFormsMap.clear();
 		glob.perksAdded.clear();
 		glob.perksRemoved.clear();
@@ -6213,65 +6521,65 @@ namespace ALYSLC
 		// Load in data by form ID.
 		if (dataHandler)
 		{
-			// Actors that are blacklisted from selection via targeting.
+			// Player actors.
 			// P1 first.
-			glob.coopEntityBlacklist.emplace_back(RE::PlayerCharacter::GetSingleton());
+			glob.coopPlayerCharacters.emplace_back(RE::PlayerCharacter::GetSingleton());
 			// Co-op companion player actors.
-			glob.coopEntityBlacklist.emplace_back
+			glob.coopPlayerCharacters.emplace_back
 			(
 				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[1], PLUGIN_NAME)
 			);
-			glob.coopEntityBlacklist.emplace_back
+			glob.coopPlayerCharacters.emplace_back
 			(
 				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[2], PLUGIN_NAME)
 			);
-			glob.coopEntityBlacklist.emplace_back
+			glob.coopPlayerCharacters.emplace_back
 			(
 				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[3], PLUGIN_NAME)
 			);
-			glob.coopEntityBlacklist.emplace_back
+			glob.coopPlayerCharacters.emplace_back
 			(
 				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[4], PLUGIN_NAME)
 			);
-			glob.coopEntityBlacklist.emplace_back
+			glob.coopPlayerCharacters.emplace_back
 			(
 				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[5], PLUGIN_NAME)
 			);
-			glob.coopEntityBlacklist.emplace_back
+			glob.coopPlayerCharacters.emplace_back
 			(
 				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[6], PLUGIN_NAME)
 			);
-			glob.coopEntityBlacklist.emplace_back
+			glob.coopPlayerCharacters.emplace_back
 			(
 				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[7], PLUGIN_NAME)
 			);
-			glob.coopEntityBlacklist.emplace_back
+			glob.coopPlayerCharacters.emplace_back
 			(
 				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[8], PLUGIN_NAME)
 			);
-			glob.coopEntityBlacklist.emplace_back
+			glob.coopPlayerCharacters.emplace_back
 			(
 				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[9], PLUGIN_NAME)
 			);
 
-			for (auto i = 0; i < glob.coopEntityBlacklist.size(); ++i)
+			for (auto i = 0; i < glob.coopPlayerCharacters.size(); ++i)
 			{
 				DBG
 				(
 					"Entity  #{}: {}.",
 					i, 
-					glob.coopEntityBlacklist[i] ?
-					glob.coopEntityBlacklist[i]->GetName() :
+					glob.coopPlayerCharacters[i] ?
+					glob.coopPlayerCharacters[i]->GetName() :
 					"NONE"
 				);
 			}
 
 			// Used to check if an actor is a blacklisted one.
-			for (const auto& blacklistedActorPtr : glob.coopEntityBlacklist)
+			for (const auto& blacklistedActorPtr : glob.coopPlayerCharacters)
 			{
 				if (blacklistedActorPtr)
 				{
-					glob.coopEntityBlacklistFIDSet.insert(blacklistedActorPtr->formID);
+					glob.coopPlayerCharactersFIDSet.insert(blacklistedActorPtr->formID);
 				}
 			}
 
@@ -6738,6 +7046,28 @@ namespace ALYSLC
 			(
 				dataHandler->LookupForm<RE::TESFaction>(0x873, PLUGIN_NAME)
 			);
+
+			// NFF follower faction.
+			if (ALYSLC::NFFCompat::g_installed)
+			{
+				glob.nwsFollowerFaction = dataHandler->LookupForm<RE::TESFaction>
+				(
+					0x16EB3, "nwsFollowerFramework.esp"
+				);
+				
+				glob.nwsFollowerPackQuestList.emplace_back
+				(
+					dataHandler->LookupForm<RE::TESQuest>(0x19662, "nwsFollowerFramework.esp")
+				);
+				glob.nwsFollowerPackQuestList.emplace_back
+				(
+					dataHandler->LookupForm<RE::TESQuest>(0x23F35A, "nwsFollowerFramework.esp")
+				);
+				glob.nwsFollowerPackQuestList.emplace_back
+				(
+					dataHandler->LookupForm<RE::TESQuest>(0x241AF5, "nwsFollowerFramework.esp")
+				);
+			}
 			
 			// [Enderal Only]
 			if (ALYSLC::EnderalCompat::g_installed)
@@ -6778,6 +7108,12 @@ namespace ALYSLC
 					RE::TESForm::LookupByID<RE::TESFaction>(0xF2073)
 				);
 			}
+
+			// Idles.
+			glob.dormantStateIdle = RE::TESForm::LookupByEditorID<RE::TESIdleForm>
+			(
+				"IdleSitCrossLeggedEnter"
+			);
 
 			// Magic effects.
 			glob.tarhielsGaleEffect = 
@@ -6897,6 +7233,7 @@ namespace ALYSLC
 		// Base game forms.
 		//=================
 		// Art Objects:
+		glob.memoryGlowHitArt = RE::TESForm::LookupByID<RE::BGSArtObject>(0x106ADB);
 		glob.paraglideIndicatorEffect1 = 
 		(
 			RE::TESForm::LookupByEditorID<RE::BGSArtObject>("FXWispParticleAttachObject")
@@ -6912,6 +7249,24 @@ namespace ALYSLC
 		glob.dummy1H = RE::TESForm::LookupByID<RE::TESBoundObject>(0x6B95F);
 		// 2H slot clearer.
 		glob.fists = RE::TESForm::LookupByID<RE::TESBoundObject>(0x1F4);
+		// Factions.
+		glob.currentFollowerFaction = RE::TESForm::LookupByID<RE::TESFaction>(0x5C84E);
+		glob.potentialFollowerFaction = RE::TESForm::LookupByID<RE::TESFaction>(0x5C84D);
+		// Globals.
+		glob.p1FollowerCount = RE::TESForm::LookupByID<RE::TESGlobal>(0xBCC98);
+		// Packages.
+		glob.followerPackage = RE::TESForm::LookupByID<RE::TESPackage>(0x5C84B);
+		glob.followerCombatOverrideInteriorPackage = RE::TESForm::LookupByID<RE::TESPackage>
+		(
+			0x5C851
+		);
+		glob.followerCombatOverrideExteriorPackage = RE::TESForm::LookupByID<RE::TESPackage>
+		(
+			0x109124
+		);
+		// Quests.
+		glob.followerQuest = RE::TESForm::LookupByID<RE::TESQuest>(0x750BA);
+		
 		if (!ALYSLC::EnderalCompat::g_installed)
 		{
 			// Formlists:
@@ -6977,7 +7332,7 @@ namespace ALYSLC
 		// Get all selectable level up perks.
 		SELECTABLE_PERKS.clear();
 		SELECTABLE_SHARED_PERKS.clear();
-		if (const auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
+		if (p1)
 		{
 			auto getSelectablePerks =
 			[&glob](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
@@ -7112,7 +7467,7 @@ namespace ALYSLC
 
 		for (auto alias : glob.handlerQuest->aliases)
 		{
-			if (!alias && !static_cast<RE::BGSRefAlias*>(alias))
+			if (!alias || !static_cast<RE::BGSRefAlias*>(alias))
 			{
 				continue;
 			}
@@ -7130,53 +7485,115 @@ namespace ALYSLC
 		}
 	}
 
-	void GlobalCoopData::SignalWaitForUpdate(bool a_shouldDismiss)
+	void GlobalCoopData::StartCoopSession()
 	{
-		// Either dismiss all active players or just request their managers to wait for refresh.
-		// Any active co-op session is also flagged as ended.
-		
+		// Prep all players for co-op, rsest crosshair text, reset menu data,
+		// and set co-op session as active.
+		// Then signal all players' managers to run.
+
 		auto& glob = GetSingleton();
-		DBG("Should dismiss all active players: {}.", a_shouldDismiss);
-		// Dismiss P1 last, as the P1 ref alias script performs the final cleanup measures 
-		// for the co-op session.
-		for (const auto& p : glob.coopPlayers)
+		// Must have initialized global data and players.
+		if (!glob.globalDataInit || !glob.allPlayersInit) 
 		{
-			if (!p->isActive || p->isPlayer1)
+			return;
+		}
+
+		// Enable P1's controls and saving just to be safe.
+		SKSE::GetTaskInterface()->AddTask
+		(
+			[&glob]() 
+			{
+				auto controlMap = RE::ControlMap::GetSingleton();
+				controlMap->lock.Lock();
+				controlMap->ToggleControls(RE::ControlMap::UEFlag::kActivate, true);
+				controlMap->ToggleControls(RE::ControlMap::UEFlag::kLooking, true);
+				controlMap->ToggleControls(RE::ControlMap::UEFlag::kPOVSwitch, true);
+				controlMap->ToggleControls(RE::ControlMap::UEFlag::kMenu, true);
+				controlMap->ToggleControls(RE::ControlMap::UEFlag::kLooking, true);
+				controlMap->lock.Unlock();
+				// Re-enable saving too if P1 is not dead.
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				if (p1 &&
+					!p1->IsDead() && 
+					*glob.copiedPlayerDataTypes == CopyablePlayerDataTypes::kNone)
+				{
+					p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kNone;
+				}
+			}
+		);
+			
+		// Give all accumulated party-wide shared items to P1.
+		GlobalCoopData::GivePartyWideItemsToP1();
+		// Turn off god mode for everyone.
+		GlobalCoopData::ToggleGodModeForAllPlayers(false, false);
+		// Sync shared AVs, perks, Legendary levelings, and scale companion player's skill AVs.
+		GlobalCoopData::SyncSharedSkillAVs();
+		GlobalCoopData::SyncSharedPerks();
+		GlobalCoopData::SyncSharedLegendaryLevelingCounts();
+		GlobalCoopData::PerformInitialAVAutoScaling();
+		GlobalCoopData::RescaleAllPlayerAVs();
+		// Set or restore XP threshold.
+		GlobalCoopData::ModifyLevelUpXPThreshold(glob.coopSessionActive);
+		// Modify the level XP gained per skill level up to scale inversely
+		// with the number of active players.
+		GlobalCoopData::ModifyXPPerSkillLevelMult(true);
+
+		// Reset crosshair text.
+		GlobalCoopData::SetCrosshairText(true);
+		// Load debug overlay menu to show crosshairs/other UI elements.
+		DebugOverlayMenu::Load();
+
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (p1)
+		{
+			glob.p1IsEssential = p1 && p1->IsEssential();
+			DBG
+			(
+				"P1 is essential when setting global data: {}.", p1->IsEssential()
+			);
+		}
+
+		// Reset menu DIDs/PIDs.
+		glob.lastResolvedMenuPID = 
+		glob.menuPID = 
+		glob.prevMenuPID = 
+		glob.mim->managerMenuDID = -1;
+		glob.mim->managerMenuPID = -1;
+		glob.mim->pmcPID = 0;
+		// Clear all menu opening requests.
+		glob.moarm->ClearAllRequests();
+		// Make sure time is not frozen.
+		Util::ToggleFreezeTime(false);
+
+		// Co-op session is now active.
+		glob.coopSessionActive = true;
+
+		// Signal player managers to run once the session is active.
+		for (const auto& p : glob.coopPlayers) 
+		{
+			if (!p || !p->isActive) 
 			{
 				continue;
 			}
 
-			if (a_shouldDismiss)
-			{
-				p->DismissPlayer();
+			// IMPORTANT:
+			// Remove follower status for all active players.
+			// Follower reference alias(es) will override co-op packages
+			// and prevent casting/interacting with objects otherwise.
+			if (!p->isPlayer1)
+			{				
+				Util::ResetFollowerStatus(p->coopActor.get(), true);
 			}
-			else
-			{
-				p->RequestStateChange(ManagerState::kAwaitingRefresh);
-			}
-		}
-		
-		const auto& coopP1 = glob.coopPlayers[0];
-		if (coopP1 && coopP1->isActive) 
-		{
-			if (a_shouldDismiss)
-			{
-				coopP1->DismissPlayer();
-			}
-			else
-			{
-				coopP1->RequestStateChange(ManagerState::kAwaitingRefresh);
-			}
+
+			// Make sure the player is not paralyzed either (from being downed).
+			p->coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+			// Signal all their managers to resume.
+			p->RequestStateChange(ManagerState::kRunning);
 		}
 
-		// Stop menu and camera managers and flag session as ended.
-		glob.cam->ToggleCoopCamera(false);
-		glob.mim->RequestStateChange(ManagerState::kAwaitingRefresh);
-		// Restore XP threshold.
-		GlobalCoopData::ModifyLevelUpXPThreshold(false);
-		glob.coopSessionActive = false;
+		INF("Co-op session has now started.");
 	}
-
+	
 	void GlobalCoopData::StopAllCombatOnCoopPlayers
 	(
 		bool&& a_onlyAmongParty, bool&& a_removeCrimeGold
@@ -7382,6 +7799,147 @@ namespace ALYSLC
 		}
 	}
 
+	void GlobalCoopData::StopCoopSession(bool a_shouldDismiss, bool a_shouldPauseCoopCam)
+	{
+		// Dismiss all active players or signal their managers to await refresh 
+		// without teleporting them away.
+		// Any active co-op session is also flagged as ended.
+		// Can choose whether or not to disable the co-op camera once the session ends.
+		
+		auto& glob = GetSingleton();
+		if (!glob.globalDataInit)
+		{
+			return;
+		}
+
+		// Can only dismiss players if they are initialized.
+		if (glob.allPlayersInit)
+		{
+			if (a_shouldDismiss)
+			{
+				// Dismiss P1 last, as the P1 ref alias script performs final cleanup measures 
+				// for the co-op session.
+				for (const auto& p : glob.coopPlayers)
+				{
+					if (!p || !p->isActive || p->isPlayer1)
+					{
+						continue;
+					}
+
+					if (p->isDowned && !p->coopActor->IsDead())
+					{
+						DBG
+						(
+							"Co-op session over. RIP downed companion {}.", p->coopActor->GetName()
+						);
+						p->coopActor->KillImpl(p->coopActor.get(), FLT_MAX, true, false);
+						p->coopActor->KillImmediate();
+						p->coopActor->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
+					}
+
+					DBG
+					(
+						"Co-op session over. Dismissing companion {}.", p->coopActor->GetName()
+					);
+					p->DismissPlayer();
+				}
+
+				const auto& coopP1 = glob.coopPlayers[0];
+				if (coopP1 && coopP1->isActive) 
+				{
+					if (coopP1->isDowned && !coopP1->coopActor->IsDead())
+					{
+						DBG
+						(
+							"Co-op session over. RIP downed P1 {}.",
+							coopP1->coopActor->GetName()
+						);
+						coopP1->coopActor->KillImpl(coopP1->coopActor.get(), FLT_MAX, true, false);
+						coopP1->coopActor->KillImmediate();
+						coopP1->coopActor->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
+					}
+
+					DBG
+					(
+						"Co-op session over. Dismissing P1 {}.", coopP1->coopActor->GetName()
+					);
+					coopP1->DismissPlayer();
+				}
+			}
+			else
+			{
+				for (const auto& p : glob.coopPlayers)
+				{
+					if (!p || !p->isActive)
+					{
+						continue;
+					}
+				
+					DBG
+					(
+						"Co-op session over. Signalling managers to await refresh for {}.", 
+						p->coopActor->GetName()
+					);
+					p->RequestStateChange(ManagerState::kAwaitingRefresh);
+				}
+			}
+		
+			// Ensure any copied data is reverted for P1.
+			if (*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone) 
+			{
+				DBG
+				(
+					"Co-op session ended with data copied "
+					"(types: 0b{:B}) over to P1. Restoring P1's data.",
+					*glob.copiedPlayerDataTypes
+				);
+				CopyOverCoopPlayerData
+				(
+					false, "CO-OP SESSION ENDED", glob.player1Actor->GetHandle(), nullptr
+				);
+			}
+		}
+		
+		// Reset crosshair text and position.
+		SetCrosshairText(true);
+		// Reset menu state.
+		ResetMenuState();
+		// Stop menu input manager, and optionally, the camera manager.
+		glob.mim->RequestStateChange(ManagerState::kAwaitingRefresh);
+
+		DBG
+		(
+			"Co-op session over. Pausing {} managers "
+			"and awaiting the start of a new co-op session.",
+			a_shouldPauseCoopCam ?
+			"camera and menu input" :
+			"menu input"
+		);
+		if (a_shouldPauseCoopCam)
+		{
+			glob.cam->RequestStateChange(ManagerState::kAwaitingRefresh);
+		}
+
+		// Restore XP mult/threshold.
+		ModifyXPPerSkillLevelMult(false);
+		ModifyLevelUpXPThreshold(false);
+
+		// Ensure P1 is no longer AI driven.
+		Util::SetPlayerAIDriven(false);
+		// Re-enable any controls for P1 that might have been disabled.
+		Util::ToggleAllControls(true);
+		// Make sure time is not frozen when done.
+		Util::ToggleFreezeTime(false);
+
+		// Session flagged as ended.
+		glob.coopSessionActive = false;
+		INF("Co-op session has now ended.");
+
+		// Revert to singleplayer handling for all players.
+		PrepP1ForSingleplayer();
+		PrepCompanionPlayersForSingleplayer();
+	}
+
 	void GlobalCoopData::StopMenuInputManager()
 	{
 		// Request to pause the menu input manager.
@@ -7476,9 +8034,9 @@ namespace ALYSLC
 		if (ALYSLC::EnderalCompat::g_installed) 
 		{
 			// For Enderal, just sync shared perks with P1.
-			for (const auto& p : glob.coopPlayers)
+			for (const auto playerActorPtr : glob.coopPlayerCharacters)
 			{
-				if (!p->isActive || p->isPlayer1)
+				if (!playerActorPtr || playerActorPtr->IsPlayerRef())
 				{
 					continue;
 				}
@@ -7487,7 +8045,7 @@ namespace ALYSLC
 				for (auto perk : p1->perks)
 				{
 					// Invalid perk or already has the perk, so on to the next one.
-					if (!perk || p->coopActor->HasPerk(perk)) 
+					if (!perk || playerActorPtr->HasPerk(perk)) 
 					{
 						continue;
 					}
@@ -7495,9 +8053,9 @@ namespace ALYSLC
 					DBG
 					(
 						"P1 {} has perk {}. Adding to {}.",
-						p1->GetName(), perk->GetName(), p->coopActor->GetName()
+						p1->GetName(), perk->GetName(), playerActorPtr->GetName()
 					);
-					Util::ChangePerk(p->coopActor.get(), perk, true);
+					Util::ChangePerk(playerActorPtr.get(), perk, true);
 				}
 			}
 		}
@@ -7594,17 +8152,16 @@ namespace ALYSLC
 					perksToRemoveStack.pop();
 				}
 			};
-
-			auto dataHandler = RE::TESDataHandler::GetSingleton();
-			for (const auto& p : glob.coopPlayers)
+			
+			for (const auto playerActorPtr : glob.coopPlayerCharacters)
 			{
-				if (!p->isActive || p->isPlayer1)
+				if (!playerActorPtr || playerActorPtr->IsPlayerRef())
 				{
 					continue;
 				}
 
 				// Sync all shared skill tree perks for companion players.
-				Util::TraverseAllPerks(p->coopActor.get(), addSharedSkillPerks);
+				Util::TraverseAllPerks(playerActorPtr.get(), addSharedSkillPerks);
 
 				// Commented out for now.
 				// Also add all non-selectable perks to companion players.
@@ -7623,11 +8180,6 @@ namespace ALYSLC
 				//	(
 				//		p->coopActor.get(), p->coopActor.get()
 				//	);
-				//	DBG
-				//	(
-				//		"P1 {} has perk {} 0x{:X}). Adding to {}. Conditions hold: {}.",
-				//		p1->GetName(), perk->GetName(), perk->formID, p->coopActor->GetName(), succ
-				//	);
 				//	Util::ChangePerk(p->coopActor.get(), perk, true);
 				//}
 			}
@@ -7636,142 +8188,22 @@ namespace ALYSLC
 
 	void GlobalCoopData::SyncSharedSkillAVs()
 	{
-		// Sync shared skills' AV levels among all active players.
+		// Sync shared skills' AV levels among all players.
 
 		auto& glob = GetSingleton();
 		// Sync all shared skill AVs for each player.
 		// The highest shared skill level is used 
 		// for each shared skill.
-		for (const auto& p : glob.coopPlayers)
+
+		for (const auto playerActorPtr : glob.coopPlayerCharacters)
 		{
-			if (!p->isActive)
+			if (!playerActorPtr)
 			{
 				continue;
 			}
 
-			p->pam->CopyOverSharedSkillAVs();
+			GlobalCoopData::CopyOverSharedSkillAVs(playerActorPtr.get());
 		}
-	}
-
-	void GlobalCoopData::TearDownCoopSession(bool a_shouldDismiss, bool a_shouldPauseCoopCam)
-	{
-		// End the current co-op session by signalling all managers to await refresh, 
-		// and optionally dismiss all companion players or pause the co-op cam.
-
-		auto& glob = GetSingleton();
-		// No global data or players, so bail.
-		if (!glob.globalDataInit || 
-			!glob.allPlayersInit)
-		{
-			return;
-		}
-
-		// Set the co-op session as ended.
-		glob.coopSessionActive = false;
-		// Reset crosshair text and position.
-		SetCrosshairText(true);
-
-		if (a_shouldDismiss)
-		{
-			// Dismiss P1 last, as the P1 ref alias script performs final cleanup measures 
-			// for the co-op session.
-			for (const auto& p : glob.coopPlayers)
-			{
-				if (!p || !p->isActive || p->isPlayer1)
-				{
-					continue;
-				}
-
-				if (p->isDowned && !p->coopActor->IsDead())
-				{
-					DBG
-					(
-						"Co-op session over. RIP downed companion {}.", p->coopActor->GetName()
-					);
-					p->coopActor->KillImpl(p->coopActor.get(), FLT_MAX, true, false);
-					p->coopActor->KillImmediate();
-					p->coopActor->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
-				}
-
-				DBG
-				(
-					"Co-op session over. Dismissing companion {}.", p->coopActor->GetName()
-				);
-				p->DismissPlayer();
-			}
-
-			const auto& coopP1 = glob.coopPlayers[0];
-			if (coopP1 && coopP1->isActive) 
-			{
-				if (coopP1->isDowned && !coopP1->coopActor->IsDead())
-				{
-					DBG
-					(
-						"Co-op session over. RIP downed P1 {}.",
-						coopP1->coopActor->GetName()
-					);
-					coopP1->coopActor->KillImpl(coopP1->coopActor.get(), FLT_MAX, true, false);
-					coopP1->coopActor->KillImmediate();
-					coopP1->coopActor->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
-				}
-
-				DBG
-				(
-					"Co-op session over. Dismissing P1 {}.", coopP1->coopActor->GetName()
-				);
-				coopP1->DismissPlayer();
-			}
-		}
-		else
-		{
-			for (const auto& p : glob.coopPlayers)
-			{
-				if (!p || !p->isActive)
-				{
-					continue;
-				}
-				
-				DBG
-				(
-					"Co-op session over. Signalling managers to await refresh for {}.", 
-					p->coopActor->GetName()
-				);
-				p->RequestStateChange(ManagerState::kAwaitingRefresh);
-			}
-		}
-
-		// Ensure any copied data is reverted for P1.
-		if (*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone) 
-		{
-			DBG
-			(
-				"Co-op session ended with data copied "
-				"(types: 0b{:B}) over to P1. Restoring P1's data.",
-				*glob.copiedPlayerDataTypes
-			);
-			CopyOverCoopPlayerData
-			(
-				false, "CO-OP SESSION ENDED", glob.player1Actor->GetHandle(), nullptr
-			);
-		}
-		
-		DBG
-		(
-			"Co-op session over. Pausing {} managers "
-			"and awaiting the start of a new co-op session.",
-			a_shouldPauseCoopCam ?
-			"camera and menu input" :
-			"menu input"
-		);
-		if (a_shouldPauseCoopCam)
-		{
-			glob.cam->RequestStateChange(ManagerState::kAwaitingRefresh);
-		}
-
-		GlobalCoopData::ResetMenuState();
-		
-		// Make sure time is not frozen when done.
-		Util::ToggleFreezeTime(false);
 	}
 
 	void GlobalCoopData::ToggleGodModeForAllPlayers(const bool& a_enable, bool a_enableWithFullHMS)
@@ -7947,10 +8379,13 @@ namespace ALYSLC
 					"Set is ghost/invuln/nobleed to TRUE for {}", p->coopActor->GetName()
 				);
 
-				baseFlags.set
+				Util::NativeFunctions::SetActorBaseFlag
 				(
-					RE::ACTOR_BASE_DATA::Flag::kInvulnerable, 
-					RE::ACTOR_BASE_DATA::Flag::kDoesntBleed
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kInvulnerable, true, false
+				);
+				Util::NativeFunctions::SetActorBaseFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kDoesntBleed, true, false
 				);
 				p->isInGodMode = true;
 			}
@@ -7961,10 +8396,13 @@ namespace ALYSLC
 					"Set is ghost/invuln/nobleed to FALSE for {}", p->coopActor->GetName()
 				);
 
-				baseFlags.reset
+				Util::NativeFunctions::SetActorBaseFlag
 				(
-					RE::ACTOR_BASE_DATA::Flag::kInvulnerable,
-					RE::ACTOR_BASE_DATA::Flag::kDoesntBleed
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kInvulnerable, false, false
+				);
+				Util::NativeFunctions::SetActorBaseFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kDoesntBleed, false, false
 				);
 				p->isInGodMode = false;
 			}
@@ -12110,6 +12548,32 @@ namespace ALYSLC
 		CopyPlayerData(info);
 	}
 
+	void GlobalCoopData::CopyOverSharedSkillAVs(RE::Actor* a_playerActor)
+	{
+		// Copy over the highest skill AV level among all players for each shared skill.
+		// Also save the highest skill AV level to the player's serialized skill base levels list.
+		
+		auto& glob = GetSingleton();
+		for (const auto& av : glob.SHARED_SKILL_AVS_SET)
+		{
+			auto value = GlobalCoopData::GetHighestSharedAVLevel(av); 
+			if (value == -1.0f) 
+			{
+				continue;
+			}
+			const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+			// Update the serialized value.
+			if (iter != glob.serializablePlayerData.end())
+			{
+				const auto index = GlobalCoopData::AV_TO_SKILL_MAP.at(av);
+				iter->second->skillBaseLevelsList[index] = value;
+				iter->second->skillLevelIncreasesList[index] = 0.0f;
+			}
+
+			a_playerActor->SetBaseActorValue(av, value);
+		}
+	}
+
 	void GlobalCoopData::PromptForPlayer1CIDTask()
 	{
 		// Debug option:
@@ -12616,6 +13080,11 @@ namespace ALYSLC
 			(
 				[&glob, p1, playerActor, teleportalActivator]() 
 				{
+					if (teleportalActivator)
+					{
+						playerActor->PlaceObjectAtMe(teleportalActivator, false);
+					}
+
 					playerActor->Disable();
 					playerActor->MoveTo(p1); 
 					playerActor->SetPosition
@@ -12632,7 +13101,6 @@ namespace ALYSLC
 					{
 						playerActor->PlaceObjectAtMe(teleportalActivator, false);
 					}
-					
 				}
 			);
 			// Wait a bit to allow the effect to play.
@@ -12701,10 +13169,8 @@ namespace ALYSLC
 		// since P1 will remain paralyzed on the ground otherwise.
 
 		auto& glob = GetSingleton();
-		// Make sure the session is flagged as ended first.
-		if (glob.coopSessionActive)
+		if (!glob.partyWiped)
 		{
-			glob.coopSessionActive = false;
 			// Party wiped, start death cam.
 			glob.partyWiped = true;
 			glob.cam->camState = CamState::kDeath;
@@ -12960,12 +13426,11 @@ namespace ALYSLC
 						glob.p1IsEssential
 					);
 				}
-
-				// Reset skill gain multiplier since there are no living players 
-				// in the party now.
-				ModifyXPPerSkillLevelMult(false);
+				
 				// Teardown the session afterward.
-				TearDownCoopSession(true, false);
+				// Do not disable the co-op camera since it will now switch to the death cam state.
+				DBG("Stop co-op session");
+				StopCoopSession(false, false);
 
 				// If all else STILL fails, and it usually does, as a final failsafe, 
 				// reload the most recent save after a short period of time.
@@ -13674,7 +14139,7 @@ namespace ALYSLC
 
 	bool GlobalCoopData::TriggerAVAutoScaling(RE::Actor* a_playerActor, bool&& a_updateBaseAVs) 
 	{
-		// UnUSED FOR NOW DUE TO HMS SCALING BUGS AFFECTING BOTH TYPES OF PLAYERS.
+		// UNUSED FOR NOW DUE TO HMS SCALING BUGS AFFECTING BOTH TYPES OF PLAYERS.
 		// Force the game to scale all players' AVs by spoofing a level up 
 		// and then de-leveling back to the original level.
 		// Can optionally update the serialized base AVs for the given player(s)

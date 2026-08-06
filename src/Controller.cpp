@@ -540,7 +540,7 @@ namespace ALYSLC
 					"[ALYSLC] New controller was plugged in. Please re-summon."
 				).data()
 			);
-			GlobalCoopData::TearDownCoopSession(true, true);
+			GlobalCoopData::StopCoopSession(false, true);
 			// Must re-assign P1 device ID upon re-summoning.
 			glob.player1DID = -1;
 			return;

@@ -8347,6 +8347,183 @@ namespace ALYSLC
 			}
 		}
 
+		void ResetFollowerStatus(RE::Actor* a_actor, bool a_onlyFixFactions)
+		{
+			// Remove the actor's designation as a follower 
+			// by removing them from the current followers faction, 
+			// and adding them back to the potential followers faction.
+			// Can choose to only reset follower faction state if the player character 
+			// is not currently a follower (bugged state).
+
+			if (!a_actor || 
+				!glob.globalDataInit ||
+				!glob.currentFollowerFaction || 
+				!glob.potentialFollowerFaction ||
+				!glob.p1FollowerCount ||
+				!glob.followerQuest)
+			{
+				DBG
+				(
+					"ERR: Invalid actor: {}, global data not initialized: {}, "
+					"current/potential follower faction not found: {}, {}, "
+					"follower count global not found: {}, follower quest not found: {}.",
+					(bool)!a_actor,
+					!glob.globalDataInit,
+					(bool)!glob.currentFollowerFaction,
+					(bool)!glob.potentialFollowerFaction,
+					(bool)!glob.p1FollowerCount,
+					(bool)!glob.followerQuest
+				);
+				return;
+			}
+
+			bool wasFollower = false;
+			// Need to check for other filled ref aliases from follower framework mods like NFF.
+			std::vector<RE::BGSRefAlias*> followerRefAliases{ };
+			if (glob.followerQuest)
+			{
+				for (auto alias : glob.followerQuest->aliases)
+				{
+					if (!alias)
+					{
+						continue;
+					}
+					
+					auto refAlias = static_cast<RE::BGSRefAlias*>(alias);
+					if (!refAlias)
+					{
+						continue;
+					}
+
+					const auto aliasRef = refAlias->GetReference();
+					DBG
+					(
+						"Quest {} (0x{:X}) has alias {} (0x{:X}) and ref {}.",
+						glob.followerQuest->GetName(),
+						glob.followerQuest->formID,
+						alias->aliasName,
+						alias->aliasID,
+						aliasRef ? aliasRef->GetName() : "NONE"
+					);
+					if (aliasRef == a_actor)
+					{
+						DBG("Add refalias {} to remove list.", alias->aliasName);
+						followerRefAliases.emplace_back(refAlias);
+					}
+				}
+			}
+			if (!followerRefAliases.empty())
+			{
+				wasFollower = true;
+			}
+			else if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
+			{
+				auto exFollower = p1->extraList.GetByType<RE::ExtraFollower>();
+				if (exFollower)
+				{
+					const auto handle = a_actor->GetHandle();
+					for (const auto& followerData : exFollower->actorFollowers)
+					{
+						if (followerData.actor == handle)
+						{
+							wasFollower = true;
+							break;
+						}
+					}
+				}
+			}
+
+			if (a_actor->IsInFaction(glob.currentFollowerFaction))
+			{
+				DBG("{}: Remove from current follower faction.", a_actor->GetName());
+				a_actor->RemoveFromFaction(glob.currentFollowerFaction);
+			}
+
+			if (ALYSLC::NFFCompat::g_installed && glob.nwsFollowerFaction)
+			{
+				if (a_actor->IsInFaction(glob.nwsFollowerFaction))
+				{
+					DBG("{}: Remove from NFF current follower faction.", a_actor->GetName());
+					a_actor->RemoveFromFaction(glob.nwsFollowerFaction);
+				}
+			}
+
+			if (!a_actor->IsInFaction(glob.potentialFollowerFaction) ||
+				a_actor->GetFactionRank(glob.potentialFollowerFaction, false) != 0)
+			{
+				DBG("{}: Add to potential follower faction with rank 0.", a_actor->GetName());
+				a_actor->AddToFaction(glob.potentialFollowerFaction, 0);
+			}
+
+			// If the character was in the follower faction(s) but not tagged as a follower,
+			// we can just return here if only fixing their factions.
+			if (a_onlyFixFactions && !wasFollower)
+			{
+				return;
+			}
+
+			if (wasFollower)
+			{
+				DBG("{} was a follower. Reset global follower count and forced ref.",
+					a_actor->GetName());
+
+				glob.p1FollowerCount->value = max(0.0f, glob.p1FollowerCount->value - 1.0f);
+				for (const auto refAlias : followerRefAliases)
+				{
+					Util::Papyrus::Clear(refAlias);
+				}
+			}
+			else
+			{
+				DBG("{} was NOT a follower. Will not reset global follower count and forced ref.",
+					a_actor->GetName());
+			}
+
+			// For NFF, we also have to clear any filled refaliases 
+			// applying packages to the character, 
+			// or these will override ALYSLC's packages during co-op.
+			if (ALYSLC::NFFCompat::g_installed && !glob.nwsFollowerPackQuestList.empty())
+			{
+				for (const auto quest : glob.nwsFollowerPackQuestList)
+				{
+					if (!quest)
+					{
+						continue;
+					}
+
+					for (auto alias : quest->aliases)
+					{
+						if (!alias)
+						{
+							continue;
+						}
+					
+						auto refAlias = static_cast<RE::BGSRefAlias*>(alias);
+						if (!refAlias)
+						{
+							continue;
+						}
+
+						const auto aliasRef = refAlias->GetReference();
+						DBG
+						(
+							"NFF Quest {} (0x{:X}) has alias {} (0x{:X}) and ref {}.",
+							quest->GetName(),
+							quest->formID,
+							alias->aliasName,
+							alias->aliasID,
+							aliasRef ? aliasRef->GetName() : "NONE"
+						);
+						if (aliasRef == a_actor)
+						{
+							DBG("Clear NFF follower package refalias {}.", alias->aliasName);
+							Util::Papyrus::Clear(refAlias);
+						}
+					}
+				}
+			}
+		}
+
 		void ResetTPCamOrientation()
 		{
 			// Reset the game's third person camera to its default orientation.
@@ -8982,6 +9159,190 @@ namespace ALYSLC
 			}
 		}
 
+		void ToggleActorDormantState(RE::Actor* a_actor, bool a_set)
+		{
+			// Have the given actor enter an invulnerable state and sit down if their 3D is loaded.
+
+			if (!a_actor || !glob.globalDataInit)
+			{
+				return;
+			}
+
+			auto actorBase = a_actor->GetActorBase();
+			if (!actorBase || !a_actor->Is3DLoaded() || !a_actor->currentProcess)
+			{
+				return;
+			}
+			
+			// Remove all effect shaders first.
+			StopAllEffectShaders(a_actor);
+			StopAllHitArtEffects(a_actor);
+
+			// Make invulnerable and sit the character down.
+			if (a_set)
+			{
+				DBG("Should enter dormant state.");
+				/*actorBase->actorData.actorBaseFlags.set
+				(
+					RE::ACTOR_BASE_DATA::Flag::kInvulnerable,
+					RE::ACTOR_BASE_DATA::Flag::kDoesntBleed
+				);*/
+
+				StartEffectShader(a_actor, glob.ghostFXShader);
+				StartHitArt(a_actor, glob.memoryGlowHitArt, nullptr);
+				
+				a_actor->DrawWeaponMagicHands(false);
+				a_actor->currentProcess->SetRunOncePackage(nullptr, a_actor);
+				a_actor->currentProcess->StopCurrentIdle(a_actor, true);
+				PlayIdle("ResetRoot", a_actor);
+
+				int32_t characterID = Util::GetEditorID(actorBase).back() - '0';
+				if (characterID <= 0 || 2 * characterID + 1 >= glob.coopPackageFormlists.size())
+				{
+					ERR
+					(
+						"ERR: {}'s character ID is outside the package form list range: "
+						"2 x {} not in range [1, {}]",
+						a_actor->GetName(),
+						characterID,
+						glob.coopPackageFormlists.size()
+					);
+					return;
+				}
+				
+				// Sandbox fallback when sitting idle fails to play.
+				auto defPackageList = glob.coopPackageFormlists[2 * characterID];
+				auto combatPackageList = glob.coopPackageFormlists[2 * characterID + 1];
+				if (!defPackageList)
+				{
+					ERR
+					(
+						"ERR: {}'s default package form list is invalid.", a_actor->GetName()
+					);
+					return;
+				}
+
+				if (!combatPackageList)
+				{
+					ERR
+					(
+						"ERR: {}'s combat package form list is invalid.", a_actor->GetName()
+					);
+					return;
+				}
+				
+				DBG
+				(
+					"{}'s default/combat package form list has {}, {} packages. ID: {}", 
+					a_actor->GetName(),
+					defPackageList->forms.size(),
+					combatPackageList->forms.size(),
+					characterID
+				);
+
+				if (!defPackageList->forms.empty())
+				{
+					defPackageList->forms.clear();
+				}
+			
+				if (!combatPackageList->forms.empty())
+				{
+					combatPackageList->forms.clear();
+				}
+				
+				// Sandbox when not sitting or added as a follower.
+				// Only if 'Sandbox When Idle' is installed.
+				bool shouldSandboxInstead = false;
+				if (ALYSLC::SandboxWhenIdleCompat::g_installed)
+				{
+					auto exteriorPackage = RE::TESForm::LookupByEditorID<RE::TESPackage>
+					(
+						"SandboxWhenIdleExterior"
+					);
+					auto interiorPackage = RE::TESForm::LookupByEditorID<RE::TESPackage>
+					(
+						"SandboxWhenIdleInterior"
+					);
+					auto p1 = RE::PlayerCharacter::GetSingleton();
+					if (exteriorPackage && interiorPackage && p1 && p1->parentCell)
+					{
+						if (p1->parentCell->IsExteriorCell())
+						{
+							defPackageList->forms.emplace_back(exteriorPackage);
+							combatPackageList->forms.emplace_back(exteriorPackage);
+						}
+						else
+						{
+							defPackageList->forms.emplace_back(interiorPackage);
+							combatPackageList->forms.emplace_back(interiorPackage);
+						}
+
+						shouldSandboxInstead = true;
+					}
+				}
+				
+				// Sit down if not sandboxing.
+				if (!shouldSandboxInstead)
+				{
+					bool succ = PlayIdle(glob.dormantStateIdle, a_actor);
+					if (succ && a_actor->currentProcess->high)
+					{
+						a_actor->currentProcess->high->currentProcessIdle = glob.dormantStateIdle;
+					}
+				}
+
+				a_actor->EvaluatePackage(true, true);
+
+				Util::NativeFunctions::SetActorBaseFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kInvulnerable, true, false
+				);
+				Util::NativeFunctions::SetActorBaseFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, true, false
+				);
+				Util::NativeFunctions::SetActorBaseFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kDoesntBleed, true, false
+				);
+			}
+			else
+			{
+				DBG("Should exit dormant state.");
+				/*actorBase->actorData.actorBaseFlags.reset
+				(
+					RE::ACTOR_BASE_DATA::Flag::kInvulnerable,
+					RE::ACTOR_BASE_DATA::Flag::kDoesntBleed
+				);*/
+				
+				// Get up.
+				a_actor->currentProcess->SetRunOncePackage(nullptr, a_actor);
+				a_actor->currentProcess->StopCurrentIdle(a_actor, true);
+				PlayIdle("ResetRoot", a_actor);
+				bool succ = a_actor->NotifyAnimationGraph("WeapEquip");
+				a_actor->actorState2.wantBlocking = 0;
+				a_actor->NotifyAnimationGraph("blockStop");
+				a_actor->EvaluatePackage(true, true);
+				if (succ && a_actor->currentProcess->high)
+				{
+					a_actor->currentProcess->high->currentProcessIdle = nullptr;
+				}
+
+				Util::NativeFunctions::SetActorBaseFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kInvulnerable, false, false
+				);
+				Util::NativeFunctions::SetActorBaseFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, false, false
+				);
+				Util::NativeFunctions::SetActorBaseFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kDoesntBleed, false, false
+				);
+			}
+		}
+
 		void SetActorsDetectionEvent
 		(
 			RE::Actor* a_actor, 
@@ -9149,7 +9510,9 @@ namespace ALYSLC
 			(
 				a_velocity.x, a_velocity.y, a_velocity.z, oldVelVect.quad.m128_f32[3]
 			);
+			charController->lock.Lock();
 			charController->SetLinearVelocityImpl(velVect);
+			charController->lock.Unlock();
 		}
 
 		bool SetPlayerAIDriven(const bool&& a_shouldSet)
@@ -9910,7 +10273,7 @@ namespace ALYSLC
 			if (procLists)
 			{
 				// Players.
-				for (const auto& playerActor : glob.coopEntityBlacklist)
+				for (const auto& playerActor : glob.coopPlayerCharacters)
 				{
 					if (!playerActor)
 					{

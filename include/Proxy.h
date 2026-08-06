@@ -23,10 +23,6 @@ namespace ALYSLC
 		// Initialization functions defined in proper order of execution.						  
 		//=========================================================================================
 
-		// Set global co-op data after the player loads a save.
-		// Return true if global data was initialized for the first time.
-		bool InitializeGlobalData(RE::StaticFunctionTag*, RE::BGSRefAlias* a_player1Ref);
-
 		// Set player 1's reference alias directly to the given alias.
 		void SetPlayer1RefAlias(RE::StaticFunctionTag*, RE::BGSRefAlias* a_player1Ref);
 		
@@ -47,9 +43,6 @@ namespace ALYSLC
 		//=========================================================================================
 		// Post-summoning Papyrus functions listed in alphabetical order
 		//=========================================================================================
-
-		// Start a new co-op session or stop an active co-op session.
-		void ChangeCoopSessionState(RE::StaticFunctionTag*, bool a_start);
 		
 		// Toggle collisions on for all active players.
 		void EnableCoopEntityCollision(RE::StaticFunctionTag*);
@@ -154,15 +147,15 @@ namespace ALYSLC
 		// Enable/disable invincibility for all active players.
 		void SetPartyInvincibility(RE::StaticFunctionTag*, bool a_shouldSet);
 
-		// Either dismiss all active players or just request their managers to wait for refresh.
-		// Any active co-op session is flagged as ended.
-		void SignalWaitForUpdate(RE::StaticFunctionTag*, bool a_shouldDismiss);
+		// Start a new co-op session or stop an active co-op session.
+		void StartCoopSession(RE::StaticFunctionTag*);
+		void StopCoopSession(RE::StaticFunctionTag*);
 		
 		// Teleport the given player actor to P1 or their editor location.
 		void TeleportToP1OrAway(RE::StaticFunctionTag*, RE::Actor* a_playerActor, bool a_toP1);
 
 		// Teleport the player with the given PID to an actor.
-		void TeleportToPlayerToActor
+		void TeleportPlayerToActor
 		(
 			RE::StaticFunctionTag*, const int32_t a_playerID, RE::Actor* a_teleportTarget
 		);

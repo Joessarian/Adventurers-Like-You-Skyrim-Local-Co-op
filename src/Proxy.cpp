@@ -19,94 +19,6 @@ namespace ALYSLC
 	// Initialization functions defined in proper order of execution.
 	//=============================================================================================
  
-	bool CoopLib::InitializeGlobalData(RE::StaticFunctionTag*, RE::BGSRefAlias* a_player1Ref)
-	{
-		// Initialize or re-assign global co-op data.
-		// Called each time a save is loaded.
-
-		DBG("InitializeGlobalData.");
-		// First time initialization.
-		bool firstTimeInit = !glob.globalDataInit;
-		auto p1 = RE::PlayerCharacter::GetSingleton(); 
-		GlobalCoopData::SetGlobalCoopData();
-		// Set player ref alias, which may have changed.
-		glob.player1RefAlias = a_player1Ref;
-
-		// Import all settings after initializing co-op data.
-		ALYSLC::Settings::ImportAllSettings();
-		// Re-register for script events.
-		GlobalCoopData::UnregisterEvents();
-		GlobalCoopData::RegisterEvents();
-		// Reset crosshair text and position.
-		GlobalCoopData::SetCrosshairText(true);
-		// Reset supported menu open state because it won't reset
-		// properly if the previous co-op session ended while a supported menu was open.
-		GlobalCoopData::ResetMenuState();
-		// Make sure no players have co-op keywords from a previous session.
-		// Don't want an inactive player character to keep an active player's co-op player keyword;
-		// will mess with executing the ranged attack package and sneaking.
-		GlobalCoopData::RemoveCoopPlayerKeywords();
-		// Re-enable any controls for P1 that might have been disabled.
-		Util::ToggleAllControls(true);
-		// Clear any lingering queued input events.
-		for (auto& ptr : glob.reqInputEvents)
-		{
-			ptr.release();
-		}
-
-		glob.reqInputEvents.clear();
-		// Reset to the default third person camera orientation, 
-		// just in case the game was saved while the co-op cam was active.
-		Util::ResetTPCamOrientation();
-		if (p1) 
-		{
-			// NOTE: 
-			// The game fails to save P1's perks properly at times,
-			// either clearing all of them, or only saving the perks unlocked by P1 
-			// and not by any other player.
-			// I have yet to find a reason why it does this or find a direct solution,
-			// so the current workaround is to import P1's perks
-			// to ensure that they can access their saved perks, even outside of co-op.
-			// Please note that if the mod is uninstalled, 
-			// P1 will have to respec all their perks manually,
-			// as the function below will not fire to import all the serialized perks.
-			GlobalCoopData::ImportUnlockedPerks(p1);
-		}
-
-		auto ui = RE::UI::GetSingleton();
-		if (ui && !ui->IsMenuOpen(DebugOverlayMenu::MENU_NAME))
-		{
-			// Open the ALYSLC overlay if it isn't open already.
-			DBG("ALYSLC overlay not open. Opening.");
-			DebugOverlayMenu::Load();
-		}
-
-		// Stop combat without removing bounties to prevent aggro on load 
-		// from previously pacified neutral factions.
-		Util::StopCombatOnPlayerAndAllies();
-
-		// Make sure time is not frozen.
-		Util::ToggleFreezeTime(false);
-
-		if (firstTimeInit)
-		{
-			RE::DebugMessageBox
-			(
-				"[ALYSLC]\nDone initializing!\nTo assign Player 1's controller "
-				"and summon other players:\n"
-				"1. Ensure Player 1 is not in combat.\n"
-				"2. Hold the 'Wait' bind on Player 1's controller.\n"
-				"3. Press and release the 'Pause/Journal' bind on Player 1's controller.\n\n"
-				"The summoning menu will open and a tri-colored border overlay will indicate "
-				"which player has control of the menu.\n"
-				"See the mod's MCM for additional information and to customize settings.\n"
-				"Have fun!"
-			);
-		}
-
-		return firstTimeInit;
-	}
-
 	void CoopLib::SetPlayer1RefAlias(RE::StaticFunctionTag*, RE::BGSRefAlias* a_player1Ref)
 	{
 		// Set P1's reference alias directly to the given alias if it is valid.
@@ -161,25 +73,11 @@ namespace ALYSLC
 		// Initializes/updates all co-op players with the given data.
 		// Returns true if a co-op session was initialized successfully.
 
-		DBG("InitializeCoop");
+		DBG("InitializeCoopPlayers");
 		// No global co-op data assigned, so we can't start co-op.
 		if (!glob.globalDataInit) 
 		{
 			return false;
-		}
-		
-		// Set P1 essential designation only once before initializing any player managers.
-		if (!glob.allPlayersInit)
-		{
-			auto p1 = RE::PlayerCharacter::GetSingleton(); 
-			if (p1)
-			{
-				glob.p1IsEssential = p1->IsEssential();
-				DBG
-				(
-					"P1 is essential before initializing all players: {}.", p1->IsEssential()
-				);
-			}
 		}
 
 		// Reset living and active players count before constructing/updating co-op players.
@@ -391,110 +289,6 @@ namespace ALYSLC
 	//=============================================================================================
 	// Post-summoning Papyrus functions listed in alphabetical order
 	//=============================================================================================
-
-	void CoopLib::ChangeCoopSessionState(RE::StaticFunctionTag*, bool a_shouldStart) 
-	{
-		// Start or stop a co-op session by starting/pausing all active players' managers 
-		// and synchronizing actor values, perks, and items.
-
-		DBG("{} session.",a_shouldStart ? "Starting" : "Ending");
-		if (glob.globalDataInit && glob.allPlayersInit) 
-		{
-			// Enable P1's controls and saving just to be safe.
-			SKSE::GetTaskInterface()->AddTask
-			(
-				[]() 
-				{
-					auto controlMap = RE::ControlMap::GetSingleton();
-					controlMap->lock.Lock();
-					controlMap->ToggleControls(RE::ControlMap::UEFlag::kActivate, true);
-					controlMap->ToggleControls(RE::ControlMap::UEFlag::kLooking, true);
-					controlMap->ToggleControls(RE::ControlMap::UEFlag::kPOVSwitch, true);
-					controlMap->ToggleControls(RE::ControlMap::UEFlag::kMenu, true);
-					controlMap->ToggleControls(RE::ControlMap::UEFlag::kLooking, true);
-					controlMap->lock.Unlock();
-					// Re-enable saving too if P1 is not dead.
-					auto p1 = RE::PlayerCharacter::GetSingleton();
-					if (p1 &&
-						!p1->IsDead() && 
-						*glob.copiedPlayerDataTypes == CopyablePlayerDataTypes::kNone)
-					{
-						p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kNone;
-					}
-				}
-			);
-			
-			// Give all accumulated party-wide shared items to P1.
-			GlobalCoopData::GivePartyWideItemsToP1();
-			// Modify the level XP gained per skill level up to scale inversely
-			// with the number of active players.
-			GlobalCoopData::ModifyXPPerSkillLevelMult(a_shouldStart);
-			// Turn off god mode for everyone.
-			GlobalCoopData::ToggleGodModeForAllPlayers(false, false);
-			// Sync shared AVs, perks, Legendary levelings, and scale companion player's skill AVs.
-			GlobalCoopData::SyncSharedSkillAVs();
-			GlobalCoopData::SyncSharedPerks();
-			GlobalCoopData::SyncSharedLegendaryLevelingCounts();
-			GlobalCoopData::PerformInitialAVAutoScaling();
-			GlobalCoopData::RescaleActivePlayerAVs();
-			// Set or restore XP threshold.
-			GlobalCoopData::ModifyLevelUpXPThreshold(glob.coopSessionActive);
-			// Reset crosshair text.
-			GlobalCoopData::SetCrosshairText(true);
-			// Load debug overlay menu to show crosshairs/other UI elements.
-			DebugOverlayMenu::Load();
-
-			glob.coopSessionActive = a_shouldStart;
-			for (const auto& p : glob.coopPlayers) 
-			{
-				if (!p || !p->isActive) 
-				{
-					continue;
-				}
-
-				if (a_shouldStart)
-				{
-					// Make sure the player is not paralyzed either (from being downed).
-					p->coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
-					// Signal all their managers to resume.
-					p->RequestStateChange(ManagerState::kRunning);
-				}
-				else 
-				{
-					// Signal all player managers to pause and await data refresh.
-					p->RequestStateChange(ManagerState::kAwaitingRefresh);
-				}
-			}
-
-			DBG("Co-op session has now {}.", a_shouldStart ? "started" : "ended");
-		}
-		else
-		{ 
-			ERR
-			(
-				"Cannot start or stop co-op session. "
-				"Global data not initialized: {}, all players not initialized: {}", 
-				!glob.globalDataInit, !glob.allPlayersInit
-			);
-			glob.coopSessionActive = false;
-		}
-
-		// Lastly, reset menu DIDs/PIDs.
-		if (glob.globalDataInit) 
-		{
-			glob.lastResolvedMenuPID = 
-			glob.menuPID = 
-			glob.prevMenuPID = 
-			glob.mim->managerMenuDID = -1;
-			glob.mim->managerMenuPID = -1;
-			glob.mim->pmcPID = 0;
-			// Clear all menu opening requests.
-			glob.moarm->ClearAllRequests();
-		}
-
-		// Make sure time is not frozen.
-		Util::ToggleFreezeTime(false);
-	}
 
 	RE::BGSVoiceType* CoopLib::GetDefaultRacialVoiceType
 	(
@@ -876,22 +670,22 @@ namespace ALYSLC
 
 		DBG("");
 		auto dataHandler = RE::TESDataHandler::GetSingleton(); 
-		if (glob.globalDataInit && !glob.coopEntityBlacklist.empty())
+		if (glob.globalDataInit && !glob.coopPlayerCharacters.empty())
 		{
 			// Co-op companion player actors.
 			// Skip index 0 which is P1.
 			return std::vector<RE::Actor*>
 			(
 				{
-					glob.coopEntityBlacklist[1].get(),
-					glob.coopEntityBlacklist[2].get(),
-					glob.coopEntityBlacklist[3].get(),
-					glob.coopEntityBlacklist[4].get(),
-					glob.coopEntityBlacklist[5].get(),
-					glob.coopEntityBlacklist[6].get(),
-					glob.coopEntityBlacklist[7].get(),
-					glob.coopEntityBlacklist[8].get(),
-					glob.coopEntityBlacklist[9].get()
+					glob.coopPlayerCharacters[1].get(),
+					glob.coopPlayerCharacters[2].get(),
+					glob.coopPlayerCharacters[3].get(),
+					glob.coopPlayerCharacters[4].get(),
+					glob.coopPlayerCharacters[5].get(),
+					glob.coopPlayerCharacters[6].get(),
+					glob.coopPlayerCharacters[7].get(),
+					glob.coopPlayerCharacters[8].get(),
+					glob.coopPlayerCharacters[9].get()
 				}
 			);
 		}
@@ -1302,30 +1096,67 @@ namespace ALYSLC
 			auto& baseFlags = actorBase->actorData.actorBaseFlags;
 			if (a_shouldSet)
 			{
-				baseFlags.set(RE::ACTOR_BASE_DATA::Flag::kIsGhost);
+				Util::NativeFunctions::SetActorBaseFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kInvulnerable, true, false
+				);
+				Util::NativeFunctions::SetActorBaseFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, true, false
+				);
+				Util::NativeFunctions::SetActorBaseFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kDoesntBleed, true, false
+				);
 				Util::StartEffectShader(p->coopActor.get(), glob.ghostFXShader, -1.0f);
 			}
 			else
 			{
-				baseFlags.reset(RE::ACTOR_BASE_DATA::Flag::kIsGhost);
+				Util::NativeFunctions::SetActorBaseFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kInvulnerable, false, false
+				);
+				Util::NativeFunctions::SetActorBaseFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, false, false
+				);
+				Util::NativeFunctions::SetActorBaseFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kDoesntBleed, false, false
+				);
 				Util::StopAllEffectShaders(p->coopActor.get());
 				Util::StopAllHitArtEffects(p->coopActor.get());
 			}
 		}
 	}
 
-	void CoopLib::SignalWaitForUpdate(RE::StaticFunctionTag*, bool a_shouldDismiss)
+	void CoopLib::StartCoopSession(RE::StaticFunctionTag*) 
 	{
-		// Either dismiss all active players or just request their managers to wait for refresh.
-		// Any active co-op session is also flagged as ended.
+		// Start or stop a co-op session by starting/pausing all active players' managers 
+		// and synchronizing actor values, perks, and items.
 
-		DBG("Should dismiss all active players: {}.", a_shouldDismiss);
+		DBG("Can start: {}", glob.globalDataInit && glob.allPlayersInit);
 		if (!glob.globalDataInit || !glob.allPlayersInit)
 		{
 			return;
 		}
+
+		GlobalCoopData::StartCoopSession();
+	}
+
+	void CoopLib::StopCoopSession(RE::StaticFunctionTag*)
+	{
+		// Dismiss all active players.
+		// Any active co-op session is also flagged as ended.
+
+		DBG("Can stop: {}.", glob.globalDataInit);
+		if (!glob.globalDataInit)
+		{
+			return;
+		}
 		
-		GlobalCoopData::SignalWaitForUpdate(a_shouldDismiss);
+		DBG("Stop co-op session");
+		GlobalCoopData::StopCoopSession(false, true);
 	}
 
 	void CoopLib::TeleportToP1OrAway(RE::StaticFunctionTag*, RE::Actor* a_playerActor, bool a_toP1)
@@ -1357,7 +1188,7 @@ namespace ALYSLC
 		);
 	}
 
-	void CoopLib::TeleportToPlayerToActor
+	void CoopLib::TeleportPlayerToActor
 	(
 		RE::StaticFunctionTag*, const int32_t a_playerID, RE::Actor* a_teleportTarget
 	)
@@ -2583,7 +2414,6 @@ namespace ALYSLC
 	bool CoopLib::RegisterFuncs(RE::BSScript::IVirtualMachine* a_vm)
 	{
 		// Registered functions for ALYSLC's scripts.
-		a_vm->RegisterFunction("ChangeCoopSessionState"s, "ALYSLC"s, ChangeCoopSessionState);
 		a_vm->RegisterFunction("EnableCoopEntityCollision"s, "ALYSLC"s, EnableCoopEntityCollision);
 		a_vm->RegisterFunction("GetAllAppearancePresets"s, "ALYSLC"s, GetAllAppearancePresets);
 		a_vm->RegisterFunction("GetAllClasses"s, "ALYSLC"s, GetAllClasses);
@@ -2608,7 +2438,6 @@ namespace ALYSLC
 		);
 		a_vm->RegisterFunction("GetFavoritedEmoteIdles"s, "ALYSLC"s, GetFavoritedEmoteIdles);
 		a_vm->RegisterFunction("InitializeCoopPlayers"s, "ALYSLC"s, InitializeCoopPlayers);
-		a_vm->RegisterFunction("InitializeGlobalData"s, "ALYSLC"s, InitializeGlobalData);
 		a_vm->RegisterFunction("RequestMenuControl"s, "ALYSLC"s, RequestMenuControl);
 		a_vm->RegisterFunction("RequestStateChange"s, "ALYSLC"s, RequestStateChange);
 		a_vm->RegisterFunction
@@ -2622,9 +2451,10 @@ namespace ALYSLC
 		a_vm->RegisterFunction("SetIsSummoningFlag"s, "ALYSLC"s, SetIsSummoningFlag);
 		a_vm->RegisterFunction("SetPartyInvincibility"s, "ALYSLC"s, SetPartyInvincibility);
 		a_vm->RegisterFunction("SetPlayer1RefAlias"s, "ALYSLC"s, SetPlayer1RefAlias);
-		a_vm->RegisterFunction("SignalWaitForUpdate"s, "ALYSLC"s, SignalWaitForUpdate);
+		a_vm->RegisterFunction("StartCoopSession"s, "ALYSLC"s, StartCoopSession);
+		a_vm->RegisterFunction("StopCoopSession"s, "ALYSLC"s, StopCoopSession);
 		a_vm->RegisterFunction("TeleportToP1OrAway"s, "ALYSLC"s, TeleportToP1OrAway);
-		a_vm->RegisterFunction("TeleportToPlayerToActor"s, "ALYSLC"s, TeleportToPlayerToActor);
+		a_vm->RegisterFunction("TeleportPlayerToActor"s, "ALYSLC"s, TeleportPlayerToActor);
 		a_vm->RegisterFunction("ToggleCoopCamera"s, "ALYSLC"s, ToggleCoopCamera);
 		a_vm->RegisterFunction("ToggleSetupMenuControl"s, "ALYSLC"s, ToggleSetupMenuControl);
 		a_vm->RegisterFunction

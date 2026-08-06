@@ -40,6 +40,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		ALYSLC::QuickLootCompat::CheckForQuickLoot(g_loadInterface);
 		ALYSLC::RaceMenuCompat::CheckForRaceMenu(g_loadInterface);
 		ALYSLC::RequiemCompat::CheckForRequiem(g_loadInterface);
+		ALYSLC::SandboxWhenIdleCompat::CheckForSandboxWhenIdle(g_loadInterface);
 		ALYSLC::SkyrimSoulsCompat::CheckForSkyrimSouls();
 		ALYSLC::SkyrimsParagliderCompat::CheckForParaglider();
 		ALYSLC::TKDodgeCompat::CheckForTKDodge();
@@ -65,9 +66,11 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 
 		// Attempt to load the debug overlay.
 		ALYSLC::DebugOverlayMenu::Load();
-
-		// Prepare for co-op when starting a new game.
-		ALYSLC::GlobalCoopData::PrepForCoop();
+		// Reset P1 essential state when starting a new game.
+		auto& glob = ALYSLC::GlobalCoopData::GetSingleton();
+		glob.p1IsEssential = false;
+		// Initialize when starting a new game.
+		ALYSLC::GlobalCoopData::OnLoadGame();
 		break;
 	}
 	case SKSE::MessagingInterface::kPostLoad:
@@ -87,8 +90,8 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		auto& glob = ALYSLC::GlobalCoopData::GetSingleton();
 		glob.loadingASave = false;
 
-		// Prepare for co-op once the save is loaded.
-		ALYSLC::GlobalCoopData::PrepForCoop();
+		// Initialize once the save is loaded.
+		ALYSLC::GlobalCoopData::OnLoadGame();
 		break;
 	}
 	case SKSE::MessagingInterface::kPostPostLoad:
@@ -116,7 +119,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		// if P1 is not in co-op and falls below 0 health.
 		// Guarantees a clean slate upon loading a save and allows death alternative mods
 		// to re-apply their changes to P1's essential status.
-		if (glob.coopSessionActive && !glob.p1IsEssential && p1 && p1->IsEssential())
+		if (!glob.p1IsEssential && p1 && p1->IsEssential())
 		{
 			INF("Clear essential flag for P1 before the game saves.");
 			ALYSLC::Util::ChangeEssentialStatus(p1, false);

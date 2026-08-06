@@ -2888,7 +2888,7 @@ namespace ALYSLC
 				else
 				{
 					auto velocity = Util::GetActorLinearVelocity(movementActor.get());
-					auto& currentState = charController->context.currentState;
+					const auto& currentState = charController->context.currentState;
 					// Velocity-based incline angle when in the air/flying/jumping.
 					if (currentState == RE::hkpCharacterStateType::kFlying ||
 						currentState == RE::hkpCharacterStateType::kInAir ||

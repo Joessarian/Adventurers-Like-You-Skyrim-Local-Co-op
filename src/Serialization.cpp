@@ -818,7 +818,7 @@ namespace ALYSLC
 			if (glob.globalDataInit && glob.allPlayersInit) 
 			{
 				DBG("Stopping active co-op session.");
-				GlobalCoopData::TearDownCoopSession(true, true);
+				GlobalCoopData::StopCoopSession(false, true);
 			}
 		}
 
@@ -2281,10 +2281,16 @@ namespace ALYSLC
 			skillLegendaryCountList.fill(0);
 			skillXPList.fill(0.0f);
 
+			// Set base HMS AVs.
+			hmsBasePointsList[0] = p1->GetBaseActorValue(RE::ActorValue::kHealth);
+			hmsBasePointsList[1] = p1->GetBaseActorValue(RE::ActorValue::kMagicka);
+			hmsBasePointsList[2] = p1->GetBaseActorValue(RE::ActorValue::kStamina);
 			// Set skill base AVs.
 			skillBaseLvlList = Util::GetActorSkillLevels(p1);
 			
 #ifdef ALYSLC_DEBUG_MODE
+			DBG("P1's base HMS actor values: ({}, {}, {})",
+				hmsBasePointsList[0], hmsBasePointsList[1], hmsBasePointsList[2]);
 			for (auto i = 0; i < skillBaseLvlList.size(); ++i)
 			{
 				auto currentSkill = static_cast<Skill>(i);
@@ -2314,12 +2320,12 @@ namespace ALYSLC
 				// Set base P1 HMS values to their starting values if Enderal is not installed.
 				// All perks are also cleared, meaning HMS values must be re-assigned 
 				// along with perks by leveling up again through the Stats Menu.
-				p1->SetBaseActorValue(RE::ActorValue::kHealth, 100.0f);
-				p1->SetBaseActorValue(RE::ActorValue::kMagicka, 100.0f);
-				p1->SetBaseActorValue(RE::ActorValue::kStamina, 100.0f);
-				p1->SetActorValue(RE::ActorValue::kHealth, 100.0f);
-				p1->SetActorValue(RE::ActorValue::kMagicka, 100.0f);
-				p1->SetActorValue(RE::ActorValue::kStamina, 100.0f);
+				/*p1->SetBaseActorValue(RE::ActorValue::kHealth, hmsBasePointsList[0]);
+				p1->SetBaseActorValue(RE::ActorValue::kMagicka,hmsBasePointsList[1]);
+				p1->SetBaseActorValue(RE::ActorValue::kStamina, hmsBasePointsList[2]);*/
+				p1->SetActorValue(RE::ActorValue::kHealth, hmsBasePointsList[0]);
+				p1->SetActorValue(RE::ActorValue::kMagicka, hmsBasePointsList[1]);
+				p1->SetActorValue(RE::ActorValue::kStamina, hmsBasePointsList[2]);
 			}
 			
 			// Set current level for all players to P1's current level.
@@ -2404,9 +2410,9 @@ namespace ALYSLC
 					GlobalCoopData::PLAYER_CHARACTER_FIDS[i + 1],
 					GlobalCoopData::PLUGIN_NAME
 				);
-				if (coopPlayers[i]) 
+				if (const auto playerActor = coopPlayers[i]; playerActor) 
 				{
-					auto fid = coopPlayers[i]->formID;
+					auto fid = playerActor->formID;
 					if (fid)
 					{
 						// Set default cleared data first.
@@ -2418,9 +2424,63 @@ namespace ALYSLC
 						skillIncList.fill(0.0f);
 						// No skill XP to start, unlike for P1.
 						skillXPList.fill(0.0f);
-							
+						// For NPCs, their starting HMS is derived from 
+						// their race's starting health + their actor base's health offset.
+						const auto actorBase = playerActor->GetActorBase(); 
+						if (actorBase && playerActor->race)
+						{
+							hmsBasePointsList[0] = 
+							(
+								playerActor->race->data.startingHealth + 
+								actorBase->actorData.healthOffset
+							);
+							hmsBasePointsList[1] =
+							(
+								playerActor->race->data.startingMagicka + 
+								actorBase->actorData.magickaOffset
+							);
+							hmsBasePointsList[2] = 
+							(
+								playerActor->race->data.startingStamina +
+								actorBase->actorData.staminaOffset
+							);
+						}
+						else
+						{
+							// Fall back to the reported base actor value.
+							hmsBasePointsList[0] = p1->GetBaseActorValue(RE::ActorValue::kHealth);
+							hmsBasePointsList[1] = p1->GetBaseActorValue(RE::ActorValue::kMagicka);
+							hmsBasePointsList[2] = p1->GetBaseActorValue(RE::ActorValue::kStamina);
+						}
+
 						// Set initial skill base AVs.
 						auto skillBaseLvlList = Util::GetActorSkillLevels(coopPlayers[i]);
+#ifdef ALYSLC_DEBUG_MODE
+						DBG
+						(
+							"{}'s base HMS actor values: ({}, {}, {})",
+							playerActor->GetName(), 
+							hmsBasePointsList[0], 
+							hmsBasePointsList[1], 
+							hmsBasePointsList[2]
+						);
+						for (auto i = 0; i < skillBaseLvlList.size(); ++i)
+						{
+							auto currentSkill = static_cast<Skill>(i);
+							const auto iter = glob.SKILL_TO_AV_MAP.find(currentSkill);
+							if (iter != glob.SKILL_TO_AV_MAP.end())
+							{
+								auto currentAV = iter->second;
+								DBG
+								(
+									"{}'s {} skill base level: {}.", 
+									playerActor->GetName(), 
+									Util::GetActorValueName(currentAV), 
+									skillBaseLvlList[i]
+								);
+							}
+						}
+#endif
 						// Companion player's character IDs are based on 
 						// their actor base's editor ID trailing index.
 						// 1 = NPC with '__CoopCharacter1' as its actor base editor ID.

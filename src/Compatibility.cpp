@@ -22,6 +22,7 @@ namespace ALYSLC
 	double QuickLootCompat::g_originalY{ -1.0 };
 	bool RaceMenuCompat::g_installed{ false };
 	bool RequiemCompat::g_installed{ false };
+	bool SandboxWhenIdleCompat::g_installed{ false };
 	bool SkyrimSoulsCompat::g_installed{ false };
 	bool SkyrimsParagliderCompat::g_installed{ false };
 	bool SkyrimsParagliderCompat::g_p1HasParaglider{ false };
@@ -252,7 +253,7 @@ namespace ALYSLC
 		}
 	}
 
-	void RaceMenuCompat::CheckForRaceMenu(const SKSE::LoadInterface * a_loadInterface)
+	void RaceMenuCompat::CheckForRaceMenu(const SKSE::LoadInterface* a_loadInterface)
 	{
 		g_installed = 
 		{
@@ -287,6 +288,21 @@ namespace ALYSLC
 		if (g_installed)
 		{
 			INF("Requiem - The Roleplaying Overhaul installed!");
+		}
+	}
+
+	void SandboxWhenIdleCompat::CheckForSandboxWhenIdle(const SKSE::LoadInterface* a_loadInterface)
+	{
+		g_installed = a_loadInterface->GetPluginInfo("SandboxWhenIdle");
+		auto dataHandler = RE::TESDataHandler::GetSingleton();
+		if (!g_installed && dataHandler)
+		{
+			g_installed = dataHandler->LookupModByName("SandboxWhenIdle.esp") != nullptr;
+		}
+
+		if (g_installed)
+		{
+			INF("Sandbox When Idle installed!");
 		}
 	}
 

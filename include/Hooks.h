@@ -220,7 +220,7 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(QWithinPoint)> _QWithinPoint;
 		};
 
-		// [Character Hooks]
+// [Character Hooks]
 		class CharacterHooks
 		{
 		public:
@@ -368,7 +368,6 @@ namespace ALYSLC
 			(
 				RE::ActorValueOwner* a_this, RE::ActorValue a_akValue, float a_value
 			);
-
 			
 			static inline REL::Relocation<decltype(AddObjectToContainer)> _AddObjectToContainer;
 			static inline REL::Relocation<decltype(CheckClampDamageModifier)> 
@@ -1598,6 +1597,9 @@ namespace ALYSLC
 			);
 			static inline REL::Relocation<decltype(AdvanceMovie)> _AdvanceMovie;
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
+
+			// Helper funcs
+			static void UpdateStats();
 		};
 
 		// [Training Menu Hooks]

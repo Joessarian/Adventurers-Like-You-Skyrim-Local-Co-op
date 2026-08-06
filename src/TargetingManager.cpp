@@ -701,6 +701,7 @@ namespace ALYSLC
 			"NONE",
 			choseQuickActivationTarget
 		);
+		performSecondaryActivationAction = false;
 		choseProximityActivationTarget = false;
 		choseQuickActivationTarget = false;
 		activationRefrHandle = RE::ObjectRefHandle();
@@ -6963,7 +6964,7 @@ namespace ALYSLC
 						);
 						if (friendlyActorNotActivatable ||
 							activateHostileActor || 
-							glob.coopEntityBlacklistFIDSet.contains(a_refr->formID))
+							glob.coopPlayerCharactersFIDSet.contains(a_refr->formID))
 						{
 							return RE::BSContainer::ForEachResult::kContinue;
 						}
@@ -7125,7 +7126,7 @@ namespace ALYSLC
 								pickRefrPtr->As<RE::Actor>() && 
 								pickRefrPtr->As<RE::Actor>()->IsPlayerTeammate()
 							) ||
-							(glob.coopEntityBlacklistFIDSet.contains(pickRefrPtr->formID))
+							(glob.coopPlayerCharactersFIDSet.contains(pickRefrPtr->formID))
 						);
 						if (!blacklisted) 
 						{
@@ -9530,7 +9531,7 @@ namespace ALYSLC
 		{ 
 			(isSelf && !isSMORFing) || 
 			(isCoopPlayer && !Settings::vbCanTargetOtherPlayers[playerID]) ||
-			(!isCoopPlayer && glob.coopEntityBlacklistFIDSet.contains(refrPtr->formID))
+			(!isCoopPlayer && glob.coopPlayerCharactersFIDSet.contains(refrPtr->formID))
 		};
 		if (isNotSelectableCoopEntity)
 		{
@@ -10412,7 +10413,7 @@ namespace ALYSLC
 					(hitRefrPtr == coopActor && !isSMORFing) ||
 					(hitRefrPtr == p->GetCurrentMount()) ||
 					(isCoopPlayer && !Settings::vbCanTargetOtherPlayers[playerID]) ||
-					(!isCoopPlayer && glob.coopEntityBlacklistFIDSet.contains(hitRefrPtr->formID))
+					(!isCoopPlayer && glob.coopPlayerCharactersFIDSet.contains(hitRefrPtr->formID))
 				);
 				// Check three points on the hit refr to see
 				// if any of them are in front of the camera.

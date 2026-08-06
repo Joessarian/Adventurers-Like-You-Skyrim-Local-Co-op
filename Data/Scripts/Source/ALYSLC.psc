@@ -4,14 +4,12 @@ Scriptname ALYSLC Hidden
 ;=====================================
 
 ;========================================================================================================================================================================================================================
-Bool Function InitializeGlobalData(ReferenceAlias a_player1Ref) Global Native
 Function SetPlayer1RefAlias(ReferenceAlias a_player1Ref) Global Native
 Int[] Function GetConnectedInputDeviceIDs() Global Native
 Bool Function InitializeCoopPlayers(Int a_numCompanions, Int[] a_deviceIDs, Actor[] a_coopActors) Global Native
 ;========================================================================================================================================================================================================================
 
 Function AssignPlayer1CID() Global Native
-Function ChangeCoopSessionState(Bool a_start) Global Native
 Function EnableCoopEntityCollision() Global Native
 Form[] Function GetAllAppearancePresets(Race a_race, Bool a_female) Global Native
 Form[] Function GetAllClasses() Global Native
@@ -31,10 +29,10 @@ Function SetFavoritedEmoteIdles(Int a_playerID, String[] a_emoteIdlesList) Globa
 Function SetGifteePlayerActor(Actor a_playerActor) Global Native
 Function SetIsSummoningFlag(Bool a_set) Global Native
 Function SetPartyInvincibility(Bool a_shouldSet) Global Native
-Function SignalWaitForUpdate(bool a_shouldDimiss) Global Native
-Function StartPlayerManagers() Global Native
+Function StartCoopSession() Global Native
+Function StopCoopSession() Global Native
 Function TeleportToP1OrAway(Actor a_playerActor, Bool a_toP1) Global Native
-Function TeleportToPlayerToActor(Int a_playerID, Actor a_teleportTarget) Global Native
+Function TeleportPlayerToActor(Int a_playerID, Actor a_teleportTarget) Global Native
 Function ToggleCoopCamera(Bool a_enable) Global Native
 Function ToggleSetupMenuControl(Int a_deviceID, int a_playerID, Bool a_shouldEnter) Global Native
 Function UpdateAllCompanionPlayerSerializationIDs() Global Native

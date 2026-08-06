@@ -754,7 +754,10 @@ namespace ALYSLC
 				// Set I-frames when inside the window, reset otherwise.
 				if (!isGhost)
 				{
-					baseFlags.set(RE::ACTOR_BASE_DATA::Flag::kIsGhost);
+					Util::NativeFunctions::SetActorBaseFlag
+					(
+						actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, true, false
+					);
 				}
 
 				// Set direction and XY speed on the first frame of the dodge.
@@ -905,6 +908,7 @@ namespace ALYSLC
 				// NOTE:
 				// Direct velocity changes are only possible
 				// when the current state is in-air or flying.
+				charController->lock.Lock();
 				charController->wantState = 
 				charController->context.currentState = RE::hkpCharacterStateType::kInAir;
 				// Set new dodge velocity.
@@ -918,6 +922,7 @@ namespace ALYSLC
 						RE::CHARACTER_FLAGS::kJumping
 					);
 				}
+				charController->lock.Unlock();
 
 				// Update leaning.
 				const float setupRatio = 
@@ -1133,9 +1138,13 @@ namespace ALYSLC
 				isRequestingDashDodge = false;
 				p->pam->avcam->RemoveRequestedAction(AVCostAction::kDodge);
 				p->pam->avcam->RemoveStartedAction(AVCostAction::kDodge);
+				// Reset 'ghost' flag to terminate I-frames.
 				if (auto actorBase = coopActor->GetActorBase(); actorBase)
 				{
-					actorBase->actorData.actorBaseFlags.reset(RE::ACTOR_BASE_DATA::Flag::kIsGhost);
+					Util::NativeFunctions::SetActorBaseFlag
+					(
+						actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, false, false
+					);
 				}
 			}
 		}
@@ -1151,7 +1160,6 @@ namespace ALYSLC
 			return;
 		}
 
-		auto& currentHKPState = charController->context.currentState;
 		// TODO:
 		// Tweaks, tweaks, and more tweaks.
 		// Number of frames to spend ascending to the apex of the jump.
@@ -1396,7 +1404,7 @@ namespace ALYSLC
 				return;
 			}
 			
-			// TEMP: Prevents Follower Parkour from sending out a landing roll animation.
+			// TEMP: Prevents Follower Parkour from sending out a landing roll animation mid-jump.
 			// Does not affect fall damage calculated upon landing. Yipee!
 			charController->lock.Lock();
 			charController->fallTime = 0.0f;
@@ -1605,7 +1613,6 @@ namespace ALYSLC
 			return;
 		}
 
-		auto& currentHKPState = charController->context.currentState;
 		// Number of frames to spend ascending to the apex of the jump.
 		// Not less than 1.
 		const uint32_t jumpAscentFramecount = max
@@ -1906,9 +1913,9 @@ namespace ALYSLC
 			return;
 		}
 
-		//=========================================================================================
+		//==========================================================================================
 		charController->lock.Lock();
-		//=========================================================================================
+		//==========================================================================================
 
 		bool isAirborne = 
 		(
@@ -2091,9 +2098,9 @@ namespace ALYSLC
 			}
 		}
 		
-		//=========================================================================================
+		//==========================================================================================
 		charController->lock.Unlock();
-		//=========================================================================================
+		//==========================================================================================
 	}
 
 	void MovementManager::ResetJumpData()
@@ -3873,12 +3880,9 @@ namespace ALYSLC
 			{
 				p->pam->wantsToSneak = false;
 				bool succ = coopActor->NotifyAnimationGraph("SneakStop");
-				if (!succ)
-				{
-					DBG("ERR: {}: Failed to stop sneaking.", coopActor->GetName());
-				}
 			}
 
+			charController->lock.Lock();
 			// Set the state back to swimming to avoid dropping like a rock in the water
 			// after the dodge completes.
 			if (isSwimming)
@@ -3893,16 +3897,20 @@ namespace ALYSLC
 			charController->rollAngle = 
 			dashDodgeTorsoPitchOffset = 
 			dashDodgeTorsoRollOffset = 0.0f;
+			charController->lock.Unlock();
 		}
 
 		// Remove AV cost action, if it still hasn't been processed for some reason.
 		p->pam->avcam->RemoveRequestedAction(AVCostAction::kDodge);
 		p->pam->avcam->RemoveStartedAction(AVCostAction::kDodge);
 
-		// Reset ghost flag to terminate I-frames.
+		// Reset 'ghost' flag to terminate I-frames.
 		if (auto actorBase = coopActor->GetActorBase(); actorBase)
 		{
-			actorBase->actorData.actorBaseFlags.reset(RE::ACTOR_BASE_DATA::Flag::kIsGhost);
+			Util::NativeFunctions::SetActorBaseFlag
+			(
+				actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, false, false
+			);
 		}
 	}
 
@@ -4172,7 +4180,9 @@ namespace ALYSLC
 			}
 			else
 			{
+				charController->lock.Lock();
 				charController->pitchAngle = aimPitch;
+				charController->lock.Unlock();
 				coopActor->data.angle.x = aimPitch;
 			}
 		}

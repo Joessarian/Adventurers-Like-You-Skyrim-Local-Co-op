@@ -38,55 +38,49 @@ Function Init()
 		Return
 	EndIf
 
-	; Ensure that player 1 can move because this call persists through save games.
-	; If summoning companions and then saving before the co-op session begins,
-	; loading the save will result in player 1 still being stuck in the "don't move" state.
-	PlayerRef.SetDontMove(False)
-	PlayerRef.SetActorValue("SpeedMult" , 100.0)
-	PlayerRef.ModActorValue("CarryWeight" , -0.01)
-	PlayerRef.ModActorValue("CarryWeight" , 0.01)
-	PlayerRef.SetActorValue("WeaponSpeedMult", 0.0)
-	PlayerRef.SetActorValue("attackDamageMult", 1.0)
+	; ; Ensure that player 1 can move because this call persists through save games.
+	; ; If summoning companions and then saving before the co-op session begins,
+	; ; loading the save will result in player 1 still being stuck in the "don't move" state.
+	; PlayerRef.SetDontMove(False)
+	; PlayerRef.SetActorValue("SpeedMult" , 100.0)
+	; PlayerRef.ModActorValue("CarryWeight" , -0.01)
+	; PlayerRef.ModActorValue("CarryWeight" , 0.01)
+	; PlayerRef.SetActorValue("WeaponSpeedMult", 0.0)
+	; PlayerRef.SetActorValue("attackDamageMult", 1.0)
 
-	; Ensure that the camera is reset to default.
-	; If cam target was somehow set to another actor when saving,
-	; and that actor is not loaded when this script fires,
-	; all the world geometry will load in at the lowest LOD
-	; and no objects will be visible.
-	Game.ForceThirdPerson()
-	Game.SetPlayerAIDriven(False)
-	Game.SetCameraTarget(PlayerRef)
-	Game.EnablePlayerControls()
-	ALYSLC.Wait(0.25)
-
-	; Weird crashes sometimes occur if any loaded co-op entity does not have collision enabled 
-	; when the the game loads in.
-	;ALYSLC.EnableCoopEntityCollision()
-	; Indicate that co-op session is over and pause player managers for refresh if needed.
-	;ALYSLC.SignalWaitForUpdate(True)
+	; ; Ensure that the camera is reset to default.
+	; ; If cam target was somehow set to another actor when saving,
+	; ; and that actor is not loaded when this script fires,
+	; ; all the world geometry will load in at the lowest LOD
+	; ; and no objects will be visible.
+	; Game.ForceThirdPerson()
+	; Game.SetPlayerAIDriven(False)
+	; Game.SetCameraTarget(PlayerRef)
+	; Game.EnablePlayerControls()
+	; ALYSLC.Wait(0.25)
 
 	; Remove straggling co-op companions and force resummoning.
-	Float WaitTimeElapsed = 0.0
-	Int Iter = 0
-	ALYSLC.Log("[INIT SCRIPT] " + CompanionPlayerCharactersList.Length + " default companion player characters.")
-	While (Iter < CompanionPlayerCharactersList.Length)
-		If (CompanionPlayerCharactersList[Iter])
-			Actor CompanionTemp = CompanionPlayerCharactersList[Iter] as Actor
-			ALYSLC.Log("[INIT SCRIPT] " + CompanionTemp.GetDisplayName() + ": at index " + Iter)
-			If (CompanionTemp.Is3DLoaded())
-				ALYSLC.TeleportToP1OrAway(CompanionTemp, False)
-				ALYSLC.Log("[INIT SCRIPT] Sent " + CompanionTemp.GetDisplayName() + " to editor location.")
-			EndIf
-		EndIf
+	; Float WaitTimeElapsed = 0.0
+	; Int Iter = 0
+	; ALYSLC.Log("[INIT SCRIPT] " + CompanionPlayerCharactersList.Length + " default companion player characters.")
+	; While (Iter < CompanionPlayerCharactersList.Length)
+	; 	If (CompanionPlayerCharactersList[Iter])
+	; 		Actor CompanionTemp = CompanionPlayerCharactersList[Iter] as Actor
+	; 		ALYSLC.Log("[INIT SCRIPT] " + CompanionTemp.GetDisplayName() + ": at index " + Iter)
+	; 		If (CompanionTemp.Is3DLoaded())
+	; 			ALYSLC.TeleportToP1OrAway(CompanionTemp, False)
+	; 			ALYSLC.Log("[INIT SCRIPT] Sent " + CompanionTemp.GetDisplayName() + " to editor location.")
+	; 		EndIf
+	; 	EndIf
 
-		Iter += 1
-	EndWhile
+	; 	Iter += 1
+	; EndWhile
 
 	; Reset global formlists and values
 	StorageUtil.FormListClear(None, "ALYSLC_CompanionsList")
 	StorageUtil.SetIntValue(None, "ALYSLC_NumCompanions", 0)
 
-	ALYSLC.Wait(0.25)
+	;ALYSLC.Wait(0.25)
 	Debug.Notification("[ALYSLC] Cleanup complete! Feel free to summon co-op companions.")
 	CanStartCoopGlobVar.SetValue(1.00)
 	ALYSLC.Log("[INIT SCRIPT] Initialization complete.")

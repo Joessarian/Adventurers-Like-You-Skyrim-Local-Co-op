@@ -1123,6 +1123,21 @@ namespace ALYSLC
 				return func(a_npc, a_type);
 			}
 			
+			// Full credits to alandtse:
+			// https://github.com/alandtse/CommonLibSSE-NG/blob/ng/include/RE/T/TESActorBaseData.h#L125
+			inline void SetActorBaseFlag
+			(
+				RE::TESActorBaseData* a_actorBase, 
+				RE::ACTOR_BASE_DATA::Flag a_flag, 
+				bool a_set,
+				bool a_notify
+			)
+			{
+				using func_t = decltype(SetActorBaseFlag);
+				static REL::Relocation<func_t> func{ RELOCATION_ID(14261, 14383) };
+				return func(a_actorBase, a_flag, a_set, a_notify);
+			}
+
 			// All credits for the following function go to VersuchDrei:
 			// https://github.com/VersuchDrei/OStimNG/blob/main/skse/src/GameAPI/GameActor.h#L90
 
@@ -1206,6 +1221,45 @@ namespace ALYSLC
 
 		namespace Papyrus
 		{
+			inline void Clear(RE::BGSRefAlias* a_refAlias)
+			{
+				if (a_refAlias)
+				{
+					auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+					if (!vm)
+					{
+						return;
+					}
+					const auto policy = 
+					(
+						vm->GetObjectHandlePolicy()
+					);
+					if (policy)
+					{
+						auto handle = policy->GetHandleForObject
+						(
+							a_refAlias->VMTYPEID, a_refAlias
+						);
+						if (handle)
+						{
+							auto callback = 
+							(
+								RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor>()
+							);
+							auto args = RE::MakeFunctionArguments();
+							vm->DispatchMethodCall
+							(
+								handle, 
+								"ReferenceAlias", 
+								"Clear",
+								args, 
+								callback
+							);
+						}
+					}
+				}
+			}
+
 			// Force open the given actor's inventory.
 			inline void OpenInventory(RE::Actor* a_actor)
 			{
@@ -1805,6 +1859,8 @@ namespace ALYSLC
 
 		// Adjust character controller fall start height and time if starting to fall,
 		// or reset to zero if not falling.
+		// IMPORTANT:
+		// Caller's responsibility to lock character controller beforehand.
 		inline void AdjustFallState
 		(
 			RE::bhkCharacterController* a_charController, bool a_startFalling
@@ -2669,11 +2725,13 @@ namespace ALYSLC
 					DBG
 					(
 						"Found mod file with name: {} for form {} (0x{:X}).", 
-						file->fileName, a_form->GetName(), a_form->formID
+						modFile->fileName, a_form->GetName(), a_form->formID
 					);
 					return modFile;
 				}
 			}
+
+			return nullptr;
 		}
 
 		// Get viewport dimensions.
@@ -3222,6 +3280,36 @@ namespace ALYSLC
 				a_actor->combatController && 
 				a_actor->combatController->IsFleeing()
 			);
+		}
+
+		// Is the given actor a player follower?
+		inline bool IsFollower(RE::Actor* a_actor)
+		{
+			if (!a_actor)
+			{
+				return false;
+			}
+
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (!p1)
+			{
+				return false;
+			}
+
+			auto exFollower = p1->extraList.GetByType<RE::ExtraFollower>();
+			if (exFollower)
+			{
+				const auto handle = a_actor->GetHandle();
+				for (const auto& followerData : exFollower->actorFollowers)
+				{
+					if (followerData.actor == handle)
+					{
+						return true;
+					}
+				}
+			}
+
+			return false;
 		}
 
 		// Is the given actor a guard?
@@ -4294,6 +4382,78 @@ namespace ALYSLC
 			DBG("SUPER HOT. SUPER HOT. Freeze: {}.", a_shouldFreeze);
 			main->freezeTime = a_shouldFreeze;
 		}
+		
+		// Toggle ghost actorbase flag and state on the given actor to true/false.
+		inline void ToggleGhostTask(RE::Actor* a_actor, bool a_set)
+		{
+			if (!a_actor)
+			{
+				return;
+			}
+
+			auto taskInterface = SKSE::GetTaskInterface();
+			if (!taskInterface)
+			{
+				return;
+			}
+
+			taskInterface->AddTask
+			(
+				[a_actor, a_set]()
+				{
+					auto actorBase = a_actor->GetActorBase();
+					if (!actorBase)
+					{
+						return;
+					}
+
+					DBG("{}: Set ghost to {}.", a_actor->GetName(), a_set);
+					const auto scriptFactory = 
+					(
+						RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+					);
+					const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
+					if (script)
+					{
+						if (a_set)
+						{
+							Util::NativeFunctions::SetActorBaseFlag
+							(
+								actorBase, RE::ACTOR_BASE_DATA::Flag::kInvulnerable, true, false
+							);
+							Util::NativeFunctions::SetActorBaseFlag
+							(
+								actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, true, false
+							);
+							Util::NativeFunctions::SetActorBaseFlag
+							(
+								actorBase, RE::ACTOR_BASE_DATA::Flag::kDoesntBleed, true, false
+							);
+						}
+						else
+						{
+							Util::NativeFunctions::SetActorBaseFlag
+							(
+								actorBase, RE::ACTOR_BASE_DATA::Flag::kInvulnerable, false, false
+							);
+							Util::NativeFunctions::SetActorBaseFlag
+							(
+								actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, false, false
+							);
+							Util::NativeFunctions::SetActorBaseFlag
+							(
+								actorBase, RE::ACTOR_BASE_DATA::Flag::kDoesntBleed, false, false
+							);
+						}
+
+						script->SetCommand(fmt::format("SetGhost {}", a_set ? 1 : 0).c_str());
+						script->CompileAndRun(a_actor);
+						// Cleanup.
+						delete script;
+					}
+				}
+			);
+		}
 
 		// Set all the characters in the given string to lowercase.
 		inline void ToLowercase(std::string& a_stringOut) 
@@ -4964,6 +5124,15 @@ namespace ALYSLC
 		// Reset object fade value(s) for all refrs in the given cell.
 		void ResetFadeOnAllObjectsInCell(RE::TESObjectCELL* a_cell);
 
+		// Remove the actor from the current + potential followers factions 
+		// and add back to the potential followers faction.
+		void ResetFollowerFactionState(RE::Actor* a_actor);
+
+		// Remove the actor's designation as a follower 
+		// by removing them from the current followers faction, 
+		// add them back to the potential followers faction.
+		void ResetFollowerStatus(RE::Actor* a_actor, bool a_onlyFixFactions);
+
 		// Reset the third person camera's orientation.
 		void ResetTPCamOrientation();
 
@@ -5044,7 +5213,7 @@ namespace ALYSLC
 		// Unused for now. Have to learn more about Havok.
 		// Allow the given 3D object to (not) collide with alive/dead actors when in co-op.
 		void Set3DCollisionFilterInfo(RE::NiAVObject* a_refr3D, const bool& a_set);
-		
+
 		// Set detection event for the given actor triggered by the collision 
 		// of the given refr/rigid body at the given contact point.
 		void SetActorsDetectionEvent
@@ -5206,6 +5375,10 @@ namespace ALYSLC
 		// Teleport the the requesting actor to the target actor.
 		// Drop an entry and exit portal down during the process.
 		void TeleportToActor(RE::Actor* a_teleportingActor, RE::Actor* a_target);
+		
+		// Have the given actor enter/exit an invulnerable state 
+		// and sit down/stand up if their 3D is loaded.
+		void ToggleActorDormantState(RE::Actor* a_actor, bool a_set);
 
 		// Toggle all of P1's controls on or off.
 		void ToggleAllControls(bool a_shouldEnable);

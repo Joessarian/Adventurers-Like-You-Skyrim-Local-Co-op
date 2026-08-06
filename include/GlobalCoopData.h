@@ -884,6 +884,9 @@ namespace ALYSLC
 		// Restore default when not setting for co-op.
 		static void ModifyXPPerSkillLevelMult(const bool& a_setForCoop);
 		
+		// Set global data and clean up in preparation for co-op after loading a save.
+		static void OnLoadGame();
+
 		// Unused for now.
 		// Tasks to perform for the given player after an item was transferred to/from the player.
 		// Update Paraglider status for P1 on item transfer.
@@ -917,8 +920,11 @@ namespace ALYSLC
 		// to all handled player arm/torso nodes.
 		static void PrecisionPrePhysicsStepCallback(RE::bhkWorld* a_world);
 
-		// Set global data and clean up in preparation for co-op after loading a save.
-		static void PrepForCoop();
+		// Prepare all companion player character for their roles as followers when not in co-op.
+		static void PrepCompanionPlayersForSingleplayer();
+
+		// Undo all co-op related changes to P1 and the camera in preparation for singleplayer.
+		static void PrepP1ForSingleplayer();
 
 		// Register for global script events to send data to the player ref alias script.
 		static void RegisterEvents();
@@ -926,10 +932,10 @@ namespace ALYSLC
 		// Remove all co-op player keywords from all companion player characters and P1.
 		static void RemoveCoopPlayerKeywords();
 
-		// Rescale all active player skill and HMS AVs.
+		// Rescale all player character skill and HMS AVs.
 		// Reset to saved base AVs and then add increases.
 		// Done to override the game's auto-scaling of NPC AVs.
-		static void RescaleActivePlayerAVs();
+		static void RescaleAllPlayerAVs();
 
 		// Rescale on summoning, player level up, and on class change, or
 		// in any other scenario where the game's NPC AV auto-scaling kicks in.
@@ -980,6 +986,9 @@ namespace ALYSLC
 		// Save current unlocked perks for the given player to their serializable data set.
 		static void SaveUnlockedPerksForPlayer(RE::Actor* a_coopActor);
 
+		// Set player characters' flags and packages when in/out of co-op.
+		static void SetCoopCharacterFlags(RE::Actor* a_coopActor, bool a_inCoop);
+
 		// Concatenate all individual player crosshair text entries,
 		// and then set the crosshair's info text to the result.
 		// Or reset the crosshair if requested.
@@ -994,33 +1003,38 @@ namespace ALYSLC
 
 		// Set the player 1 reference alias from the handler quest.
 		static void SetPlayer1RefAlias();
-		
-		// Either dismiss all active players or just request their managers to wait for refresh.
-		// Any active co-op session is also flagged as ended.
-		static void SignalWaitForUpdate(bool a_shouldDismiss);
+
+		// Prep all players for co-op and set co-op session as active.
+		static void StartCoopSession();
 
 		// DEBUG OPTION: Stop combat between all actors and players.
 		// Only among party means that only combat between player teammates and players is stopped.
 		// Remove crime gold means the players "get off scot-free" without paying a fine.
 		static void StopAllCombatOnCoopPlayers(bool&& a_onlyAmongParty, bool&& a_removeCrimeGold);
 
+		// Dismiss all active players or signal their managers to await refresh 
+		// without teleporting them away.
+		// Any active co-op session is also flagged as ended.
+		// Can choose whether or not to disable the co-op camera once the session ends.
+		static void StopCoopSession(bool a_shouldDismiss, bool a_shouldPauseCoopCam);
+
 		// DEBUG OPTION: Force stop the menu input manager, 
 		// resetting menu PID/overlay data as well.
 		static void StopMenuInputManager();
 
 		// Sync Legendary leveling counts for shared skills.
+		// For all player characters.
 		static void SyncSharedLegendaryLevelingCounts();
 
-		// Sync co-op companions' shared perks to P1's so that all players have the same 
+		// Sync companion players' shared perks to P1's so that all players have the same 
 		// set of perks from the shared skill trees.
+		// For all player characters, except P1.
 		static void SyncSharedPerks();
 
-		// Sync co-op companions' shared AVs to P1's so that all players have the same
+		// Sync companion players' shared AVs to P1's so that all players have the same
 		// skill AVs from the group of shared skills.
+		// For all player characters.
 		static void SyncSharedSkillAVs();
-
-		// End co-op session, optionally dismissing all co-op companions or disabling the co-op cam.
-		static void TearDownCoopSession(bool a_shouldDismiss, bool a_shouldPauseCoopCam);
 
 		// DEBUG OPTION: Toggle god mode for all players.
 		// Can also choose to restore full health, magicka, and stamina when toggled on.
@@ -1142,6 +1156,10 @@ namespace ALYSLC
 			RE::ActorHandle a_requestingPlayerHandle,
 			RE::TESForm* a_assocForm = nullptr
 		);
+		
+		// Copy the highest shared skill level among all players 
+		// to this player for all shared skills.
+		static void CopyOverSharedSkillAVs(RE::Actor* a_playerActor);
 
 		// Assign linked controller ID for P1 via a prompt to press a certain button.
 		// Workaround until finding direct way of accessing P1's controller's XInput index. 
@@ -2131,6 +2149,8 @@ namespace ALYSLC
 
 		// P1's actor
 		RE::ActorPtr player1Actor;
+		// Glow effect to play on inactive player characters.
+		RE::BGSArtObject* memoryGlowHitArt;
 		// Effects to indicate that the companion player is 'paragliding'.
 		RE::BGSArtObject* paraglideIndicatorEffect1;
 		RE::BGSArtObject* paraglideIndicatorEffect2;
@@ -2202,9 +2222,15 @@ namespace ALYSLC
 		RE::TESEffectShader* dragonHolesShader;
 		RE::TESEffectShader* dragonSoulAbsorbShader;
 		RE::TESEffectShader* ghostFXShader;
+		// Current and potential follower factions.
+		RE::TESFaction* currentFollowerFaction;
+		RE::TESFaction* nwsFollowerFaction;
+		RE::TESFaction* potentialFollowerFaction;
 		// Globals.
 		// Can summon players and start co-op. Used by scripts.
 		RE::TESGlobal* canStartCoopGlob;
+		// Number of P1 followers.
+		RE::TESGlobal* p1FollowerCount;
 		// [Enderal only]
 		// Crafting/Learning/Memory point globals.
 		RE::TESGlobal* craftingPointsGlob;
@@ -2219,8 +2245,17 @@ namespace ALYSLC
 		RE::TESGlobal* summoningMenuOpenGlob;
 		// Is P1 transformed into a werewolf?
 		RE::TESGlobal* werewolfTransformationGlob;
+		// Dormant state idle.
+		RE::TESIdleForm* dormantStateIdle;
+		// Package run by followers that forces them to follow the player.
+		RE::TESPackage* followerPackage;
+		// Default combat override packages for followers.
+		RE::TESPackage* followerCombatOverrideInteriorPackage;
+		RE::TESPackage* followerCombatOverrideExteriorPackage;
 		// ALYSLC handler quest.
 		RE::TESQuest* handlerQuest;
+		// Follower quest.
+		RE::TESQuest* followerQuest;
 
 		// Menu opening requests' event registrations.
 		// Args:
@@ -2257,9 +2292,8 @@ namespace ALYSLC
 		std::array<std::shared_ptr<CoopPlayer>, ALYSLC_MAX_PLAYER_COUNT> coopPlayers;
 		// Crosshair text offsets (X, Y) to restore when the co-op camera is not active.
 		std::optional<std::pair<float, float>> originalCrosshairTextOffsets;
-		// Set of co-op entities that are players or are blocked from selection.
-		// Used to filter out these entities in the targeting manager.
-		std::set<RE::FormID> coopEntityBlacklistFIDSet;
+		// Set of co-op player characters' form IDs.
+		std::set<RE::FormID> coopPlayerCharactersFIDSet;
 		// For co-op companion players:
 		// Since the package procedure 'UseMagic' does not allow for a variable spell, 
 		// we can still cast any spell by setting the procedure's spell target to a placeholder 
@@ -2285,9 +2319,6 @@ namespace ALYSLC
 		// Indicates which hand(s) are casting when evaluating a ranged attack package 
 		// Order: LH, RH, 2H, Dual, Shout, Voice.
 		std::vector<RE::TESGlobal*> castingGlobVars;
-		// Co-op entities that are players or are blocked from selection.
-		// Used to filter out these entities in the targeting manager.
-		std::vector<RE::ActorPtr> coopEntityBlacklist;
 		// Extra storage space for co-op players.
 		// Also used as temporary storage when swapping inventories.
 		// Indexed by player ID.
@@ -2295,12 +2326,16 @@ namespace ALYSLC
 		// Co-op package formlists used as package override stacks.
 		// Holds the co-op players' packages below.
 		std::vector<RE::BGSListForm*> coopPackageFormlists;
+		// Co-op player characters, active or not.
+		std::vector<RE::ActorPtr> coopPlayerCharacters;
 		// List of co-op player packages. 
 		// Currently 4 PER player (in order): 
 		// default, combat override, ranged attack, special interaction.
 		std::vector<RE::TESPackage*> coopPackages;
 		// Base factions that all co-op players should be a member of.
 		std::vector<RE::TESFaction*> coopPlayerFactions;
+		// List of NFF follower package quests.
+		std::vector<RE::TESQuest*> nwsFollowerPackQuestList;
 		// List of co-op player keywords.
 		// Used in companion players' ranged attack packages for casting spells
 		// and for identifying if the character is an active player and at what index.
@@ -2446,7 +2481,7 @@ namespace ALYSLC
 		//
 		// Helpers
 		//
-		
+
 		// Rescale all skill AVs for this player.
 		// Set skill levels equal to the serialized base AV level + skill increment amount.
 		static void RescaleSkillAVs(RE::Actor* a_playerActor);

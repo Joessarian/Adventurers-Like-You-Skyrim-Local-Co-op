@@ -7665,32 +7665,16 @@ namespace ALYSLC
 		void CycleAmmo(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cycle player ammo on first press and on hold at a certain interval.
-			// If cycling on hold is not enabled, do nothing here.
 
-			if (!HelperFuncs::CanCycleOnHold(a_p, InputAction::kCycleAmmo))
-			{
-				return;
-			}
-
-			// If just started, cycle and then set last and current cycled forms.
-			// Otherwise, save the last cycled form and then cycle.
-			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleAmmo))
-			{
-				a_p->em->CycleAmmo();
-				a_p->em->lastCycledForm = a_p->em->currentCycledAmmo;
-			}
-			else
-			{
-				a_p->em->lastCycledForm = a_p->em->currentCycledAmmo;
-				a_p->em->CycleAmmo();
-			}
-
-			if (RE::TESForm* ammo = a_p->em->currentCycledAmmo; ammo)
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// let the player know that releasing will unequip their ammo.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleAmmo) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
 			{
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Equip '{}'", a_p->playerID + 1, ammo->GetName()),
+					fmt::format("P{}: Release to unequip ammo", a_p->playerID + 1),
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
@@ -7699,170 +7683,79 @@ namespace ALYSLC
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
 			}
-			else
-			{
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: No favorited ammo", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
-			}
-
-			// Update cycling time point after cycling.
-			a_p->lastCyclingTP = SteadyClock::now();
+			
+			// TODO:
+			// REMOVE 'Hold To Cycle' MCM option.
 		}
 
 		void CycleSpellCategoryLH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cycle player LH spell category on first press and on hold at a certain interval.
-			// If cycling on hold is not enabled, do nothing here.
 
-			if (!HelperFuncs::CanCycleOnHold(a_p, InputAction::kCycleSpellCategoryLH))
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// let the player know that releasing will reset the category to 'All Favorites'.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleSpellCategoryLH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
 			{
-				return;
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kEquippedItem,
+					fmt::format("P{}: Release to reset category to 'All Favorites'", 
+						a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState,
+						CrosshairMessageType::kTargetingState 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
 			}
-
-			// If just started, cycle and then set last and current cycled categories.
-			// Otherwise, save the last cycled category and then cycle.
-			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleSpellCategoryLH))
-			{
-				a_p->em->CycleHandSlotMagicCategory(false);
-				a_p->em->lastCycledSpellCategory = a_p->em->lhSpellCategory;
-			}
-			else
-			{
-				a_p->em->lastCycledSpellCategory = a_p->em->lhSpellCategory;
-				a_p->em->CycleHandSlotMagicCategory(false);
-			}
-
-			const std::string_view newCategory = a_p->em->FavMagCyclingCategoryToString
-			(
-				a_p->em->lhSpellCategory
-			);
-			a_p->tm->SetCrosshairMessageRequest
-			(
-				CrosshairMessageType::kEquippedItem,
-				fmt::format("P{}: Left hand spell category: '{}'", a_p->playerID + 1, newCategory),
-				{ 
-					CrosshairMessageType::kNone,
-					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
-			);
-
-			// Update cycling time point after cycling.
-			a_p->lastCyclingTP = SteadyClock::now();
+			
+			// TODO:
+			// REMOVE 'Hold To Cycle' MCM option.
 		}
 
 		void CycleSpellCategoryRH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cycle player RH spell category on first press and on hold at a certain interval.
-			// If ammo cycling on hold is not enabled, do nothing here.
 
-			if (!HelperFuncs::CanCycleOnHold(a_p, InputAction::kCycleSpellCategoryRH))
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// let the player know that releasing will reset the category to 'All Favorites'.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleSpellCategoryRH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
 			{
-				return;
-			}
-
-			// If just started, cycle and then set last and current cycled categories.
-			// Otherwise, save the last cycled category and then cycle.
-			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleSpellCategoryRH))
-			{
-				a_p->em->CycleHandSlotMagicCategory(true);
-				a_p->em->lastCycledSpellCategory = a_p->em->rhSpellCategory;
-			}
-			else
-			{
-				a_p->em->lastCycledSpellCategory = a_p->em->rhSpellCategory;
-				a_p->em->CycleHandSlotMagicCategory(true);
-			}
-
-			const std::string_view newCategory = a_p->em->FavMagCyclingCategoryToString
-			(
-				a_p->em->rhSpellCategory
-			);
-			a_p->tm->SetCrosshairMessageRequest
-			(
-				CrosshairMessageType::kEquippedItem,
-				fmt::format
+				a_p->tm->SetCrosshairMessageRequest
 				(
-					"P{}: Right hand spell category: '{}'", a_p->playerID + 1, newCategory
-				),
-				{ 
-					CrosshairMessageType::kNone,
-					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
-			);
-
-			// Update cycling time point after cycling.
-			a_p->lastCyclingTP = SteadyClock::now();
+					CrosshairMessageType::kEquippedItem,
+					fmt::format("P{}: Release to reset category to 'All Favorites'.", 
+						a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState,
+						CrosshairMessageType::kTargetingState 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+			}
+			
+			// TODO:
+			// REMOVE 'Hold To Cycle' MCM option.
 		}
 
 		void CycleSpellLH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cycle player LH spell on first press and on hold at a certain interval.
-			// If cycling on hold is not enabled, do nothing here.
 
-			if (!HelperFuncs::CanCycleOnHold(a_p, InputAction::kCycleSpellLH))
-			{
-				return;
-			}
-
-			// If just started, cycle and then set last and current cycled forms.
-			// Otherwise, save the last cycled form and then cycle.
-			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleSpellLH))
-			{
-				a_p->em->CycleHandSlotMagic(false);
-				a_p->em->lastCycledForm = 
-				(
-					a_p->em->currentCycledLHSpellsList[!a_p->em->lhSpellCategory]
-				);
-			}
-			else
-			{
-				a_p->em->lastCycledForm = 
-				(
-					a_p->em->currentCycledLHSpellsList[!a_p->em->lhSpellCategory]
-				);
-				a_p->em->CycleHandSlotMagic(false);
-			}
-
-			auto spellForm = a_p->em->currentCycledLHSpellsList[!a_p->em->lhSpellCategory]; 
-			if (spellForm)
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// let the player know that releasing will clear their hand.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleSpellLH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
 			{
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Equip '{}'", a_p->playerID + 1, spellForm->GetName()),
-					{
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
-			}
-			else
-			{
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kEquippedItem,
-					fmt::format
-					(
-						"P{}: '{}' category is empty", 
-						a_p->playerID + 1,
-						a_p->em->FavMagCyclingCategoryToString(a_p->em->lhSpellCategory)
-					),
-					{
+					fmt::format("P{}: Release to empty left hand", a_p->playerID + 1),
+					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
 						CrosshairMessageType::kTargetingState 
@@ -7870,263 +7763,77 @@ namespace ALYSLC
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
 			}
-
-			// Update cycling time point after cycling.
-			a_p->lastCyclingTP = SteadyClock::now();
+			
+			// TODO:
+			// REMOVE 'Hold To Cycle' MCM option.
 		}
 
 		void CycleSpellRH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cycle player RH spell on first press and on hold at a certain interval.
-			// If cycling on hold is not enabled, do nothing here.
 
-			if (!HelperFuncs::CanCycleOnHold(a_p, InputAction::kCycleSpellRH))
-			{
-				return;
-			}
-
-			// If just started, cycle and then set last and current cycled forms.
-			// Otherwise, save the last cycled form and then cycle.
-			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleSpellRH))
-			{
-				a_p->em->CycleHandSlotMagic(true);
-				a_p->em->lastCycledForm = 
-				(
-					a_p->em->currentCycledRHSpellsList[!a_p->em->rhSpellCategory]
-				);
-			}
-			else
-			{
-				a_p->em->lastCycledForm = 
-				(
-					a_p->em->currentCycledRHSpellsList[!a_p->em->rhSpellCategory]
-				);
-				a_p->em->CycleHandSlotMagic(true);
-			}
-
-			auto spellForm = a_p->em->currentCycledRHSpellsList[!a_p->em->rhSpellCategory]; 
-			if (spellForm)
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// let the player know that releasing will clear their hand.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleSpellRH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
 			{
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Equip '{}'", a_p->playerID + 1, spellForm->GetName()),
+					fmt::format("P{}: Release to empty right hand", a_p->playerID + 1),
 					{ 
-						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
 						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
 			}
-			else
-			{
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kEquippedItem,
-					fmt::format
-					(
-						"P{}: '{}' category is empty", 
-						a_p->playerID + 1, 
-						a_p->em->FavMagCyclingCategoryToString(a_p->em->rhSpellCategory)
-					),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
-			}
-
-			// Update cycling time point after cycling.
-			a_p->lastCyclingTP = SteadyClock::now();
+			
+			// TODO:
+			// REMOVE 'Hold To Cycle' MCM option.
 		}
 
 		void CycleVoiceSlotMagic(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cycle player voice spell/shout on first press and on hold at a certain interval.
-			// If cycling on hold is not enabled, do nothing here.
 
-			if (!HelperFuncs::CanCycleOnHold(a_p, InputAction::kCycleVoiceSlotMagic))
-			{
-				return;
-			}
-
-			// If just started, cycle and then set last and current cycled forms.
-			// Otherwise, save the last cycled form and then cycle.
-			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleVoiceSlotMagic))
-			{
-				a_p->em->CycleVoiceSlotMagic();
-				a_p->em->lastCycledForm = a_p->em->currentCycledVoiceMagic;
-			}
-			else
-			{
-				a_p->em->lastCycledForm = a_p->em->currentCycledVoiceMagic;
-				a_p->em->CycleVoiceSlotMagic();
-			}
-
-			if (RE::TESForm* voiceForm = a_p->em->currentCycledVoiceMagic; voiceForm)
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// let the player know that releasing will clear equipped voice magic.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleVoiceSlotMagic) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
 			{
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Equip '{}'", a_p->playerID + 1, voiceForm->GetName()),
+					fmt::format("P{}: Release to unequip shout/power", a_p->playerID + 1),
 					{ 
 						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kStealthState,
 						CrosshairMessageType::kTargetingState 
 					},
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
 			}
-			else
-			{
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: No favorited powers/shouts", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
-			}
-
-			// Update cycling time point after cycling.
-			a_p->lastCyclingTP = SteadyClock::now();
+			
+			// TODO:
+			// REMOVE 'Hold To Cycle' MCM option.
 		}
 
 		void CycleWeaponCategoryLH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cycle player LH weapon category on first press and on hold at a certain interval.
-			// If cycling on hold is not enabled, do nothing here.
 
-			if (!HelperFuncs::CanCycleOnHold(a_p, InputAction::kCycleWeaponCategoryLH))
-			{
-				return;
-			}
-
-			// If just started, cycle and then set last and current cycled categories.
-			// Otherwise, save the last cycled category and then cycle.
-			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleWeaponCategoryLH))
-			{
-				a_p->em->CycleWeaponCategory(false);
-				a_p->em->lastCycledWeaponCategory = a_p->em->lhWeaponCategory;
-			}
-			else
-			{
-				a_p->em->lastCycledWeaponCategory = a_p->em->lhWeaponCategory;
-				a_p->em->CycleWeaponCategory(false);
-			}
-
-			const std::string_view newCategory = a_p->em->FavWeaponCyclingCategoryToString
-			(
-				a_p->em->lhWeaponCategory
-			);
-			a_p->tm->SetCrosshairMessageRequest
-			(
-				CrosshairMessageType::kEquippedItem,
-				fmt::format
-				(
-					"P{}: Left hand weapon category: '{}'", a_p->playerID + 1, newCategory
-				),
-				{ 
-					CrosshairMessageType::kNone, 
-					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
-			);
-
-			// Update cycling time point after cycling.
-			a_p->lastCyclingTP = SteadyClock::now();
-		}
-
-		void CycleWeaponCategoryRH(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Cycle player RH weapon category on first press and on hold at a certain interval.
-			// If cycling on hold is not enabled, do nothing here.
-
-			if (!HelperFuncs::CanCycleOnHold(a_p, InputAction::kCycleWeaponCategoryRH)) 
-			{
-				return;
-			}
-
-			// If just started, cycle and then set last and current cycled categories.
-			// Otherwise, save the last cycled category and then cycle.
-			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleWeaponCategoryRH))
-			{
-				a_p->em->CycleWeaponCategory(true);
-				a_p->em->lastCycledWeaponCategory = a_p->em->rhWeaponCategory;
-			}
-			else
-			{
-				a_p->em->lastCycledWeaponCategory = a_p->em->rhWeaponCategory;
-				a_p->em->CycleWeaponCategory(true);
-			}
-
-			const std::string_view newCategory = a_p->em->FavWeaponCyclingCategoryToString
-			(
-				a_p->em->rhWeaponCategory
-			);
-			a_p->tm->SetCrosshairMessageRequest
-			(
-				CrosshairMessageType::kEquippedItem,
-				fmt::format
-				(
-					"P{}: Right hand weapon category: '{}'", a_p->playerID + 1, newCategory
-				),
-				{ 
-					CrosshairMessageType::kNone, 
-					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
-			);
-
-			// Update cycling time point after cycling.
-			a_p->lastCyclingTP = SteadyClock::now();
-		}
-
-		void CycleWeaponLH(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Cycle player LH weapon on first press and on hold at a certain interval.
-			// If cycling on hold is not enabled, do nothing here.
-
-			if (!HelperFuncs::CanCycleOnHold(a_p, InputAction::kCycleWeaponLH)) 
-			{
-				return;
-			}
-
-			// If just started, cycle and then set last and current cycled forms.
-			// Otherwise, save the last cycled form and then cycle.
-			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleWeaponLH))
-			{
-				a_p->em->CycleWeapons(false);
-				a_p->em->lastCycledForm = 
-				(
-					a_p->em->currentCycledLHWeaponsList[!a_p->em->lhWeaponCategory]
-				);
-			}
-			else
-			{
-				a_p->em->lastCycledForm = 
-				(
-					a_p->em->currentCycledLHWeaponsList[!a_p->em->lhWeaponCategory]
-				);
-				a_p->em->CycleWeapons(false);
-			}
-
-			auto form = a_p->em->currentCycledLHWeaponsList[!a_p->em->lhWeaponCategory]; 
-			if (form)
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// let the player know that releasing will reset the category to 'All Favorites'.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleWeaponCategoryLH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
 			{
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Equip '{}'", a_p->playerID + 1, form->GetName()),
+					fmt::format("P{}: Release to reset category to 'All Favorites'.", 
+						a_p->playerID + 1),
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
@@ -8135,87 +7842,78 @@ namespace ALYSLC
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
 			}
-			else if (a_p->em->lhWeaponCategory == FavWeaponCyclingCategory::kAllFavorites && 
-					 a_p->em->HasCyclableWeaponInCategory
-					 (
-						 FavWeaponCyclingCategory::kAllFavorites, false
-					 ))
-			{
-				// Will empty both hands if no weapon is returned 
-				// while cycling through all favorites.
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Equip 'Fists'", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
-			}
-			else
-			{
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kEquippedItem,
-					fmt::format
-					(
-						"P{}: '{}' category is empty", 
-						a_p->playerID + 1, 
-						a_p->em->FavWeaponCyclingCategoryToString(a_p->em->lhWeaponCategory)
-					),
-					{
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
-			}
+			
+			// TODO:
+			// REMOVE 'Hold To Cycle' MCM option.
+		}
 
-			// Update cycling time point after cycling.
-			a_p->lastCyclingTP = SteadyClock::now();
+		void CycleWeaponCategoryRH(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// Cycle player RH weapon category on first press and on hold at a certain interval.
+			
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// let the player know that releasing will reset the category to 'All Favorites'.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleWeaponCategoryRH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kEquippedItem,
+					fmt::format("P{}: Release to reset category to 'All Favorites'.", 
+						a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState,
+						CrosshairMessageType::kTargetingState 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+			}
+			
+			// TODO:
+			// REMOVE 'Hold To Cycle' MCM option.
+		}
+
+		void CycleWeaponLH(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// Cycle player LH weapon on first press and on hold at a certain interval.
+
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// let the player know that releasing will clear their hand.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleWeaponLH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kEquippedItem,
+					fmt::format("P{}: Release to empty left hand", a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState,
+						CrosshairMessageType::kTargetingState 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+			}
+			
+			// TODO:
+			// REMOVE 'Hold To Cycle' MCM option.
 		}
 
 		// Cycle weapon in RH on first press and on hold at a certain interval.
 		void CycleWeaponRH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cycle player RH weapon on first press and on hold at a certain interval.
-			// If cycling on hold is not enabled, do nothing here.
 
-			if (!HelperFuncs::CanCycleOnHold(a_p, InputAction::kCycleWeaponRH))
-			{
-				return;
-			}
-
-			// If just started, cycle and then set last and current cycled forms.
-			// Otherwise, save the last cycled form and then cycle.
-			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleWeaponRH))
-			{
-				a_p->em->CycleWeapons(true);
-				a_p->em->lastCycledForm = 
-				(
-					a_p->em->currentCycledRHWeaponsList[!a_p->em->rhWeaponCategory]
-				);
-			}
-			else
-			{
-				a_p->em->lastCycledForm = 
-				(
-					a_p->em->currentCycledRHWeaponsList[!a_p->em->rhWeaponCategory]
-				);
-				a_p->em->CycleWeapons(true);
-			}
-
-			auto form = a_p->em->currentCycledRHWeaponsList[!a_p->em->rhWeaponCategory];
-			if (form)
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// let the player know that releasing will clear their hand.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleWeaponRH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
 			{
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Equip '{}'", a_p->playerID + 1, form->GetName()),
+					fmt::format("P{}: Release to empty right hand", a_p->playerID + 1),
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
@@ -8224,48 +7922,9 @@ namespace ALYSLC
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
 			}
-			else if (a_p->em->rhWeaponCategory == FavWeaponCyclingCategory::kAllFavorites &&
-					 a_p->em->HasCyclableWeaponInCategory
-					 (
-						 FavWeaponCyclingCategory::kAllFavorites, true
-					 ))
-			{
-				// Will empty both hands if no weapon is returned 
-				// while cycling through all favorites.
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Equip 'Fists'", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
-			}
-			else
-			{
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kEquippedItem,
-					fmt::format
-					(
-						"P{}: '{}' category is empty",
-						a_p->playerID + 1,
-						a_p->em->FavWeaponCyclingCategoryToString(a_p->em->rhWeaponCategory)
-					),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
-			}
-
-			// Update cycling time point after cycling.
-			a_p->lastCyclingTP = SteadyClock::now();
+			
+			// TODO:
+			// REMOVE 'Hold To Cycle' MCM option.
 		}
 
 		void GrabObject(const std::shared_ptr<CoopPlayer>& a_p)
@@ -10655,7 +10314,10 @@ namespace ALYSLC
 					return;
 				}
 			}
-
+			
+			// Stop current session first.
+			DBG("Stop co-op session");
+			GlobalCoopData::StopCoopSession(false, true);
 			glob.onSummoningMenuRequest.SendEvent();
 		}
 
@@ -12202,6 +11864,12 @@ namespace ALYSLC
 			// Clear out cached activation-related handles after saving the activation refr handle
 			// for use down below. Stop any playing activation shader.
 			
+			// Save the flag because we need to clear it on release so it does not display
+			// the incorrect activation text in subsequent crosshair messages,
+			// and so we can properly execute secondary activation actions below.
+			const bool performSecondaryActivationAction = a_p->tm->performSecondaryActivationAction;
+			a_p->tm->performSecondaryActivationAction = false;
+
 			// NOTE:
 			// Once the player requests to paraglide, activation of objects is disabled 
 			// until the player presses activate again on the ground.
@@ -12581,7 +12249,7 @@ namespace ALYSLC
 				// Can still loot refrs when another player is controlling menus.
 				bool forcePickup = 
 				(
-					(!a_p->tm->performSecondaryActivationAction) &&
+					(!performSecondaryActivationAction) &&
 					(
 						(
 							(menusOnlyAlwaysOpen) &&
@@ -12659,7 +12327,7 @@ namespace ALYSLC
 								baseObj,
 								count,
 								false, 
-								a_p->tm->performSecondaryActivationAction
+								performSecondaryActivationAction
 							);
 							Util::SetPlayerAIDriven(true);
 						}
@@ -12907,8 +12575,7 @@ namespace ALYSLC
 									baseObj,
 									count, 
 									false,
-									(a_p->tm->performSecondaryActivationAction) && 
-									(isBook || isNote)
+									(performSecondaryActivationAction) && (isBook || isNote)
 								);
 								Util::SetPlayerAIDriven(true);
 							}
@@ -12948,7 +12615,7 @@ namespace ALYSLC
 								baseObj,
 								count,
 								false,
-								a_p->tm->performSecondaryActivationAction
+								performSecondaryActivationAction
 							);
 						}
 					}
@@ -13471,6 +13138,48 @@ namespace ALYSLC
 		{
 			// Equip cycled ammo on release.
 
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// unequip the player's current ammo.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleAmmo) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
+			{
+				auto currentForm = a_p->coopActor->GetCurrentAmmo();
+				if (currentForm)
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kEquippedItem,
+						fmt::format("P{}: Unequip '{}'",
+							a_p->playerID + 1, currentForm->GetName()),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetingState 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+					a_p->em->UnequipAmmo(currentForm);
+				}
+				else
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kEquippedItem,
+						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetingState 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+
+				// Set cycling TP.
+				a_p->lastCyclingTP = SteadyClock::now();
+				return;
+			}
+
 			if (Settings::bHoldToCycle)
 			{
 				// Set to previous cycled item if this bind is released during the "grace period",
@@ -13539,6 +13248,28 @@ namespace ALYSLC
 		{
 			// Cycle LH spell category on release.
 
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// reset the cycling category.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleSpellCategoryLH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kEquippedItem,
+					fmt::format("P{}: Reset category to 'All Favorites'", a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState,
+						CrosshairMessageType::kTargetingState 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				a_p->em->lhSpellCategory = FavMagicCyclingCategory::kAllFavorites;
+				// Set cycling TP.
+				a_p->lastCyclingTP = SteadyClock::now();
+				return;
+			}
+
 			if (Settings::bHoldToCycle)
 			{
 				// Set to previous cycled item if this bind is released 
@@ -13575,6 +13306,28 @@ namespace ALYSLC
 		void CycleSpellCategoryRH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cycle RH spell category on release.
+
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// reset the cycling category.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleSpellCategoryRH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kEquippedItem,
+					fmt::format("P{}: Reset category to 'All Favorites'", a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState,
+						CrosshairMessageType::kTargetingState 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				a_p->em->rhSpellCategory = FavMagicCyclingCategory::kAllFavorites;
+				// Set cycling TP.
+				a_p->lastCyclingTP = SteadyClock::now();
+				return;
+			}
 
 			if (Settings::bHoldToCycle)
 			{
@@ -13615,6 +13368,48 @@ namespace ALYSLC
 		void CycleSpellLH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cycle spell in LH on release.
+
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// unequip the player's current LH form.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleSpellLH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
+			{
+				auto currentForm = a_p->coopActor->GetEquippedObject(true);
+				if (currentForm)
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kEquippedItem,
+						fmt::format("P{}: Unequip '{}'",
+							a_p->playerID + 1, currentForm->GetName()),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetingState 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+					a_p->em->UnequipFormAtIndex(EquipIndex::kLeftHand);
+				}
+				else
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kEquippedItem,
+						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetingState 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+
+				// Set cycling TP.
+				a_p->lastCyclingTP = SteadyClock::now();
+				return;
+			}
 
 			if (Settings::bHoldToCycle) 
 			{
@@ -13694,6 +13489,48 @@ namespace ALYSLC
 		{
 			// Cycle spell in RH on release.
 
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// unequip the player's current RH form.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleSpellRH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
+			{
+				auto currentForm = a_p->coopActor->GetEquippedObject(false);
+				if (currentForm)
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kEquippedItem,
+						fmt::format("P{}: Unequip '{}'",
+							a_p->playerID + 1, currentForm->GetName()),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetingState 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+					a_p->em->UnequipFormAtIndex(EquipIndex::kRightHand);
+				}
+				else
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kEquippedItem,
+						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetingState 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+
+				// Set cycling TP.
+				a_p->lastCyclingTP = SteadyClock::now();
+				return;
+			}
+
 			if (Settings::bHoldToCycle)
 			{
 				// Set to previous cycled item if this bind is released
@@ -13772,6 +13609,62 @@ namespace ALYSLC
 		{
 			// Cycle voice magic (shouts + powers) on release.
 
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// unequip the player's current shout/power.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleVoiceSlotMagic) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
+			{
+				// Fallback to game's stored shout if there isn't any shout/power
+				// recorded as equipped.
+				auto currentForm = 
+				(
+					a_p->em->voiceForm ? 
+					a_p->em->voiceForm : 
+					a_p->coopActor->GetCurrentShout()
+				);
+				if (currentForm)
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kEquippedItem,
+						fmt::format("P{}: Unequip '{}'",
+							a_p->playerID + 1, currentForm->GetName()),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetingState 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+					if (a_p->em->voiceForm)
+					{
+						a_p->em->UnequipFormAtIndex(EquipIndex::kVoice);
+					}
+					else
+					{
+						a_p->em->UnequipShout(currentForm);
+					}
+				}
+				else
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kEquippedItem,
+						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetingState 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+
+				// Set cycling TP.
+				a_p->lastCyclingTP = SteadyClock::now();
+				return;
+			}
+
 			if (Settings::bHoldToCycle)
 			{
 				// Set to previous cycled item if this bind is released 
@@ -13837,6 +13730,28 @@ namespace ALYSLC
 		{
 			// Cycle LH weapon category on release.
 
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// reset the cycling category.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleWeaponCategoryLH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kEquippedItem,
+					fmt::format("P{}: Reset category to 'All Favorites'", a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState,
+						CrosshairMessageType::kTargetingState 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				a_p->em->lhWeaponCategory = FavWeaponCyclingCategory::kAllFavorites;
+				// Set cycling TP.
+				a_p->lastCyclingTP = SteadyClock::now();
+				return;
+			}
+
 			if (Settings::bHoldToCycle)
 			{
 				// Set to previous cycled item if this bind is released
@@ -13877,6 +13792,28 @@ namespace ALYSLC
 		{
 			// Cycle RH weapon category on release.
 
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// reset the cycling category.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleWeaponCategoryRH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kEquippedItem,
+					fmt::format("P{}: Reset category to 'All Favorites'", a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState,
+						CrosshairMessageType::kTargetingState 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				a_p->em->rhWeaponCategory = FavWeaponCyclingCategory::kAllFavorites;
+				// Set cycling TP.
+				a_p->lastCyclingTP = SteadyClock::now();
+				return;
+			}
+
 			if (Settings::bHoldToCycle)
 			{
 				// Set to previous cycled item if this bind is released 
@@ -13916,6 +13853,48 @@ namespace ALYSLC
 		void CycleWeaponLH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cycle weapon in LH on release.
+
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// unequip the player's current LH form.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleWeaponLH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
+			{
+				auto currentForm = a_p->coopActor->GetEquippedObject(true);
+				if (currentForm)
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kEquippedItem,
+						fmt::format("P{}: Unequip '{}'",
+							a_p->playerID + 1, currentForm->GetName()),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetingState 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+					a_p->em->UnequipFormAtIndex(EquipIndex::kLeftHand);
+				}
+				else
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kEquippedItem,
+						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetingState 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+
+				// Set cycling TP.
+				a_p->lastCyclingTP = SteadyClock::now();
+				return;
+			}
 
 			if (Settings::bHoldToCycle)
 			{
@@ -14000,26 +13979,6 @@ namespace ALYSLC
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
 			}
-			else if (a_p->em->lhWeaponCategory == FavWeaponCyclingCategory::kAllFavorites &&
-					 a_p->em->HasCyclableWeaponInCategory
-					 (
-						 FavWeaponCyclingCategory::kAllFavorites, false
-					 ))
-			{
-				// Empty both hands if no weapon is returned while cycling through all favorites.
-				a_p->em->UnequipHandForms(glob.bothHandsEquipSlot);
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Equip 'Fists'", a_p->playerID + 1),
-					{
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
-			}
 			else if (!a_p->em->HasCyclableWeaponInCategory(a_p->em->lhWeaponCategory, false))
 			{
 				// No weapon to equip.
@@ -14045,6 +14004,48 @@ namespace ALYSLC
 		void CycleWeaponRH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cycle weapon in RH on release.
+
+			// If the cycling bind is held beyond the minimum hold time threshold,
+			// unequip the player's current RH form.
+			if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kCycleWeaponRH) > 
+				Settings::fSecsDefMinHoldTime * 2.0f)
+			{
+				auto currentForm = a_p->coopActor->GetEquippedObject(false);
+				if (currentForm)
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kEquippedItem,
+						fmt::format("P{}: Unequip '{}'",
+							a_p->playerID + 1, currentForm->GetName()),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetingState 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+					a_p->em->UnequipFormAtIndex(EquipIndex::kRightHand);
+				}
+				else
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kEquippedItem,
+						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetingState 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+
+				// Set cycling TP.
+				a_p->lastCyclingTP = SteadyClock::now();
+				return;
+			}
 
 			if (Settings::bHoldToCycle)
 			{
@@ -14127,26 +14128,6 @@ namespace ALYSLC
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
 				}
-			}
-			else if (a_p->em->rhWeaponCategory == FavWeaponCyclingCategory::kAllFavorites &&
-					 a_p->em->HasCyclableWeaponInCategory
-					 (
-						 FavWeaponCyclingCategory::kAllFavorites, true
-					 ))
-			{
-				// Empty both hands if no weapon is returned while cycling through all favorites.
-				a_p->em->UnequipHandForms(glob.bothHandsEquipSlot);
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Equip 'Fists'", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
 			}
 			else if (!a_p->em->HasCyclableWeaponInCategory(a_p->em->rhWeaponCategory, true))
 			{
