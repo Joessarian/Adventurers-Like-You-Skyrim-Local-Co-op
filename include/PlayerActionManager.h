@@ -848,13 +848,18 @@ namespace ALYSLC
 		// regardless of their current weapon state.
 		// Otherwise, only draw when fully sheathed and only sheathe when fully drawn.
 		void ReadyWeapon(const bool& a_shouldDraw, bool&& a_ignoreState = true);
-		
+
 		// Sync companion player level with P1 after making sure their stats
 		// do not scale with P1. We do not want the game to auto scale the player's stats.
 		void RemoveAVAutoScaling();
 
 		// Remove equipped bound weapons and re-equip previous items/magic in the LH/RH.
 		void RemoveBoundWeapons();
+
+		// Remove quest aliases that impose packages onto a companion player.
+		// Such aliases force packages to run, overriding ALYSLC's co-op packages
+		// and preventing actions such as spellcasting and interacting with furniture.
+		void RemovePackageAliases();
 
 		// Reset killmove data for this player and the killmove victim player, if any.
 		void ResetAllKillmoveData(const int32_t& a_targetPlayerIndex);

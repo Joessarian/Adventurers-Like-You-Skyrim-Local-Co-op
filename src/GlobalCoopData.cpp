@@ -3542,7 +3542,7 @@ namespace ALYSLC
 
 	bool GlobalCoopData::IsCoopPlayer(const RE::ActorPtr& a_actorPtr)
 	{
-		// Return true if the given actor smart pointer is a player.
+		// Return true if the given actor smart pointer is an active player.
 
 		if (!a_actorPtr)
 		{
@@ -3554,7 +3554,7 @@ namespace ALYSLC
 
 	bool GlobalCoopData::IsCoopPlayer(RE::TESObjectREFR* a_refr)
 	{
-		// Return true if the given object refr is a player.
+		// Return true if the given object refr is an active player.
 
 		if (!a_refr)
 		{
@@ -3577,7 +3577,7 @@ namespace ALYSLC
 
 	bool GlobalCoopData::IsCoopPlayer(const RE::TESObjectREFRPtr& a_refrPtr)
 	{
-		// Return true if the given object refr smart ptr is a player.
+		// Return true if the given object refr smart ptr is an active player.
 
 		if (!a_refrPtr)
 		{
@@ -3589,7 +3589,7 @@ namespace ALYSLC
 
 	bool GlobalCoopData::IsCoopPlayer(const RE::ObjectRefHandle& a_refrHandle)
 	{
-		// Return true if the given object refr handle is for a player.
+		// Return true if the given object refr handle is for an active player.
 
 		auto& glob = GetSingleton();
 		// Ensure refr is valid first.
@@ -3619,7 +3619,7 @@ namespace ALYSLC
 
 	bool GlobalCoopData::IsCoopPlayer(const RE::FormID& a_formID)
 	{
-		// Return true if the given FID is for a player or a player's actor base.
+		// Return true if the given FID is for an active player, or an active player's actor base.
 
 		auto& glob = GetSingleton();
 		return 
@@ -3647,7 +3647,7 @@ namespace ALYSLC
 
 	bool GlobalCoopData::IsCoopPlayer(const RE::TESForm* a_form)
 	{
-		// Return true if the given form is a player or player actor base form.
+		// Return true if the given form is an active player or active player actor base form.
 
 		if (!a_form)
 		{
@@ -3680,7 +3680,7 @@ namespace ALYSLC
 
 	bool GlobalCoopData::IsCoopPlayer(const RE::TESNPC* a_actorBase)
 	{
-		// Return true if the given actor base is a player's actor base.
+		// Return true if the given actor base is an active player's actor base.
 
 		if (!a_actorBase)
 		{

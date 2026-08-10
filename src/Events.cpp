@@ -2533,9 +2533,10 @@ namespace ALYSLC
 				{
 					DBG("About to move player {} to P1.", p->coopActor->GetName());
 					// Signal to re-equip after resuming managers.
-					p->em->reEquipOnTeleport = true;
-					// Sheathe before moving to minimize incidence of equip state bugs.
-					p->pam->ReadyWeapon(false);
+					{
+						std::unique_lock<std::mutex> lock(p->em->extReEquipHandFormsMutex);
+						p->em->extReEquipHandForms = true;
+					}
 					auto taskInterface = SKSE::GetTaskInterface();
 					if (taskInterface)
 					{
@@ -2551,6 +2552,8 @@ namespace ALYSLC
 									p->mm->movementActorPtr->GetName() : 
 									"NONE"
 								);
+								// Sheathe before moving to minimize incidence of equip state bugs.
+								p->pam->ReadyWeapon(false);
 								if (p->mm->movementActorPtr != p->coopActor)
 								{
 									p->mm->movementActorPtr->MoveTo(p1);

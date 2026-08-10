@@ -627,24 +627,6 @@ namespace ALYSLC
 				bool isSneaking = p->coopActor->IsSneaking();
 				// Something to do with usability.
 				bool isPlayable = a_refr->GetPlayable();
-				// Player has LOS on the refr.
-				// Use the game's P1 LOS check for crosshair refrs not selected via raycast,
-				// since our raycasts do not hit such refrs right now.
-				bool passesLOSCheck =
-				(
-					(!a_checkLOS) ||
-					(
-						Util::HasLOS
-						(
-							a_refr, 
-							p->coopActor.get(), 
-							false, 
-							p->tm->crosshairRefrHandle == handle, 
-							p->tm->crosshairWorldPos
-						)
-					)
-				);
-					\
 				if (!isSneaking && offLimits)
 				{
 					return false;
@@ -665,13 +647,29 @@ namespace ALYSLC
 				{
 					return false;
 				}
-				else if (!passesLOSCheck)
+				else if (offLimits)
 				{
 					return false;
 				}
 				else
 				{
-					return !offLimits;
+					// Player has LOS on the refr.
+					// Use the game's P1 LOS check for crosshair refrs not selected via raycast,
+					// since our raycasts do not hit such refrs right now.
+					return 
+					(
+						(!a_checkLOS) ||
+						(
+							Util::HasLOS
+							(
+								a_refr, 
+								p->coopActor.get(), 
+								false, 
+								p->tm->crosshairRefrHandle == handle, 
+								p->tm->crosshairWorldPos
+							)
+						)
+					);
 				}
 			}
 		}
@@ -6018,7 +6016,9 @@ namespace ALYSLC
 		{
 			shouldFindLockOnTargetFromPlayer = 
 			(
-				!a_fromCurrentTarget || !Util::HandleIsValid(a_currentTargetHandle)
+				!a_fromCurrentTarget || 
+				!Util::HandleIsValid(a_currentTargetHandle) ||
+				!Util::PointIsOnScreen(Util::Get3DCenterPos(a_currentTargetHandle.get().get()))
 			);
 		}
 		else if (!a_fromCurrentTarget || !Util::HandleIsValid(a_currentTargetHandle))
@@ -6111,7 +6111,7 @@ namespace ALYSLC
 				// as the origin and can prioritize angular accuracy 
 				// over moving quickly through different targets.
 				// 2. Prefer screenspace positions and angles (if they are on screen only)
-				// when moving from the current  target to the next in a chain. 
+				// when moving from the current target to the next in a chain. 
 				// Easier to quickly move through targets without accounting for depth
 				// when the camera is pitched flat.
 				IsRefrInRangeAndInFOV
@@ -6316,7 +6316,11 @@ namespace ALYSLC
 		RE::ObjectRefHandle closestRefrHandle = RE::ObjectRefHandle();
 		bool choseLastOption = false;
 		const float playerPixelHeight = Util::GetBoundMaxOrMinEdgeDist(coopActor.get(), true, true);
-		for (auto iter = factorMap.begin(); iter != factorMap.end(); ++iter)
+		uint8_t losChecksPerformed = 0;
+		for (auto iter = factorMap.begin(); 
+			 iter != factorMap.end() && 
+			 losChecksPerformed < Settings::uMaxLockOnTargetsToCheckForLOS;
+			 ++iter)
 		{
 			const auto& [factor, refrHandle] = *iter;
 			const auto refrPtr = Util::GetRefrPtrFromHandle(refrHandle);
@@ -6348,10 +6352,6 @@ namespace ALYSLC
 			}
 
 			const float pixelHeight = Util::GetBoundMaxOrMinEdgeDist(refrPtr.get(), true, true);
-			bool hasLOS = Util::HasLOS
-			(
-				refrPtr.get(), coopActor.get(), true, false, crosshairWorldPos
-			);
 			const float refrToPlayerPixelHeightRatio = pixelHeight / playerPixelHeight;
 			const float refrToPlayerHeightRatio = 
 			(
@@ -6370,21 +6370,37 @@ namespace ALYSLC
 			// pixel-wise, on the screen.
 			const bool inRange = 
 			(
-				fabsf
 				(
-					glob.cam->camTargetPos.GetDistance(glob.cam->camOriginPoint) - 
-					glob.cam->camOriginPoint.GetDistance(Util::GetRefrPosition(refrPtr.get()))
-				) <= 4096.0f * sqrtf(2.0f) ||
-				pixelHeight >= 0.2f * playerPixelHeight ||
-				pixelHeight > DebugAPI::screenResY / 60.0f
+					fabsf
+					(
+						glob.cam->camTargetPos.GetDistance(glob.cam->camOriginPoint) - 
+						glob.cam->camOriginPoint.GetDistance(Util::GetRefrPosition(refrPtr.get()))
+					) <= 4096.0f * sqrtf(2.0f)
+				) &&
+				(
+					pixelHeight >= 0.2f * playerPixelHeight ||
+					pixelHeight > DebugAPI::screenResY / 60.0f
+				)
 			);
+			if (!inRange)
+			{
+				continue;
+			}
+
+			bool hasLOS = Util::HasLOS
+			(
+				refrPtr.get(), coopActor.get(), true, false, crosshairWorldPos, true
+			);
+			++losChecksPerformed;
 			DBG
 			(
-				"{}: Considering {} (0x{:X}). Has LOS: {}, factor: {}, pixel heights: {}, {} "
-				"({}, screen height: {}, ratio: {}), "
+				"{}: CHECK #{}: Considering {} (0x{:X}). Has LOS: {}, factor: {}, "
+				"pixel heights: {}, {} ({}, screen height: {}, ratio: {}), "
 				"world height ratio (player / refr): {}. Height factor: {}, "
-				"cam dist to origin, target dist to origin: {}, {}, diff: {}, YEE: {}.", 
+				"cam dist to origin, target dist to origin: {}, {}, diff: {}. "
+				"Pixel height results: {}, {}.", 
 				coopActor->GetName(), 
+				losChecksPerformed,
 				refrPtr->GetName(),
 				refrPtr->formID,
 				hasLOS,
@@ -6402,9 +6418,10 @@ namespace ALYSLC
 				glob.cam->camOriginPoint.GetDistance(Util::GetRefrPosition(refrPtr.get())),
 				glob.cam->camTargetPos.GetDistance(glob.cam->camOriginPoint) - 
 				glob.cam->camOriginPoint.GetDistance(Util::GetRefrPosition(refrPtr.get())),
-				inRange
+				pixelHeight >= 0.2f * playerPixelHeight,
+				pixelHeight > DebugAPI::screenResY / 60.0f
 			);
-			if (hasLOS && inRange)
+			if (hasLOS)
 			{
 				closestRefrHandle = refrHandle;
 				choseLastOption = ++iter == factorMap.end();
@@ -6972,11 +6989,11 @@ namespace ALYSLC
 
 					auto refr3DPtr = Util::GetRefr3D(a_refr); 
 					const auto niCamPtr = Util::GetNiCamera();
-					// Skip refrs that are not within a 180 degree FOV cone 
+					// Skip refrs that are not within a 90 degree FOV cone 
 					// in the player's facing direction and not on screen.
 					// Do not want to select a door or furniture, for example,
 					// that is behind the player or the camera.
-					bool allPositionsBehindPlayer = true;
+					bool allPositionsWithinFOV = true;
 					bool onePositionBehindCamera = 
 					/*(
 						!Util::PointIsOnScreen(Util::Get3DCenterPos(a_refr))
@@ -7010,14 +7027,14 @@ namespace ALYSLC
 					// meaning objects that are further away have a larger factor.
 					// Divide by max reach distance to set range to [0, 1]
 					facingToRefrDot = movingDirXY.Dot(toRefrDirXY);
-					if (facingToRefrDot >= 0.0f)
+					if (facingToRefrDot >= PI / 4.0f)
 					{
-						allPositionsBehindPlayer = false;
+						allPositionsWithinFOV = false;
 					}
 
 					float minSelectionFactor = 
 					(
-						(0.5f * (1.0f - facingToRefrDot)) +
+						/*(0.5f * (1.0f - facingToRefrDot)) +*/
 						(playerTorsoPos.GetDistance(refrLoc1) / maxCheckDist)
 					);
 
@@ -7037,14 +7054,14 @@ namespace ALYSLC
 						toRefrDirXY.z = 0.0f;
 						toRefrDirXY.Unitize();
 						facingToRefrDot = movingDirXY.Dot(toRefrDirXY);
-						if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
+						if (allPositionsWithinFOV && facingToRefrDot >= PI / 4.0f)
 						{
-							allPositionsBehindPlayer = false;
+							allPositionsWithinFOV = false;
 						}
 
 						float selectionFactor = 
 						(
-							(0.5f * (1.0f - facingToRefrDot)) +
+							/*(0.5f * (1.0f - facingToRefrDot)) +*/
 							(playerTorsoPos.GetDistance(refrLoc2.value()) / maxCheckDist)
 						);
 						if (selectionFactor < minSelectionFactor) 
@@ -7060,14 +7077,14 @@ namespace ALYSLC
 						toRefrDirXY.z = 0.0f;
 						toRefrDirXY.Unitize();
 						facingToRefrDot = movingDirXY.Dot(toRefrDirXY);
-						if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
+						if (allPositionsWithinFOV && facingToRefrDot >= PI / 4.0f)
 						{
-							allPositionsBehindPlayer = false;
+							allPositionsWithinFOV = false;
 						}
 
 						float selectionFactor = 
 						(
-							(0.5f * (1.0f - facingToRefrDot)) + 
+							/*(0.5f * (1.0f - facingToRefrDot)) +*/ 
 							(playerTorsoPos.GetDistance(refrLoc3.value()) / maxCheckDist)
 						);
 						if (selectionFactor < minSelectionFactor)
@@ -7078,7 +7095,7 @@ namespace ALYSLC
 					
 					// Player is not turned towards the object if its refr data, 3D,
 					// and 3D center positions are behind the player.
-					if (allPositionsBehindPlayer || onePositionBehindCamera)
+					if (allPositionsWithinFOV || onePositionBehindCamera)
 					{
 						return RE::BSContainer::ForEachResult::kContinue;
 					}
@@ -7130,11 +7147,11 @@ namespace ALYSLC
 						);
 						if (!blacklisted) 
 						{
-							// Skip if not within a 180 degree FOV cone 
+							// Skip if not within a 90 degree FOV cone 
 							// in the player's facing direction.
 							// Do not want to select a door or furniture, for example,
 							// that is behind the player.
-							bool allPositionsBehindPlayer = true;
+							bool allPositionsWithinFOV = true;
 							float facingToRefrDot = 0.0f;
 							// Same three tests as for the nearby refrs above.
 							RE::NiPoint3 refrLoc1 = pickRefrPtr->data.location;
@@ -7142,14 +7159,14 @@ namespace ALYSLC
 							toRefrDirXY.z = 0.0f;
 							toRefrDirXY.Unitize();
 							facingToRefrDot = movingDirXY.Dot(toRefrDirXY);
-							if (facingToRefrDot >= 0.0f)
+							if (facingToRefrDot >= PI / 4.0f)
 							{
-								allPositionsBehindPlayer = false;
+								allPositionsWithinFOV = false;
 							}
 
 							float minSelectionFactor = 
 							(
-								(0.5f * (1.0f - facingToRefrDot)) +
+								/*(0.5f * (1.0f - facingToRefrDot)) +*/
 								(playerTorsoPos.GetDistance(refrLoc1) / maxCheckDist)
 							);
 							std::optional<RE::NiPoint3> refrLoc2 = std::nullopt;
@@ -7167,14 +7184,14 @@ namespace ALYSLC
 								toRefrDirXY.z = 0.0f;
 								toRefrDirXY.Unitize();
 								facingToRefrDot = movingDirXY.Dot(toRefrDirXY);
-								if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
+								if (allPositionsWithinFOV && facingToRefrDot >= PI / 4.0f)
 								{
-									allPositionsBehindPlayer = false;
+									allPositionsWithinFOV = false;
 								}
 
 								float selectionFactor = 
 								(
-									(0.5f * (1.0f - facingToRefrDot)) +
+									/*(0.5f * (1.0f - facingToRefrDot)) +*/
 									(playerTorsoPos.GetDistance(refrLoc2.value()) / maxCheckDist)
 								);
 								if (selectionFactor < minSelectionFactor) 
@@ -7189,14 +7206,14 @@ namespace ALYSLC
 								toRefrDirXY.z = 0.0f;
 								toRefrDirXY.Unitize();
 								facingToRefrDot = movingDirXY.Dot(toRefrDirXY);
-								if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
+								if (allPositionsWithinFOV && facingToRefrDot >= PI / 4.0f)
 								{
-									allPositionsBehindPlayer = false;
+									allPositionsWithinFOV = false;
 								}
 
 								float selectionFactor = 
 								(
-									(0.5f * (1.0f - facingToRefrDot)) + 
+									/*(0.5f * (1.0f - facingToRefrDot)) +*/
 									(playerTorsoPos.GetDistance(refrLoc3.value()) / maxCheckDist)
 								);
 								if (selectionFactor < minSelectionFactor)
@@ -7207,7 +7224,7 @@ namespace ALYSLC
 
 							// Player is not turned towards the object if its refr data, 3D,
 							// and 3D center positions are behind the player.
-							if (!allPositionsBehindPlayer)
+							if (!allPositionsWithinFOV)
 							{
 								// Save pick data refr handle.
 								crosshairPickRefrHandle = pickData->target;
@@ -9530,8 +9547,7 @@ namespace ALYSLC
 		bool isNotSelectableCoopEntity = 
 		{ 
 			(isSelf && !isSMORFing) || 
-			(isCoopPlayer && !Settings::vbCanTargetOtherPlayers[playerID]) ||
-			(!isCoopPlayer && glob.coopPlayerCharactersFIDSet.contains(refrPtr->formID))
+			(isCoopPlayer && !Settings::vbCanTargetOtherPlayers[playerID])
 		};
 		if (isNotSelectableCoopEntity)
 		{
@@ -10412,8 +10428,7 @@ namespace ALYSLC
 				(
 					(hitRefrPtr == coopActor && !isSMORFing) ||
 					(hitRefrPtr == p->GetCurrentMount()) ||
-					(isCoopPlayer && !Settings::vbCanTargetOtherPlayers[playerID]) ||
-					(!isCoopPlayer && glob.coopPlayerCharactersFIDSet.contains(hitRefrPtr->formID))
+					(isCoopPlayer && !Settings::vbCanTargetOtherPlayers[playerID])
 				);
 				// Check three points on the hit refr to see
 				// if any of them are in front of the camera.
@@ -13968,26 +13983,6 @@ namespace ALYSLC
 				bool isSneaking = coopActor->IsSneaking();
 				// Something to do with usability.
 				bool isPlayable = activationRefrPtr->GetPlayable();
-				// Player has LOS on the refr.
-				// Use the game's P1 LOS check for crosshair refrs not selected via raycast,
-				// since our raycasts do not hit such refrs right now.
-				bool passesLOSCheck =
-				(
-					(!a_checkLOS) ||
-					(
-						activationRefrPtr &&
-						Util::HasLOS
-						(
-							activationRefrPtr.get(), 
-							coopActor.get(), 
-							crosshairRefrHandle == activationRefrHandle &&
-							!crosshairRefrFromRaycast, 
-							crosshairRefrHandle == activationRefrHandle, 
-							crosshairWorldPos
-						)
-					)
-				);
-					
 				// Crosshair message to display.
 				RE::BSFixedString activationMessage = ""sv;
 				RE::BSFixedString activationString = ""sv;
@@ -14019,15 +14014,6 @@ namespace ALYSLC
 					activationMessage = fmt::format
 					(
 						"P{}: Another player is controlling menus", playerID + 1
-					);
-				}
-				else if (!passesLOSCheck)
-				{
-					// Player has no LOS.
-					activationMessage = fmt::format
-					(
-						"P{}: {} is not accessible from this position",
-						playerID + 1, activationRefrPtr->GetName()
 					);
 				}
 				else if (mustHoldToActivate)
@@ -14103,291 +14089,298 @@ namespace ALYSLC
 						bool mustSneak = !isSneaking && offLimits;
 						if (isInRange)
 						{
-							auto p1 = RE::PlayerCharacter::GetSingleton();
-							auto asActor = activationRefrPtr->As<RE::Actor>();
-							// Selected a hostile actor with the crosshair
-							// or as the aim correction target when the crosshair is disabled.
-							bool targetedHostileActor = 
+							// Player has LOS on the refr.
+							// Use the game's P1 LOS check for crosshair refrs not selected via raycast,
+							// since our raycasts do not hit such refrs right now.
+							bool passesLOSCheck =
 							(
+								(!a_checkLOS) ||
 								(
-									(asActor) && 
+									activationRefrPtr &&
+									Util::HasLOS
 									(
-										aimMode == AimMode::kTwinStick ||
-										asActor->GetHandle() == crosshairRefrHandle
+										activationRefrPtr.get(), 
+										coopActor.get(), 
+										crosshairRefrHandle == activationRefrHandle &&
+										!crosshairRefrFromRaycast, 
+										crosshairRefrHandle == activationRefrHandle, 
+										crosshairWorldPos
 									)
-								) &&
-								(
-									asActor->IsHostileToActor(coopActor.get()) ||
-									asActor->IsHostileToActor(p1)
 								)
 							);
-							// Living guard with a bounty out on the player.
-							bool showSurrenderMessage = 
-							(
-								targetedHostileActor &&
-								!asActor->IsDead() &&
-								Util::IsGuard(asActor) &&
-								Util::HasBountyOnPlayer(asActor) &&
-								!coopActor->IsSneaking()
-							);
-							// Living, normally passive actor with no bounty on the player,
-							// or fleeing the player.
-							bool showStopCombatMessage = 
-							(
-								(
-									!showSurrenderMessage &&
-									targetedHostileActor &&
-									!asActor->IsDead() &&
-									!coopActor->IsSneaking()
-								) &&
-								(!Util::IsGuard(asActor) && Util::CanStopCombatWithActor(asActor))
-							);
-							if (showSurrenderMessage)
+							if (!passesLOSCheck)
 							{
+								// Player has no LOS.
 								activationMessage = fmt::format
 								(
-									"P{}: Surrender to {}",
-									playerID + 1, activationRefrPtr->GetName()
-								);
-							}
-							else if (showStopCombatMessage)
-							{
-								activationMessage = fmt::format
-								(
-									"P{}: Stop combat with {}",
+									"P{}: {} is not accessible from this position",
 									playerID + 1, activationRefrPtr->GetName()
 								);
 							}
 							else
 							{
-								auto boundObj = activationRefrPtr->GetBaseObject();
-								// Player can activate this refr.
-								// Set activation text to the refr's name 
-								// if no text is available.
-								activationString = Util::GetActivationText
+								auto p1 = RE::PlayerCharacter::GetSingleton();
+								auto asActor = activationRefrPtr->As<RE::Actor>();
+								// Selected a hostile actor with the crosshair
+								// or as the aim correction target when the crosshair is disabled.
+								bool targetedHostileActor = 
 								(
-									coopActor.get(),
-									baseObj,
-									activationRefrPtr.get(),
-									hasActivationText
-								);
-									SI_Error err = SI_OK;
-								if (hasActivationText)
-								{
-									// Show regular message if performing primary activation action,
-									// or custom message for secondary activation action.
-									// Full credits to po3 (must have 'Use Or Take' installed):
-									// https://github.com/powerof3/UseOrTake
-
-									RE::BSFixedString activationLabel = "Use"sv;
-									bool hasSecondaryActivation = true;
-									if (performSecondaryActivationAction && 
-										ALYSLC::UseOrTakeCompat::g_installed)
-									{
-										CSimpleIniA ini{ };
-										ini.SetUnicode();
-
-										// Import defaults.
-										const std::filesystem::path configPath = 
+									(
+										(asActor) && 
 										(
-											"Data/SKSE/Plugins/po3_UseOrTake.ini"
-										);
-										err = ini.LoadFile(configPath.c_str()); 
-										if (err == SI_OK && boundObj)
+											aimMode == AimMode::kTwinStick ||
+											asActor->GetHandle() == crosshairRefrHandle
+										)
+									) &&
+									(
+										asActor->IsHostileToActor(coopActor.get()) ||
+										asActor->IsHostileToActor(p1)
+									)
+								);
+								// Living guard with a bounty out on the player.
+								bool showSurrenderMessage = 
+								(
+									targetedHostileActor &&
+									!asActor->IsDead() &&
+									Util::IsGuard(asActor) &&
+									Util::HasBountyOnPlayer(asActor) &&
+									!coopActor->IsSneaking()
+								);
+								// Living, normally passive actor with no bounty on the player,
+								// or fleeing the player.
+								bool showStopCombatMessage = 
+								(
+									(
+										!showSurrenderMessage &&
+										targetedHostileActor &&
+										!asActor->IsDead() &&
+										!coopActor->IsSneaking()
+									) &&
+									(
+										!Util::IsGuard(asActor) &&
+										Util::CanStopCombatWithActor(asActor)
+									)
+								);
+								if (showSurrenderMessage)
+								{
+									activationMessage = fmt::format
+									(
+										"P{}: Surrender to {}",
+										playerID + 1, activationRefrPtr->GetName()
+									);
+								}
+								else if (showStopCombatMessage)
+								{
+									activationMessage = fmt::format
+									(
+										"P{}: Stop combat with {}",
+										playerID + 1, activationRefrPtr->GetName()
+									);
+								}
+								else
+								{
+									auto boundObj = activationRefrPtr->GetBaseObject();
+									// Player can activate this refr.
+									// Set activation text to the refr's name 
+									// if no text is available.
+									activationString = Util::GetActivationText
+									(
+										coopActor.get(),
+										baseObj,
+										activationRefrPtr.get(),
+										hasActivationText
+									);
+										SI_Error err = SI_OK;
+									if (hasActivationText)
+									{
+										// Show regular message for primary activation action,
+										// or custom message for secondary activation action.
+										// Full credits to po3 (must have 'Use Or Take' installed):
+										// https://github.com/powerof3/UseOrTake
+
+										RE::BSFixedString activationLabel = "Use"sv;
+										bool hasSecondaryActivation = true;
+										if (performSecondaryActivationAction && 
+											ALYSLC::UseOrTakeCompat::g_installed)
 										{
-											switch (*boundObj->formType)
-											{
-											case RE::FormType::Book:
-											case RE::FormType::Note:
-											{
-												activationLabel = "Read"sv;
-												break;
-											}
-											case RE::FormType::Armor:
-											{
-												Settings::ReadStringSetting
-												(
-													ini,
-													"Armors", 
-													"Alternate action label", 
-													activationLabel
-												);
+											CSimpleIniA ini{ };
+											ini.SetUnicode();
 
-												break;
-											}
-											case RE::FormType::Weapon:
+											// Import defaults.
+											const std::filesystem::path configPath = 
+											(
+												"Data/SKSE/Plugins/po3_UseOrTake.ini"
+											);
+											err = ini.LoadFile(configPath.c_str()); 
+											if (err == SI_OK && boundObj)
 											{
-												Settings::ReadStringSetting
-												(
-													ini,
-													"Weapons", 
-													"Alternate action label", 
-													activationLabel
-												);
-
-												break;
-											}
-											case RE::FormType::AlchemyItem:
-											{
-												// Credits to po3:
-												// https://github.com/powerof3/UseOrTake/blob/master/src/Action.cpp#L81
-												auto alchemyItem = 
-												(
-													baseObj->As<RE::AlchemyItem>()
-												);
-												if (alchemyItem->IsFood()) 
+												switch (*boundObj->formType)
 												{
-													const auto useSound = 
+												case RE::FormType::Book:
+												case RE::FormType::Note:
+												{
+													activationLabel = "Read"sv;
+													break;
+												}
+												case RE::FormType::Armor:
+												{
+													Settings::ReadStringSetting
 													(
-														alchemyItem->data.consumptionSound
-													); 
-													if (useSound && 
-														useSound->GetFormID() == 0xB6435) 
-													{  
-														Settings::ReadStringSetting
+														ini,
+														"Armors", 
+														"Alternate action label", 
+														activationLabel
+													);
+
+													break;
+												}
+												case RE::FormType::Weapon:
+												{
+													Settings::ReadStringSetting
+													(
+														ini,
+														"Weapons", 
+														"Alternate action label", 
+														activationLabel
+													);
+
+													break;
+												}
+												case RE::FormType::AlchemyItem:
+												{
+													// Credits to po3:
+													// https://github.com/powerof3/UseOrTake/blob/master/src/Action.cpp#L81
+													auto alchemyItem = 
+													(
+														baseObj->As<RE::AlchemyItem>()
+													);
+													if (alchemyItem->IsFood()) 
+													{
+														const auto useSound = 
 														(
-															ini,
-															"Potions", 
-															"Alternate action label", 
-															activationLabel
-														);
+															alchemyItem->data.consumptionSound
+														); 
+														if (useSound && 
+															useSound->GetFormID() == 0xB6435) 
+														{  
+															Settings::ReadStringSetting
+															(
+																ini,
+																"Potions", 
+																"Alternate action label", 
+																activationLabel
+															);
+														}
+														else
+														{
+															Settings::ReadStringSetting
+															(
+																ini,
+																"Potions", 
+																"Alternate action label (Food)", 
+																activationLabel
+															);
+														}
 													}
-													else
+													else if (alchemyItem->IsPoison()) 
 													{
 														Settings::ReadStringSetting
 														(
 															ini,
 															"Potions", 
-															"Alternate action label (Food)", 
+															"Alternate action label (Poison)", 
 															activationLabel
 														);
 													}
+
+													break;
 												}
-												else if (alchemyItem->IsPoison()) 
+												case RE::FormType::Ingredient:
 												{
 													Settings::ReadStringSetting
 													(
 														ini,
-														"Potions", 
-														"Alternate action label (Poison)", 
-														activationLabel
-													);
-												}
-
-												break;
-											}
-											case RE::FormType::Ingredient:
-											{
-												Settings::ReadStringSetting
-												(
-													ini,
-													"Ingredients", 
-													"Alternate action label", 
-													activationLabel
-												);
-
-												break;
-											}
-											case RE::FormType::Scroll:
-											{
-												// TODO:
-												// Equip scroll support.
-												Settings::ReadStringSetting
-												(
-													ini,
-													"Scrolls", 
-													"Alternate action label", 
-													activationLabel
-												);
-
-												// Use the scroll right away for now.
-												Settings::ReadStringSetting
-												(
-													ini,
-													"Scrolls", 
-													"Alternate secondary action label", 
-													activationLabel
-												);
-
-												break;
-											}
-											case RE::FormType::Light:
-											{
-												auto light = baseObj->As<RE::TESObjectLIGH>();
-												if (light->CanBeCarried())
-												{
-													Settings::ReadStringSetting
-													(
-														ini,
-														"Torches", 
+														"Ingredients", 
 														"Alternate action label", 
 														activationLabel
 													);
+
+													break;
 												}
+												case RE::FormType::Scroll:
+												{
+													// TODO:
+													// Equip scroll support.
+													Settings::ReadStringSetting
+													(
+														ini,
+														"Scrolls", 
+														"Alternate action label", 
+														activationLabel
+													);
 
-												break;
-											}
-											case RE::FormType::Ammo:
-											{
-												Settings::ReadStringSetting
-												(
-													ini,
-													"Ammo", 
-													"Alternate action label", 
-													activationLabel
-												);
+													// Use the scroll right away for now.
+													Settings::ReadStringSetting
+													(
+														ini,
+														"Scrolls", 
+														"Alternate secondary action label", 
+														activationLabel
+													);
 
-												break;
-											}
-											default:
-											{
-												hasSecondaryActivation = false;
-												break;
-											}
-											}
-										}
-									}
-									else
-									{
-										hasSecondaryActivation = false;
-									}
+													break;
+												}
+												case RE::FormType::Light:
+												{
+													auto light = baseObj->As<RE::TESObjectLIGH>();
+													if (light->CanBeCarried())
+													{
+														Settings::ReadStringSetting
+														(
+															ini,
+															"Torches", 
+															"Alternate action label", 
+															activationLabel
+														);
+													}
 
-									if (hasSecondaryActivation)
-									{
-										if (mustSneak)
-										{
-											activationMessage = fmt::format
-											(
-												"P{}: Sneak to "
-												"<font color=\"#FF0000\">{}</font> {}", 
-												playerID + 1, 
-												activationLabel,
-												activationRefrPtr->GetName()
-											);
+													break;
+												}
+												case RE::FormType::Ammo:
+												{
+													Settings::ReadStringSetting
+													(
+														ini,
+														"Ammo", 
+														"Alternate action label", 
+														activationLabel
+													);
+
+													break;
+												}
+												default:
+												{
+													hasSecondaryActivation = false;
+													break;
+												}
+												}
+											}
 										}
 										else
 										{
-											activationMessage = fmt::format
-											(
-												"P{}: {} {}", 
-												playerID + 1, 
-												activationLabel,
-												activationRefrPtr->GetName()
-											);
+											hasSecondaryActivation = false;
 										}
-									}
-									else
-									{
-										// Take readable objects as primary activation method.
-										if (boundObj->Is(RE::FormType::Book, RE::FormType::Note))
+
+										if (hasSecondaryActivation)
 										{
 											if (mustSneak)
 											{
 												activationMessage = fmt::format
 												(
 													"P{}: Sneak to "
-													"<font color=\"#FF0000\">take</font> {}", 
-													playerID + 1,
+													"<font color=\"#FF0000\">{}</font> {}", 
+													playerID + 1, 
+													activationLabel,
 													activationRefrPtr->GetName()
 												);
 											}
@@ -14395,131 +14388,162 @@ namespace ALYSLC
 											{
 												activationMessage = fmt::format
 												(
-													"P{}: Take {}", 
-													playerID + 1,
+													"P{}: {} {}", 
+													playerID + 1, 
+													activationLabel,
 													activationRefrPtr->GetName()
 												);
 											}
 										}
 										else
 										{
-											if (mustSneak)
-											{
-												activationMessage = fmt::format
+											// Take readable objects as primary activation method.
+											if (boundObj->Is
 												(
-													"P{}: Sneak to {}", 
-													playerID + 1, activationString
-												);
+													RE::FormType::Book, RE::FormType::Note
+												))
+											{
+												if (mustSneak)
+												{
+													activationMessage = fmt::format
+													(
+														"P{}: Sneak to "
+														"<font color=\"#FF0000\">take</font> {}", 
+														playerID + 1,
+														activationRefrPtr->GetName()
+													);
+												}
+												else
+												{
+													activationMessage = fmt::format
+													(
+														"P{}: Take {}", 
+														playerID + 1,
+														activationRefrPtr->GetName()
+													);
+												}
 											}
 											else
 											{
-												activationMessage = fmt::format
-												(
-													"P{}: {}", playerID + 1, activationString
-												);
+												if (mustSneak)
+												{
+													activationMessage = fmt::format
+													(
+														"P{}: Sneak to {}", 
+														playerID + 1, activationString
+													);
+												}
+												else
+												{
+													activationMessage = fmt::format
+													(
+														"P{}: {}", playerID + 1, activationString
+													);
+												}
 											}
 										}
 									}
-								}
-								else
-								{
-									if (mustSneak)
-									{
-										activationMessage = fmt::format
-										(
-											"P{}: Sneak to <font color=\"#FF0000\">interact</font> "
-											"with {}",
-											playerID + 1, activationRefrPtr->GetName()
-										);
-									}
-									else if (offLimits)
-									{
-										activationMessage = fmt::format
-										(
-											"P{}: <font color=\"#FF0000\">Interact</font> "
-											"with {}",
-											playerID + 1, activationRefrPtr->GetName()
-										);
-									}
 									else
 									{
+										if (mustSneak)
+										{
+											activationMessage = fmt::format
+											(
+												"P{}: Sneak to <font color=\"#FF0000\">"
+												"interact</font> with {}",
+												playerID + 1, activationRefrPtr->GetName()
+											);
+										}
+										else if (offLimits)
+										{
+											activationMessage = fmt::format
+											(
+												"P{}: <font color=\"#FF0000\">Interact</font> "
+												"with {}",
+												playerID + 1, activationRefrPtr->GetName()
+											);
+										}
+										else
+										{
+											activationMessage = fmt::format
+											(
+												"P{}: Interact with {}",
+												playerID + 1, activationRefrPtr->GetName()
+											);
+										}
+									}
+								
+									int32_t value = -1;
+									float weight = 0.0f;
+									auto asActor = activationRefrPtr->As<RE::Actor>();
+									if ((asActor && asActor->IsDead()) || 
+										(!asActor && activationRefrPtr->GetContainer()))
+									{
+										// Get total weight and value in the container.
+										Util::GetWeightAndValueInRefr
+										(
+											activationRefrPtr.get(), weight, value
+										);
+									}
+									else if (baseObj)
+									{
+										// Get weight and value for this individual refr.
+										value = baseObj->GetGoldValue();
+										weight = activationRefrPtr->GetWeight();
+									}
+
+									if (value >= 0)
+									{
+										float inventoryWeight = 
+										(
+											p->isPlayer1 ? 
+											coopActor->GetWeightInContainer() :
+											p->em->inventoryChest->GetWeightInContainer()
+										);
+										const auto invChanges = 
+										(
+											p->isPlayer1 ? 
+											coopActor->GetInventoryChanges() :
+											p->em->inventoryChest->GetInventoryChanges()
+										);
+										if (invChanges)
+										{
+											inventoryWeight = invChanges->totalWeight;
+										}
+
+										const float carryweight = coopActor->GetTotalCarryWeight();
+										float remainingCarryweight = carryweight - inventoryWeight;
+										std::string weightValue = fmt::format
+										(
+											", <font color=\"#{:X}\">Value: </font>"
+											"<font face=\"$EverywhereBoldFont\">{}</font>, "
+											"<font color=\"#{:X}\">Weight: </font>"
+											"<font face=\"$EverywhereBoldFont\">{:.0f}</font>, "
+											"<font color=\"#{:X}\">Space: </font>"
+											"<font face=\"$EverywhereBoldFont\">"
+											"<font color=\"#{:X}\">{:.0f}</font>"
+											"</font>",
+											0xBBA53D,
+											value,
+											0x999999,
+											weight,
+											0x804a00,
+											remainingCarryweight - weight <= 0.0f ? 
+											0xFF0000 : 
+											0xFFFFFF,
+											remainingCarryweight,
+											carryweight
+										);
 										activationMessage = fmt::format
 										(
-											"P{}: Interact with {}",
-											playerID + 1, activationRefrPtr->GetName()
+											"{}", std::string(activationMessage) + weightValue
 										);
 									}
 								}
-								
-								int32_t value = -1;
-								float weight = 0.0f;
-								auto asActor = activationRefrPtr->As<RE::Actor>();
-								if ((asActor && asActor->IsDead()) || 
-									(!asActor && activationRefrPtr->GetContainer()))
-								{
-									// Get total weight and value in the container.
-									Util::GetWeightAndValueInRefr
-									(
-										activationRefrPtr.get(), weight, value
-									);
-								}
-								else if (baseObj)
-								{
-									// Get weight and value for this individual refr.
-									value = baseObj->GetGoldValue();
-									weight = activationRefrPtr->GetWeight();
-								}
 
-								if (value >= 0)
-								{
-									float inventoryWeight = 
-									(
-										p->isPlayer1 ? 
-										coopActor->GetWeightInContainer() :
-										p->em->inventoryChest->GetWeightInContainer()
-									);
-									const auto invChanges = 
-									(
-										p->isPlayer1 ? 
-										coopActor->GetInventoryChanges() :
-										p->em->inventoryChest->GetInventoryChanges()
-									);
-									if (invChanges)
-									{
-										inventoryWeight = invChanges->totalWeight;
-									}
-
-									const float carryweight = coopActor->GetTotalCarryWeight();
-									float remainingCarryweight = carryweight - inventoryWeight;
-									std::string weightValue = fmt::format
-									(
-										", <font color=\"#{:X}\">Value: </font>"
-										"<font face=\"$EverywhereBoldFont\">{}</font>, "
-										"<font color=\"#{:X}\">Weight: </font>"
-										"<font face=\"$EverywhereBoldFont\">{:.0f}</font>, "
-										"<font color=\"#{:X}\">Space: </font>"
-										"<font face=\"$EverywhereBoldFont\">"
-										"<font color=\"#{:X}\">{:.0f}</font>"
-										"</font>",
-										0xBBA53D,
-										value,
-										0x999999,
-										weight,
-										0x804a00,
-										remainingCarryweight - weight <= 0.0f ? 
-										0xFF0000 : 
-										0xFFFFFF,
-										remainingCarryweight,
-										carryweight
-									);
-									activationMessage = fmt::format
-									(
-										"{}", std::string(activationMessage) + weightValue
-									);
-								}
+								// Can activate if sneaking is not required.
+								canActivateRefr = !mustSneak;
 							}
-
-							canActivateRefr = !mustSneak;
 						}
 						else
 						{

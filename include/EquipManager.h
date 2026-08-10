@@ -785,6 +785,14 @@ namespace ALYSLC
 		// Check if the player is unarmed.
 		bool IsUnarmed() const;
 
+		// Prep the player's inventory and inventory chest for co-op:
+		// 1. Clear any items that were marked as desired but are no longer in the inventory chest.
+		// 2. Remove items from the chest that are marked as equipped in the chest 
+		// 3. Move any new items in the player's inventory to the chest.
+		// 4. Remove any items in the player's inventory that are already in the chest.
+		// but are no longer in the player's inventory.
+		void PrepInventoriesForCoop();
+
 		// Re-equip all forms for this player, optionally refreshing the cached equipped state 
 		// or resetting the companion player's inventory beforehand.
 		void ReEquipAll(bool a_refreshBeforeEquipping, bool a_resetInventoryFirst = true);
@@ -995,6 +1003,8 @@ namespace ALYSLC
 		std::array<RE::TESForm*, (size_t)PlaceholderMagicIndex::kTotal> placeholderMagic;
 		// Mutex for refreshing the player's equip state.
 		std::mutex equipStateMutex;
+		// Mutex for re-equip requests.
+		std::mutex extReEquipHandFormsMutex;
 		// (Light, Heavy) armor ratings pair.
 		std::pair<float, float> armorRatings;
 		// Pair of (current cycled emote, index) 
@@ -1013,8 +1023,9 @@ namespace ALYSLC
 		std::unordered_map<RE::FormID, std::set<int8_t>> hotkeyedFormsToSlotsSetMap;
 		// List of bound object and spell forms favorited by the co-op player.
 		std::vector<RE::TESForm*> favoritedForms;
-		// Should the companion player re-equip their hand forms after teleporting to P1?
-		bool reEquipOnTeleport;
+		// Should the companion player re-equip their hand forms after this manager resumes,
+		// such as after teleporting to P1?
+		bool extReEquipHandForms;
 		// (Un)equipObject hooks should not perform their normal functions when this is set;
 		// also prevents changes to worn rank data for companion players when set to true.
 		// Bracket function calls/blocks of code with this flag set to true and then false afterward

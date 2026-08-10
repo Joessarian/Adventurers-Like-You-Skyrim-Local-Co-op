@@ -2728,8 +2728,8 @@ namespace ALYSLC
 		if (Settings::bFadeObstructions)
 		{
 			// Update fade data for handled obstructions.
-			for (auto iter = obstructionFadeDataMap.begin(); 
-				 iter != obstructionFadeDataMap.end(); ) 
+			auto iter = obstructionFadeDataMap.begin(); 
+			while (iter != obstructionFadeDataMap.end()) 
 			{
 				const auto& handled3DPtr = iter->first;
 				const auto& fadeData = iter->second;
@@ -2780,7 +2780,9 @@ namespace ALYSLC
 					shouldRemove = true;
 				}
 
-				// Only increment the iter if data was removed from the map.
+				// Only increment the iter if data was not removed from the map.
+				// Otherwise, the iter should remain where the previous data was removed
+				// since a different element may be present at that location.
 				if (shouldRemove)
 				{
 					iter = obstructionFadeDataMap.erase(iter);

@@ -4864,11 +4864,13 @@ namespace ALYSLC
 		
 		// Get the (left/right) worn rank extra data list from the given refr's inventory
 		// corresponding to the given item.
+		// Will return nullptr if not found or if checking for LH worn rank extra data
+		// for an item that must be equipped to the RH/default slot.
 		RE::ExtraDataList* GetWornRankExtraDataList
 		(
 			RE::TESObjectREFR* a_refr, 
 			RE::TESBoundObject* a_object, 
-			bool a_equipsToLH
+			bool a_checkForLHMask
 		);
 
 		// Return true if the refr has the given form 
@@ -4882,6 +4884,8 @@ namespace ALYSLC
 		// The criteria for having LOS varies if the observer is attempting
 		// select the target refr with their crosshair 
 		// or if the LOS check was requested for refr activation.
+		// Can only raycast from player's torso/camera to the target directly, 
+		// forgoing casts along the player's vertical axis.
 		// Can also check/ignore the crosshair position.
 		bool HasLOS
 		(
@@ -4890,6 +4894,7 @@ namespace ALYSLC
 			bool a_forCrosshairSelection, 
 			bool a_checkCrosshairPos, 
 			const RE::NiPoint3& a_crosshairWorldPos,
+			bool a_fewestCasts = false,
 			bool a_showDebugInfo = false
 		);
 		
@@ -4934,6 +4939,7 @@ namespace ALYSLC
 			const std::vector<RE::NiAVObject*>& a_excluded3DObjects,
 			bool a_checkCrosshairPos, 
 			const RE::NiPoint3& a_crosshairWorldPos, 
+			bool a_fewestCasts = false,
 			bool a_showDebugInfo = false
 		);
 

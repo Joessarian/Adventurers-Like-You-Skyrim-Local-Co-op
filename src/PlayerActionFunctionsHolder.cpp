@@ -2400,6 +2400,14 @@ namespace ALYSLC
 								weapType = lhWeap->GetWeaponType();
 							}
 						}
+						
+						// Stop casting before performing the killmove because the player 
+						// will otherwise continue casting for free afterwards, 
+						// even if all cast binds are released.
+						if (!a_p->isPlayer1) 
+						{
+							FinishCasting(a_p, true, true);
+						}
 
 						// Weapon killmoves only.
 						bool playWeaponKillmove = (physAttackAction && targetActorPtr->GetRace());
@@ -2551,14 +2559,6 @@ namespace ALYSLC
 						{
 							// Unarmed killmoves when casting spells at a close range target.
 							auto killmoveType = KillmoveType::kH2H;
-							// Stop casting before performing the killmove because the player 
-							// will otherwise continue casting for free afterwards, 
-							// even if all cast binds are released.
-							if (!a_p->isPlayer1) 
-							{
-								FinishCasting(a_p, true, true);
-							}
-
 							performedKillmove = PlayKillmoveFromList
 							(
 								a_p,

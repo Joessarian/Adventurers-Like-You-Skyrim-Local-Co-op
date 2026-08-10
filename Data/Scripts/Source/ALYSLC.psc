@@ -77,7 +77,6 @@ Function UnfreezeTime() Global Native
 ;=================[Utility]====================
 ;==============================================
 
-; NOTE: Unused, but keeping around for reference.
 ; Co-op players' actors will attack cancel randomly when attacking
 ; with melee weapons and also stutter step when moving at certain angles
 ; after changing cells or when summoned. 

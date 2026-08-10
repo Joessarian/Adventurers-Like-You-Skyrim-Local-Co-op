@@ -50,7 +50,6 @@ namespace ALYSLC
 				lastChosenHotkeyedForm = nullptr;
 				lastCycledIdleIndexPair = currentCycledIdleIndexPair;
 				lastCycledForm = nullptr;
-				reEquipOnTeleport = false;
 			}
 			
 			RefreshData();
@@ -88,11 +87,22 @@ namespace ALYSLC
 
 		// Must re-equip hand forms after teleporting to P1 because the game typically unequips 
 		// whatever items are in the player's hands.
-		if (reEquipOnTeleport)
+		std::unique_lock<std::mutex> lock(extReEquipHandFormsMutex, std::try_to_lock);
+		if (lock)
 		{
-			DBG("{}: Re-equip hand forms after teleporting.", coopActor->GetName());
-			ReEquipHandForms();
-			reEquipOnTeleport = false;
+			if (extReEquipHandForms)
+			{
+				DBG("{}: Re-equip hand forms on request.", coopActor->GetName());
+				ReEquipHandForms();
+				// Draw weapons/magic after re-equipping because they are sheathed 
+				// when the re-equip request is made.
+				if (!coopActor->IsWeaponDrawn())
+				{
+					p->pam->ReadyWeapon(true);
+				}
+
+				extReEquipHandForms = false;
+			}
 		}
 
 		auto ui = RE::UI::GetSingleton(); 
@@ -118,7 +128,14 @@ namespace ALYSLC
 
 	void EquipManager::PrePauseTask()
 	{
-		// No pre-state change tasks.
+		// Sheathe before awaiting refresh because the equip state can easily glitch 
+		// upon moving the companion player with MoveTo().
+		// (missing spell hand glow, casters failing to fire, stuttering animations).
+		/*if (!p->isPlayer1 && nextState == ManagerState::kAwaitingRefresh)
+		{
+			p->pam->ReadyWeapon(false);
+		}*/
+
 		return;
 	}
 
@@ -135,64 +152,10 @@ namespace ALYSLC
 				currentState == ManagerState::kAwaitingRefresh ||
 				currentState == ManagerState::kUninitialized) 
 			{
-				// Do not remove the item when unequipping because this leads to a failed transfer.
-				// So we skip processing.
+				// Do not remove items when unequipping because this leads to a failed transfer.
+				// So we skip equip processing.
 				skipEquipProcessing = true;
-				auto inventory = coopActor->GetInventory();
-				auto chestInventory = inventoryChest->GetInventory();
-				for (const auto& [boundObj, entry] : inventory)
-				{
-					if (chestInventory.find(boundObj) == chestInventory.end())
-					{
-						DBG
-						(
-							"Removing x{} {} from {} to the inventory chest.", 
-							entry.first,
-							boundObj->GetName(),
-							coopActor->GetName()
-						);
-						// Need to find out why this function causes an inconsistent freeze 
-						// if refreshing managers rapidly nd spamming attack/sheathe
-						// while bound weapons are equipped.
-						Util::MoveAllOfItem
-						(
-							coopActor.get(), 
-							inventoryChest.get(), 
-							boundObj, 
-							false,
-							entry.second->extraLists, 
-							entry.first
-						);
-
-						/*coopActor->RemoveItem
-						(
-							boundObj, 
-							entry.first,
-							RE::ITEM_REMOVE_REASON::kRemove, 
-							nullptr,
-							inventoryChest.get()
-						);*/
-					}
-					else
-					{
-						DBG
-						(
-							"Removing x{} {} from {}.", 
-							entry.first,
-							boundObj->GetName(),
-							coopActor->GetName()
-						);
-						coopActor->RemoveItem
-						(
-							boundObj, 
-							entry.first,
-							RE::ITEM_REMOVE_REASON::kRemove, 
-							nullptr,
-							nullptr
-						);
-					}
-				}
-
+				PrepInventoriesForCoop();
 				skipEquipProcessing = false;
 			}
 		}
@@ -239,9 +202,9 @@ namespace ALYSLC
 			{
 				// Re-equip all saved forms for companion players
 				// in case there was some lingering glitched equip state.
-				p->pam->ReadyWeapon(false);
+				//p->pam->ReadyWeapon(false);
 				ReEquipAll(false);
-				p->pam->ReadyWeapon(true);
+				//p->pam->ReadyWeapon(true);
 			}
 			
 			// Fixes skin glow/tone mismatches.
@@ -277,6 +240,12 @@ namespace ALYSLC
 		coopActor->SetAlpha(1.0f);
 		// Clear all lingering shader effects.
 		Util::StopAllEffectShaders(coopActor.get());
+
+		// Draw weapons/magic if data was refreshed.
+		/*if (currentState != ManagerState::kPaused)
+		{
+			p->pam->ReadyWeapon(true);
+		}*/
 	}
 
 	void EquipManager::RefreshData()
@@ -346,6 +315,15 @@ namespace ALYSLC
 		equippedQSSpellIndex = -1;
 		// Highest known shout variation for the current equipped shout.
 		highestShoutVarIndex = -1;
+
+		// Multithreaded access.
+		// Need to re-equip after refreshing all data and restarting this manager.
+		// Otherwise, spell visuals (hand glow) can bug out 
+		// until sheathing and drawing weapons again.
+		{
+			std::unique_lock<std::mutex> lock(extReEquipHandFormsMutex);
+			extReEquipHandForms = true;
+		}
 
 		// Apply serializd equip state.
 		SetInitialEquipState();
@@ -6086,6 +6064,278 @@ namespace ALYSLC
 		);
 	}
 
+	void EquipManager::PrepInventoriesForCoop()
+	{
+		// Prep the player's inventory and inventory chest for co-op:
+		// 1. Move any new items in the player's inventory to the chest.
+		// 2. Remove any items in the player's inventory that are already in the chest.
+		// 3. Clear any items that were marked as desired but are no longer in the inventory chest.
+		// 4. Remove items from the chest that are marked as equipped in the chest 
+		// but are no longer in the player's inventory.
+		
+		if (p->isPlayer1)
+		{
+			return;
+		}
+
+		// Keep desired forms in sync with chest state.
+		for (auto i = 0; i < desiredForms.size(); ++i)
+		{
+			auto form = desiredForms[i];
+			if (!form || form->As<RE::MagicItem>())
+			{
+				continue;
+			}
+
+			const auto boundObj = form->As<RE::TESBoundObject>();
+			if (!boundObj)
+			{
+				continue;
+			}
+
+			const auto wornDataLH = Util::GetWornRankExtraDataList
+			(
+				inventoryChest.get(), boundObj, true
+			);
+			const auto wornDataRH = Util::GetWornRankExtraDataList
+			(
+				inventoryChest.get(), boundObj, false
+			);
+			// Clear desired form slot because there is no longer any recorded
+			// worn extra data for this item in the player' inventory chest.
+			if (!wornDataLH && !wornDataRH)
+			{
+				DBG
+				(
+					"{}: {} is no longer marked as worn in the inventory chest. "
+					"Clearing desired form from slot {}.",
+					coopActor->GetName(), boundObj->GetName(), i
+				);
+				desiredForms[i] = nullptr;
+				desiredExtraDataLists[i] = nullptr;
+			}
+
+			DBG
+			(
+				"{}: {} has worn LH/RH data: {}, {} ({:p}, {:p}).",
+				coopActor->GetName(),
+				boundObj->GetName(),
+				(bool)wornDataLH,
+				(bool)wornDataRH,
+				fmt::ptr(wornDataLH),
+				fmt::ptr(wornDataRH)
+			);
+
+			// Check if still marked as worn and in the player's inventory,
+			// which may've changed outside of co-op.
+			// If the item no longer exists in the player's inventory,
+			// such as if it were taken by P1 while P2 is a follower,
+			// remove from the inventory chest to keep things in sync 
+			// and prevent duplicating said item when re-summoned.
+			// Also remove from desired forms list. No cheese, please.
+			bool noLongerInPlayerInventory = 
+			(
+				wornDataLH && 
+				!Util::GetWornRankExtraDataList(coopActor.get(), boundObj, true)
+			);
+			if (noLongerInPlayerInventory)
+			{
+				const auto count = wornDataLH->GetCount();
+				// Must have at least 1 in the chest.
+				if (count > 0)
+				{
+					DBG
+					(
+						"{}: {} is marked as worn LH in the inventory chest "
+						"but is no longer in the player's inventory. "
+						"Removing x{} from chest and clearing desired form from slot {}.",
+						coopActor->GetName(), boundObj->GetName(), count, i
+					);
+					// Remove 1 because the player inventory will only have at most 1 
+					// of this particular item with this extra data list.
+					// Do not want to remove all of the corresponding item from the chest.
+					inventoryChest->RemoveItem
+					(
+						boundObj, 
+						1, 
+						RE::ITEM_REMOVE_REASON::kRemove,
+						wornDataLH,
+						nullptr
+					);
+				}
+				else
+				{
+					DBG
+					(
+						"{}: {}, worn LH, has a count less than 1 ({}), not removing from chest.",
+						coopActor->GetName(), boundObj->GetName(), count
+					);
+				}
+
+				desiredForms[i] = nullptr;
+				desiredExtraDataLists[i] = nullptr;
+			}
+
+			// IMPORTANT:
+			// Do not remove the same worn data twice. 
+			// Will cause a delayed crash when loading an older save.
+			noLongerInPlayerInventory = 
+			(
+				wornDataRH && 
+				wornDataRH != wornDataLH &&
+				!Util::GetWornRankExtraDataList(coopActor.get(), boundObj, false)
+			);
+			if (noLongerInPlayerInventory)
+			{
+				const auto count = wornDataRH->GetCount();
+				// Must have at least 1 in the chest.
+				if (count > 0)
+				{
+					DBG
+					(
+						"{}: {} is marked as worn RH in the inventory chest "
+						"but is no longer in the player's inventory. "
+						"Removing x{} from chest and clearing desired form from slot {}.",
+						coopActor->GetName(), boundObj->GetName(), count, i
+					);
+					// Remove 1 because the player inventory will only have at most 1 
+					// of this particular item with this extra data list.
+					// Do not want to remove all of the corresponding item from the chest.
+					inventoryChest->RemoveItem
+					(
+						boundObj, 
+						1, 
+						RE::ITEM_REMOVE_REASON::kRemove,
+						wornDataRH,
+						nullptr
+					);
+				}
+				else
+				{
+					DBG
+					(
+						"{}: {}, worn RH, has a count less than 1 ({}), not removing from chest.",
+						coopActor->GetName(), boundObj->GetName(), count
+					);
+				}
+			
+				desiredForms[i] = nullptr;
+				desiredExtraDataLists[i] = nullptr;
+			}
+		}
+		
+		auto playerInvChanges = coopActor->GetInventoryChanges();
+		if (!playerInvChanges || !playerInvChanges->entryList)
+		{
+			return;
+		}
+
+		// Ensure the inventory chest has at least all the same items as the player's inventory.
+		// Chest item set is a superset of the player's inventory item set.
+		for (const auto entry : *playerInvChanges->entryList)
+		{
+			if (!entry)
+			{
+				continue;
+			}
+
+			auto boundObj = entry->object;
+			if (!boundObj)
+			{
+				continue;
+			}
+
+			if (Util::GetInventoryEntryDataForObject
+				(
+					inventoryChest.get(), boundObj, nullptr
+				))
+			{
+				if (entry->countDelta > 0)
+				{
+					DBG
+					(
+						"Removing x{} {} from {}.", 
+						entry->countDelta,
+						boundObj->GetName(),
+						coopActor->GetName()
+					);
+					coopActor->RemoveItem
+					(
+						boundObj, 
+						entry->countDelta,
+						RE::ITEM_REMOVE_REASON::kRemove, 
+						nullptr,
+						nullptr
+					);
+				}
+			}
+			else
+			{
+				DBG
+				(
+					"Removing x{} {} from {} to the inventory chest.", 
+					entry->countDelta,
+					boundObj->GetName(),
+					coopActor->GetName()
+				);
+				Util::MoveAllOfItem
+				(
+					coopActor.get(), 
+					inventoryChest.get(), 
+					boundObj, 
+					false,
+					entry->extraLists, 
+					entry->countDelta
+				);
+			}
+		}
+
+		// Ensure the inventory chest has at least all the same items as the player's inventory.
+		// Chest item set is a superset of the player's inventory item set.
+		/*auto inventory = coopActor->GetInventory();
+		auto chestInventory = inventoryChest->GetInventory();
+		for (const auto& [boundObj, entry] : inventory)
+		{
+			if (chestInventory.find(boundObj) == chestInventory.end())
+			{
+				DBG
+				(
+					"Removing x{} {} from {} to the inventory chest.", 
+					entry.first,
+					boundObj->GetName(),
+					coopActor->GetName()
+				);
+				Util::MoveAllOfItem
+				(
+					coopActor.get(), 
+					inventoryChest.get(), 
+					boundObj, 
+					false,
+					entry.second->extraLists, 
+					entry.first
+				);
+			}
+			else
+			{
+				DBG
+				(
+					"Removing x{} {} from {}.", 
+					entry.first,
+					boundObj->GetName(),
+					coopActor->GetName()
+				);
+				coopActor->RemoveItem
+				(
+					boundObj, 
+					entry.first,
+					RE::ITEM_REMOVE_REASON::kRemove, 
+					nullptr,
+					nullptr
+				);
+			}
+		}*/
+	}
+
 	void EquipManager::ReEquipAll(bool a_refreshBeforeEquipping, bool a_resetInventoryFirst)
 	{
 		// Re-equip all forms for this player, optionally refreshing the cached equipped state 
@@ -8151,8 +8401,6 @@ namespace ALYSLC
 		// Update initial equip state after refreshing data and before the equip manager starts.
 		// Set and equip all the serialized desired forms.
 
-		INF("{}.", coopActor->GetName());
-
 		auto& savedEquippedForms = 
 		(
 			glob.serializablePlayerData.at(coopActor->formID)->equippedForms
@@ -9846,7 +10094,6 @@ namespace ALYSLC
 			auto newEnd = std::unique(favFormsList.begin(), favFormsList.end());
 			if (newEnd != favFormsList.end())
 			{
-				uint32_t prevSize = favFormsList.size();
 				favFormsList.erase(newEnd, favFormsList.end());
 			}
 		}

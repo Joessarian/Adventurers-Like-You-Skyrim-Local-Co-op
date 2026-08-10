@@ -332,7 +332,10 @@ namespace ALYSLC
 					{
 						DBG("Moving player {} to P1.", coopActor->GetName());
 						// Signal to re-equip after resuming managers.
-						em->reEquipOnTeleport = true;
+						{
+							std::unique_lock<std::mutex> lock(em->extReEquipHandFormsMutex);
+							em->extReEquipHandForms = true;
+						}
 						// Temporary solution until I figure out what triggers 
 						// the 'character controller and 3D desync warp glitch',
 						// which occurs ~0.5 seconds after unpausing

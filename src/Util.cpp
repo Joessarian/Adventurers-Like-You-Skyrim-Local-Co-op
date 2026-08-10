@@ -5154,11 +5154,13 @@ namespace ALYSLC
 		
 		// Get the (left/right) worn rank extra data list from the given refr's inventory
 		// corresponding to the given item.
+		// Will return nullptr if not found or if checking for LH worn rank extra data
+		// for an item that must be equipped to the RH/default slot.
 		RE::ExtraDataList* GetWornRankExtraDataList
 		(
 			RE::TESObjectREFR* a_refr, 
 			RE::TESBoundObject* a_object, 
-			bool a_equipsToLH
+			bool a_checkForLHMask
 		)
 		{
 			if (!a_refr || !a_object)
@@ -5180,7 +5182,7 @@ namespace ALYSLC
 					continue;
 				}
 
-				if (entry->object == a_object)
+				if (entry->object == a_object && entry->countDelta > 0)
 				{
 					invEntryData = entry;
 					break;
@@ -5209,13 +5211,8 @@ namespace ALYSLC
 			);
 			// Should check for right hand worn rank data for certain items in the left hand,
 			// eg. shields and two handed weapons.
-			bool checkForLHMask = 
-			(
-				a_equipsToLH && 
-				equipSlot && 
-				equipSlot != glob.bothHandsEquipSlot &&
-				equipSlot != glob.shieldEquipSlot
-			);
+			// Done to match the convention for ExtraWorn and ExtraWornLeft,
+			// where shields and two-handers are given ExtraWorn data when equipped.
 			for (const auto exDataList : *invEntryData->extraLists)
 			{
 				if (!exDataList || std::distance(exDataList->begin(), exDataList->end()) == 0)
@@ -5226,8 +5223,10 @@ namespace ALYSLC
 				auto exRank = exDataList->GetByType<RE::ExtraRank>();
 				if (exRank)
 				{
-					if (((checkForLHMask) && ((exRank->rank & 0xFF000000) == 0xFF000000)) || 
-						((!checkForLHMask) && ((exRank->rank & 0x00FF0000) == 0x00FF0000)))
+					DBG("{} has rank 0x{:X}. Check for LH mask: {}", 
+						a_object->GetName(), exRank->rank, a_checkForLHMask);
+					if (((a_checkForLHMask) && ((exRank->rank & 0xFF000000) == 0xFF000000)) || 
+						((!a_checkForLHMask) && ((exRank->rank & 0x00FF0000) == 0x00FF0000)))
 					{
 						return exDataList;
 					}
@@ -5293,6 +5292,7 @@ namespace ALYSLC
 			bool a_forCrosshairSelection, 
 			bool a_checkCrosshairPos, 
 			const RE::NiPoint3& a_crosshairWorldPos,
+			bool a_fewestCasts,
 			bool a_showDebugInfo
 		)
 		{
@@ -5380,7 +5380,7 @@ namespace ALYSLC
 			if (a_forCrosshairSelection || glob.cam->camCollisions || !glob.cam->IsRunning())
 			{
 				// First, perform the less stringent P1 LOS check before raycasting.
-				bool inFrustum = false;
+				/*bool inFrustum = false;
 				if (const auto p1 = RE::PlayerCharacter::GetSingleton(); p1) 
 				{
 					if (a_showDebugInfo)
@@ -5389,7 +5389,7 @@ namespace ALYSLC
 					}
 
 					hasLOS = p1->HasLineOfSight(a_targetRefr, inFrustum);
-				}
+				}*/
 					
 				// A handful of different starting points.
 				// First, check from the camera node position.
@@ -5408,6 +5408,7 @@ namespace ALYSLC
 						excluded3DObjects, 
 						a_checkCrosshairPos, 
 						a_crosshairWorldPos,
+						a_fewestCasts,
 						a_showDebugInfo
 					);
 					if (!hasLOS) 
@@ -5427,6 +5428,7 @@ namespace ALYSLC
 								excluded3DObjects, 
 								a_checkCrosshairPos, 
 								a_crosshairWorldPos,
+								a_fewestCasts,
 								a_showDebugInfo
 							);
 						}
@@ -5465,8 +5467,9 @@ namespace ALYSLC
 				);
 				*/
 
-				// First, from the camera's node position or the collision point
-				// from the observer's LOS start position to the current camera target position.
+				// First, compute the collision point from the observer's LOS start position 
+				// to the current camera target position and then cast from there,
+				// since it is a guaranteed in-bounds position.
 				RE::NiPoint3 losCamTargetPos = playerCam->cameraRoot->world.translate;
 				auto result = Raycast::hkpCastRay
 				(
@@ -5483,6 +5486,7 @@ namespace ALYSLC
 						min(result.rayLength, glob.cam->camTargetPosHullSize)
 					);
 				}
+
 				hasLOS = HasRaycastLOSFromPos
 				(
 					losCamTargetPos, 
@@ -5490,6 +5494,7 @@ namespace ALYSLC
 					excluded3DObjects, 
 					a_checkCrosshairPos, 
 					a_crosshairWorldPos,
+					a_fewestCasts,
 					a_showDebugInfo
 				);
 				// Then check from the observer's focus point.
@@ -5507,6 +5512,7 @@ namespace ALYSLC
 						excluded3DObjects,
 						a_checkCrosshairPos, 
 						a_crosshairWorldPos,
+						a_fewestCasts,
 						a_showDebugInfo
 					);
 				}
@@ -5514,8 +5520,13 @@ namespace ALYSLC
 			
 			// As a final resort, cast along observer's vertical axis, 
 			// bound above and below to remain in traversable space.
-			if (!hasLOS && observer3DPtr)
+			if (!hasLOS && observer3DPtr && !a_fewestCasts)
 			{
+				if (a_showDebugInfo)
+				{
+					DBG("Along observer axis.");
+				}
+
 				hasLOS = HasRaycastLOSAlongObserverAxis
 				(
 					a_observer, 
@@ -5966,6 +5977,13 @@ namespace ALYSLC
 								(topScreenPosNearPlayer.z - lookingAtLoc.z)
 							)
 						);
+						DBG("Upper limit is now {}, at an offset of {} from looking at location.",
+							bounds.first, 
+							max
+							(
+								0.25f * a_observer->GetHeight(), 
+								(topScreenPosNearPlayer.z - lookingAtLoc.z)
+							));
 					}
 
 					if (unboundedDown)
@@ -6015,6 +6033,9 @@ namespace ALYSLC
 				if (unboundedUp)
 				{
 					bounds.first = lookingAtLoc.z + a_observer->GetHeight() * 0.25f;
+					DBG("Upper limit is still invalid and is now {}, "
+						"at an offset of {} from looking at location.",
+						bounds.first, 0.25f * a_observer->GetHeight());
 				}
 				
 				unboundedDown = 
@@ -6229,6 +6250,7 @@ namespace ALYSLC
 			const std::vector<RE::NiAVObject*>& a_excluded3DObjects,
 			bool a_checkCrosshairPos, 
 			const RE::NiPoint3& a_crosshairWorldPos,
+			bool a_fewestCasts,
 			bool a_showDebugInfo
 		)
 		{
@@ -6254,7 +6276,7 @@ namespace ALYSLC
 			{
 				return false;
 			}
-
+			
 			bool hasLOS = false;
 			glm::vec4 startPos = ToVec4(a_startPos);
 			std::vector<RE::FormType> filteredOutTypes{ };
@@ -6426,10 +6448,19 @@ namespace ALYSLC
 			}
 
 			//
-			// Next, the refr 3D's world position.
+			// Next, the refr 3D world bound center position.
 			//
 
-			auto refrPos2 = ToVec4(refr3DPtr->world.translate);
+			auto refrPos2 = 
+			(
+				refr3DPtr->worldBound.center.Length() == 0.0f ? 
+				ToVec4
+				(
+					a_targetRefr->data.location + 
+					RE::NiPoint3(0.0f, 0.0f, a_targetRefr->GetHeight() / 2.0f)
+				) :
+				ToVec4(refr3DPtr->worldBound.center)
+			);
 			// Cast through the target position.
 			auto dirToPos2 = 2.0f * (refrPos2 - startPos);
 			refrPos2 = startPos + dirToPos2;
@@ -6454,7 +6485,7 @@ namespace ALYSLC
 				DBG
 				(
 					"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
-					"Raycast to world translate pos: [{}] ({}, 0x{:X}, type: {:X}).",
+					"Raycast to 3D bound center position: [{}] ({}, 0x{:X}, type: {:X}).",
 					a_targetRefr->GetName(),
 					a_targetRefr->formID,
 					a_targetRefr->GetBaseObject() ? 
@@ -6499,12 +6530,17 @@ namespace ALYSLC
 			{
 				return true;
 			}
+			else if (a_fewestCasts)
+			{
+				// Skip last cast if doing the minimum number of casts.
+				return false;
+			}
 
 			//
-			// Lastly, the refr 3D's world bound center position.
+			// Lastly, the refr 3D's world position.
 			//
 
-			auto refrPos3 = ToVec4(refr3DPtr->worldBound.center);
+			auto refrPos3 = ToVec4(refr3DPtr->world.translate);
 			// Cast through the target position.
 			auto dirToPos3 = 2.0f * (refrPos3 - startPos);
 			refrPos3 = startPos + dirToPos3;
@@ -6529,7 +6565,7 @@ namespace ALYSLC
 				DBG
 				(
 					"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
-					"Raycast to 3D center pos: [{}] ({}, 0x{:X}, type: {:X}).",
+					"Raycast to 3D world position: [{}] ({}, 0x{:X}, type: {:X}).",
 					a_targetRefr->GetName(),
 					a_targetRefr->formID,
 					a_targetRefr->GetBaseObject() ? 
@@ -8119,25 +8155,21 @@ namespace ALYSLC
 			bool isATarget = false;
 
 			auto iter = combatGroup->targets.begin();
-			for (auto iter = combatGroup->targets.begin(); 
-				iter < combatGroup->targets.end(); 
-				++iter)
+			while (iter < combatGroup->targets.end())
 			{
 				if (!iter)
 				{
-					continue;
+					break;
 				}
 
 				// Remove each instance of the target actor from the targets list.
 				if (iter->targetHandle == a_targetActor->GetHandle())
 				{
 					iter = combatGroup->targets.erase(iter);
-					// If removed, decrement to maintain the same position 
-					// during the next iteration.
-					if (iter > combatGroup->targets.begin())
-					{
-						--iter;
-					}
+				}
+				else
+				{
+					++iter;
 				}
 			}
 
@@ -8172,36 +8204,34 @@ namespace ALYSLC
 			combatGroup->lock.LockForWrite();
 				
 			const bool sourceIsCoopPlayer = GlobalCoopData::IsCoopPlayer(a_sourceActor);
-			for (auto iter = combatGroup->targets.begin();
-				iter >= combatGroup->targets.begin() &&
-				iter < combatGroup->targets.end();
-				++iter)
+			auto iter = combatGroup->targets.begin();
+			while (iter < combatGroup->targets.end())
 			{
+				if (!iter)
+				{
+					break;
+				}
+
 				auto pIndex = GlobalCoopData::GetCoopPlayerIndex
 				(
 					iter->targetHandle
 				);
-				if (pIndex == -1)
-				{
-					continue;
-				}
-
-				// If removed, decrement to maintain the same position 
-				// during the next iteration.
-				if (sourceIsCoopPlayer ||
-					!Settings::vbFriendlyFire[glob.coopPlayers[pIndex]->playerID])
+				if ((pIndex != -1) && 
+					(
+						sourceIsCoopPlayer || 
+						!Settings::vbFriendlyFire[glob.coopPlayers[pIndex]->playerID]
+					))
 				{
 					iter = combatGroup->targets.erase(iter);
-					if (iter > combatGroup->targets.begin())
-					{
-						--iter;
-					}
-
 					if (!sourceIsCoopPlayer)
 					{
 						// Calm down, bud.
 						a_sourceActor->NotifyAnimationGraph("attackStop");
 					}
+				}
+				else
+				{
+					++iter;
 				}
 			}
 
@@ -8237,13 +8267,15 @@ namespace ALYSLC
 			);
 			// Should check for right hand worn rank data for certain items in the left hand,
 			// eg. shields and two handed weapons.
-			bool checkForLHMask = 
-			(
-				a_equipsToLH && 
-				equipSlot && 
-				equipSlot != glob.bothHandsEquipSlot &&
-				equipSlot != glob.shieldEquipSlot
-			);
+			// Done to match the convention for ExtraWorn and ExtraWornLeft,
+			// where shields and two-handers are given ExtraWorn data when equipped.
+			bool checkForLHMask = a_equipsToLH;
+			if ((checkForLHMask && equipSlot) && 
+				(equipSlot == glob.bothHandsEquipSlot || equipSlot == glob.shieldEquipSlot))
+			{
+				checkForLHMask = false;
+			}
+
 			auto exRank = a_list->GetByType<RE::ExtraRank>();
 			if (!exRank)
 			{
@@ -9193,9 +9225,15 @@ namespace ALYSLC
 				
 				a_actor->DrawWeaponMagicHands(false);
 				a_actor->currentProcess->SetRunOncePackage(nullptr, a_actor);
-				a_actor->currentProcess->StopCurrentIdle(a_actor, true);
-				PlayIdle("ResetRoot", a_actor);
-
+				// Only reset if not already sitting.
+				if (a_actor->currentProcess->high &&
+					a_actor->currentProcess->high->currentProcessIdle != glob.dormantStateIdle &&
+					!a_actor->IsWeaponDrawn())
+				{
+					a_actor->currentProcess->StopCurrentIdle(a_actor, true);
+					PlayIdle("ResetRoot", a_actor);
+				}
+				
 				int32_t characterID = Util::GetEditorID(actorBase).back() - '0';
 				if (characterID <= 0 || 2 * characterID + 1 >= glob.coopPackageFormlists.size())
 				{
@@ -9317,8 +9355,12 @@ namespace ALYSLC
 				
 				// Get up.
 				a_actor->currentProcess->SetRunOncePackage(nullptr, a_actor);
-				a_actor->currentProcess->StopCurrentIdle(a_actor, true);
-				PlayIdle("ResetRoot", a_actor);
+				if (!a_actor->IsWeaponDrawn())
+				{
+					a_actor->currentProcess->StopCurrentIdle(a_actor, true);
+					PlayIdle("ResetRoot", a_actor);
+				}
+
 				bool succ = a_actor->NotifyAnimationGraph("WeapEquip");
 				a_actor->actorState2.wantBlocking = 0;
 				a_actor->NotifyAnimationGraph("blockStop");

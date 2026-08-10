@@ -1141,6 +1141,8 @@ namespace ALYSLC
 		// Number of unique projectiles managed before checking for expired projectiles 
 		// to remove from the managed queue.
 		static inline const uint8_t uManagedPlayerProjectilesBeforeRemoval = 50;
+		// Maximum number of actors to check when choosing a lock on target.
+		static inline const uint8_t uMaxLockOnTargetsToCheckForLOS = 3;
 
 		//------------------
 		//[Timer Intervals]:

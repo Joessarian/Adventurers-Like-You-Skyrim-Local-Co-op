@@ -102,12 +102,8 @@ namespace ALYSLC
 			coopActor->SetAlpha(1.0f);
 		}
 
-		// Supported menu is open and controlled by this player.
-		// Since this manager pauses when the game pauses, the game must be unpaused here.
-		isControllingUnpausedMenu = 
-		(
-			!glob.menusOnlyAlwaysOpen.load() && GlobalCoopData::IsControllingMenus(playerID)
-		);
+		// First, remove any aliases that force packages onto companion players.
+		RemovePackageAliases();
 		// Make sure package stacks contain our co-op package form lists.
 		// Seems to clear when going through load doors at times.
 		if (packageStackMap.empty() || 
@@ -136,6 +132,12 @@ namespace ALYSLC
 			}
 		}
 
+		// Supported menu is open and controlled by this player.
+		// Since this manager pauses when the game pauses, the game must be unpaused here.
+		isControllingUnpausedMenu = 
+		(
+			!glob.menusOnlyAlwaysOpen.load() && GlobalCoopData::IsControllingMenus(playerID)
+		);
 		// NOTE: 
 		// Block over an interval is not in use currently.
 		if (blockAllInputActions)
@@ -1811,17 +1813,17 @@ namespace ALYSLC
 
 		coopActor->actorState1.sneaking = 0;
 		coopActor->actorState2.forceSneak = 0;
-		if (coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal &&
+		/*if (coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal &&
 			!coopActor->IsInRagdollState())
 		{
 			ReadyWeapon(false);
 			ReadyWeapon(true);
-		}
-
-		// Set player binds.
-		UpdatePlayerBinds();
+		}*/
+		
 		// Copy shared AV levels from P1 to to companion players.
 		GlobalCoopData::CopyOverSharedSkillAVs(coopActor.get());
+		// Set player binds.
+		UpdatePlayerBinds();
 		// Reset time points.
 		ResetTPs();
 
@@ -4955,24 +4957,27 @@ namespace ALYSLC
 				// but any subsequent spellcasting will trigger unarmed attacks.
 				bool performedSpellcastingUnarmedKillmove = 
 				(
-					Settings::bUseUnarmedKillmovesForSpellcasting && 
-					coopActor->IsWeaponDrawn() && 
-					reqMeleeSpellcastKillmove &&
-					!p->isTransformed
+					(p->em->GetRHSpell()) ||
+					(
+						Settings::bUseUnarmedKillmovesForSpellcasting && 
+						coopActor->IsWeaponDrawn() && 
+						reqMeleeSpellcastKillmove &&
+						!p->isTransformed
+					)
 				);
+				if (performedSpellcastingUnarmedKillmove)
+				{
+					ReadyWeapon(false);
+					ReadyWeapon(true);
+					StopCastingHandSpells();
+				}
+
 				// If the killmove fails and the victim is still in the killmove,
 				// we do not want to continue sheathing and unsheathing until 30 seconds expires,
 				// so this block will only run once, since the player will have stopped attacking
 				// once their weapons are sheathed the first time the block runs.
 				if (stillAttacking)
 				{
-					if (performedSpellcastingUnarmedKillmove)
-					{
-						ReadyWeapon(false);
-						ReadyWeapon(true);
-						StopCastingHandSpells();
-					}
-
 					// Sometimes, the aggressor's attack state does not reset to none 
 					// when the killmove finishes.
 					// Directly reset it here to ensure that the state will not linger
@@ -5981,6 +5986,162 @@ namespace ALYSLC
 		}
 
 		p->em->ReEquipHandForms();
+	}
+
+	void PlayerActionManager::RemovePackageAliases()
+	{
+		// Remove quest aliases that impose packages onto a companion player.
+		// Such aliases force packages to run, overriding ALYSLC's co-op packages
+		// and preventing actions such as spellcasting and interacting with furniture.
+
+		if (p->isPlayer1)
+		{
+			return;
+		}
+
+		// No alias to remove if there isn't an alias package running on the player.
+		auto currentAliasPackage = coopActor->CheckForCurrentAliasPackage();
+		if (!currentAliasPackage)
+		{
+			return;
+		}
+
+		// REMOVE when done debugging.
+		/*auto aliasQuest = currentAliasPackage->ownerQuest;
+		DBG
+		(
+			"Player {} is running alias package {} (0x{:X}) from quest {} (0x{:X}).",
+			coopActor->GetName(), 
+			Util::GetEditorID(currentAliasPackage),
+			currentAliasPackage->formID,
+			aliasQuest ? Util::GetEditorID(aliasQuest) : "NONE",
+			aliasQuest ? aliasQuest->formID : 0xDEAD
+		);
+		if (aliasQuest)
+		{
+			for (const auto alias : aliasQuest->aliases)
+			{
+				if (!aliasQuest || 
+					!static_cast<RE::BGSRefAlias*>(alias) ||
+					static_cast<RE::BGSRefAlias*>(alias)->GetActorReference() != 
+					coopActor.get())
+				{
+					continue;
+				}
+
+				DBG
+				(
+					"Player {} fills {} (0x{:X})'s alias {}.",
+					coopActor->GetName(), 
+					Util::GetEditorID(aliasQuest),
+					aliasQuest->formID,
+					alias->aliasName
+				);
+			}
+		}
+				
+		auto actorBase = coopActor->GetActorBase();
+		if (actorBase)
+		{
+			for (const auto package : actorBase->aiPackages.packages)
+			{
+				if (!package)
+				{
+					continue;
+				}
+
+				DBG("Player {} has actor base package {} (0x{:X}).",
+					coopActor->GetName(), Util::GetEditorID(package), package->formID);
+			}
+		}*/
+
+		auto exAliasArray = coopActor->extraList.GetByType<RE::ExtraAliasInstanceArray>(); 
+		if (exAliasArray)
+		{
+			exAliasArray->lock.LockForWrite();
+
+			auto iter = exAliasArray->aliases.begin(); 
+			while (iter < exAliasArray->aliases.end())
+			{
+				if (!iter)
+				{
+					break;
+				}
+					
+				if (!(*iter))
+				{
+					++iter;
+					continue;
+				}
+
+				auto aliasData = *iter;
+				DBG
+				(
+					"Player {} has alias from array: {} (type 0x{:X}) "
+					"from quest {} (0x{:X}).",
+					coopActor->GetName(),
+					aliasData->alias ? aliasData->alias->aliasName : "NONE",
+					aliasData->alias ? !*aliasData->alias->fillType : 0xDEAD,
+					aliasData->quest ? Util::GetEditorID(aliasData->quest) : "NONE",
+					aliasData->quest ? aliasData->quest->formID : 0xDEAD
+				);
+
+				if (aliasData->instancedPackages)
+				{
+					// REMOVE when done debugging.
+					/*for (auto package : *aliasData->instancedPackages)
+					{
+						if (!package)
+						{
+							continue;
+						}
+
+						DBG
+						(
+							"Player {}'s alias {} (type 0x{:X}) "
+							"has package {} (0x{:X}) with type {}.",
+							coopActor->GetName(),
+							aliasData->alias ? aliasData->alias->aliasName : "NONE",
+							aliasData->alias ? !*aliasData->alias->fillType : 0xDEAD,
+							Util::GetEditorID(aliasData->quest),
+							package->formID,
+							*package->packData.packType
+						);
+					}*/
+
+					DBG
+					(
+						"Player {}'s alias {} (type 0x{:X}) was cleared "
+						"since it forces packages onto the player character.",
+						coopActor->GetName(),
+						aliasData->alias ? aliasData->alias->aliasName : "NONE",
+						aliasData->alias ? !*aliasData->alias->fillType : 0xDEAD
+					);
+					// NOTE:
+					// Removing from the array appears to clear the alias.
+					// Needs further testing to see if there are any side effects 
+					// or additional steps required to clear the alias.
+					// Would rather not use the commented-out Papyrus call unless really necessary,
+					// just in case this code runs per-frame if the alias is repeatedly re-applied.
+					iter = exAliasArray->aliases.erase(iter);
+
+					/*if (aliasData->alias)
+					{
+						auto asRefAlias = static_cast<RE::BGSRefAlias*>
+						(
+							const_cast<RE::BGSBaseAlias*>(aliasData->alias)
+						);
+						Util::Papyrus::Clear(asRefAlias);
+					}*/
+				}
+				else
+				{
+					++iter;
+				}
+			}
+
+			exAliasArray->lock.UnlockForWrite();
+		}
 	}
 
 	void PlayerActionManager::ResetAllKillmoveData(const int32_t& a_targetPlayerIndex)

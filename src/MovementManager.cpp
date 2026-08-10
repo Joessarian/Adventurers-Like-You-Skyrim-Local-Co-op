@@ -3034,7 +3034,7 @@ namespace ALYSLC
 		};
 
 		// REMOVE when done debugging.
-		/*if (p->isPlayer1)
+		/*if (!p->isPlayer1)
 		{
 			DBG
 			(
@@ -3870,16 +3870,14 @@ namespace ALYSLC
 			return;
 		}
 
-		isDashDodging = isBackStepDodge = false;
 
 		// Do not stop in mid-air.
 		if (!isParagliding) 
 		{
 			// Stop sneak animation which played for the duration of the dodge.
-			if (!p->isTransformed)
+			if (!p->isTransformed && !p->pam->wantsToSneak)
 			{
-				p->pam->wantsToSneak = false;
-				bool succ = coopActor->NotifyAnimationGraph("SneakStop");
+				coopActor->NotifyAnimationGraph("SneakStop");
 			}
 
 			charController->lock.Lock();
@@ -3912,6 +3910,8 @@ namespace ALYSLC
 				actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, false, false
 			);
 		}
+
+		isDashDodging = isBackStepDodge = false;
 	}
 
 	void MovementManager::UpdateAimPitch()
