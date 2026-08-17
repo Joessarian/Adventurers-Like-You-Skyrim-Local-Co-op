@@ -250,6 +250,15 @@ namespace ALYSLC
 			const std::shared_ptr<CoopPlayer>& a_p, const SpecialActionType& a_actionType
 		);
 
+		// On press and on hold, notify the player of what form will be (un)equipped 
+		// via the given input and hotkey slot.
+		// On release, perform the equip of the item from the given slot to the equip index 
+		// given by the input action.
+		void CheckAndPerformHotkeyEquip
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, InputAction&& a_action, int32_t a_hotkeySlot
+		);
+
 		// Check if the currently targeted crosshair refr actor should be executed with a killmove,
 		// and perform the killmove if conditions are met.
 		// Return true if a killmove was performed.
@@ -272,14 +281,6 @@ namespace ALYSLC
 			RE::MagicCaster* a_caster
 		);
 
-		// Equip the cached hotkeyed item to the requested equip index.
-		void EquipHotkeyedForm
-		(
-			const std::shared_ptr<CoopPlayer>& a_p,
-			RE::TESForm* a_hotkeyedForm, 
-			EquipIndex&& a_equipIndex
-		);
-		
 		// If casting a fire and forget spell, trigger the spellcast.
 		// Otherwise, remove the LH/RH casting package from the top of the player's package stack 
 		// to stop the companion player from casting in the LH/RH.
@@ -318,14 +319,13 @@ namespace ALYSLC
 			const InputAction& a_action
 		);
 
-		// Handle a ('HotkeyEquip' bind released) hotkey equip request.
-		// Return true if the current occurring action should skip executing its perf funcs,
-		// since it is being used to equip the chosen hotkeyed item.
-		bool HandleHotkeyEquipRequest
+		// Equip the cached hotkeyed item to the requested equip index.
+		void HandleHotkeyEquip
 		(
 			const std::shared_ptr<CoopPlayer>& a_p,
-			const InputAction& a_occurringAction,
-			const PlayerActionManager::PlayerActionState& a_paState
+			RE::TESForm* a_hotkeyedForm, 
+			EquipIndex a_equipIndex,
+			bool a_shouldEquip
 		);
 
 		// Set up and run special interaction package if interacting with furniture.
@@ -373,7 +373,7 @@ namespace ALYSLC
 			const std::shared_ptr<CoopPlayer>& a_p, 
 			const InputAction& a_action
 		);
-		
+
 		// Play or stop the currently cycled emote idle.
 		void PlayEmoteIdle(const std::shared_ptr<CoopPlayer>& a_p);
 		
@@ -419,6 +419,12 @@ namespace ALYSLC
 			bool&& a_lhCast, 
 			bool&& a_rhCast,
 			bool a_actionJustSterted
+		);
+
+		// Show what form is hotkeyed at the given slot through the player's crosshair text message.
+		void ShowHotkeySlotContentsMessage
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, const int32_t& a_hotkeySlot
 		);
 		
 		// Update the target for the player's given magic caster.

@@ -667,6 +667,13 @@ namespace ALYSLC
 		// and this player's known spells/shouts to compile the list.
 		std::vector<RE::TESForm*> GetEquipableSpells(bool a_inHandSlot) const;
 		
+		// Get the equip index at which to equip the given form.
+		// Requires a preferred equip index, which will be set unless incompatible with the form.
+		EquipIndex GetEquipIndexForForm
+		(
+			RE::TESForm* a_form, const EquipIndex& a_preferredIndex
+		) const;
+
 		// Get the equip slot for the given form at the given equip index.
 		RE::BGSEquipSlot* GetEquipSlotForForm
 		(
@@ -684,6 +691,9 @@ namespace ALYSLC
 		// is the last equipable one in the lists of extra data lists,
 		// return it and set the unequip outparam to true
 		// because we need the extra data list to unequip the item before equipping something else.
+		// Also indicate whether the only owned version of the form is in the opposite hand
+		// for unequip purposes. 
+		// Such items must be unequipped from the current hand before equipping to the other hand.
 		// 
 		// Otherwise, return the next favorited extra data list that can be equipped
 		// in the given hand, and return nullptr if the given form is not favorited,
@@ -693,7 +703,8 @@ namespace ALYSLC
 		(
 			RE::TESForm* a_form, 
 			bool a_checkWornLeft, 
-			bool& a_nothingToEquip
+			bool& a_nothingToEquip,
+			bool& a_inOtherHand
 		);
 		
 		// Setup equip request by adding the item from the companion player's chest

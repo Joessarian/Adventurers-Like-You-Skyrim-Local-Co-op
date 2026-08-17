@@ -680,6 +680,43 @@ namespace ALYSLC
 			coopActor->data.angle.x = 4.0f * PI / 9.0f;
 		}
 
+		// Return true if the current occurring action should skip executing its perf funcs,
+		// since it is being used to equip the chosen hotkeyed item.
+		inline bool ShouldHandleHotkeyEquipRequest
+		(
+			const InputAction& a_occurringAction,
+			const PlayerActionManager::PlayerActionState& a_paState
+		)
+		{
+			// NOTE:
+			// Three actions' composing inputs are used to signal which slot 
+			// to equip the selected hotkeyed form into:
+			// Left Trigger -> LH
+			// Right Trigger -> RH
+			// Right Thumb -> Quick Slot
+			// 
+			// If this occurring action is not a hotkey equip action,
+			// and if the player is attempting to equip a hotkeyed form,
+			// and the occurring PA includes one of the above composing inputs,
+			// we can't perform this action.
+			return 
+			(
+				(
+					a_occurringAction != InputAction::kHotkeyEquip
+				) &&
+				(
+					(IsPerforming(InputAction::kHotkeyEquip)) &&
+					(
+						(a_paState.paParams.inputMask & (1 << !InputAction::kLT)) != 0 ||
+						(a_paState.paParams.inputMask & (1 << !InputAction::kRT)) != 0 ||
+						(
+							a_paState.paParams.inputMask & (1 << !InputAction::kRThumb)
+						) != 0
+					)
+				)
+			);
+		}
+
 		//
 		// Member funcs
 		//

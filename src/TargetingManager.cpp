@@ -2208,12 +2208,7 @@ namespace ALYSLC
 				if (shouldDraw)
 				{
 					bool falseRef = false;
-					const auto& camPos = 
-					(
-						glob.cam->IsRunning() ? 
-						glob.cam->camTargetPos : 
-						playerCam->cameraRoot->world.translate
-					);
+					const auto& camPos = glob.cam->GetCurrentPosition();
 					const auto& playerTorsoPos = p->mm->playerTorsoPosition;
 					// Condition for raycasting to check for LOS from cam to player:
 					// 1. Low visibility mode is set,
@@ -6313,6 +6308,8 @@ namespace ALYSLC
 		// FOV check(s) before settling on closest in-FOV refr.
 		// Want to restart the selection chain if LOS checks fail and targeting with the left stick,
 		// but maintain the current selection if LOS checks fail when using the right stick.
+		const auto cameraPos = glob.cam->GetCurrentPosition();
+		const auto cameraOriginPos = glob.cam->IsRunning() ? glob.cam->camOriginPoint : cameraPos;
 		RE::ObjectRefHandle closestRefrHandle = RE::ObjectRefHandle();
 		bool choseLastOption = false;
 		const float playerPixelHeight = Util::GetBoundMaxOrMinEdgeDist(coopActor.get(), true, true);
@@ -6373,8 +6370,8 @@ namespace ALYSLC
 				(
 					fabsf
 					(
-						glob.cam->camTargetPos.GetDistance(glob.cam->camOriginPoint) - 
-						glob.cam->camOriginPoint.GetDistance(Util::GetRefrPosition(refrPtr.get()))
+						cameraPos.GetDistance(cameraOriginPos) - 
+						cameraOriginPos.GetDistance(Util::GetRefrPosition(refrPtr.get()))
 					) <= 4096.0f * sqrtf(2.0f)
 				) &&
 				(
@@ -6414,10 +6411,10 @@ namespace ALYSLC
 				refrToPlayerHeightRatio >= 0.1f ?
 				refrToPlayerPixelHeightRatio > 0.1f :
 				refrToPlayerPixelHeightRatio > refrToPlayerHeightRatio,
-				glob.cam->camTargetPos.GetDistance(glob.cam->camOriginPoint),
-				glob.cam->camOriginPoint.GetDistance(Util::GetRefrPosition(refrPtr.get())),
-				glob.cam->camTargetPos.GetDistance(glob.cam->camOriginPoint) - 
-				glob.cam->camOriginPoint.GetDistance(Util::GetRefrPosition(refrPtr.get())),
+				cameraPos.GetDistance(cameraOriginPos),
+				cameraOriginPos.GetDistance(Util::GetRefrPosition(refrPtr.get())),
+				cameraPos.GetDistance(cameraOriginPos) - 
+				cameraOriginPos.GetDistance(Util::GetRefrPosition(refrPtr.get())),
 				pixelHeight >= 0.2f * playerPixelHeight,
 				pixelHeight > DebugAPI::screenResY / 60.0f
 			);
@@ -10821,13 +10818,14 @@ namespace ALYSLC
 			const auto refrPos = Util::Get3DCenterPos(closestSelectableRefrPtr.get());
 			// Alternative choice if the raycast fails to find a selectable refr,
 			// or skips over a closer selectable refr.
+			const auto camPos = glob.cam->GetCurrentPosition();
 			bool doNotUseRaycastResult = 
 			(
 				(chosenHitResultIndex == -1) ||
 				(
 					chosenResult.hit && 
-					refrPos.GetDistance(glob.cam->camTargetPos) < 
-					ToNiPoint3(chosenResult.hitPos).GetDistance(glob.cam->camTargetPos)
+					refrPos.GetDistance(camPos) < 
+					ToNiPoint3(chosenResult.hitPos).GetDistance(camPos)
 				)
 			);
 			if (doNotUseRaycastResult)

@@ -671,7 +671,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				// Return NiCamera position -> player camera position -> P1's position
+				// Return NiCamera position -> player camera position -> P1's position + height
 				// -> nothing because everything has failed.
 				if (auto niCamPtr = Util::GetNiCamera(); niCamPtr)
 				{
@@ -684,7 +684,12 @@ namespace ALYSLC
 				}
 				
 				auto p1 = RE::PlayerCharacter::GetSingleton();
-				return (p1 ? p1->data.location : RE::NiPoint3());
+				return 
+				(
+					p1 ? 
+					p1->data.location + RE::NiPoint3(0.0f, 0.0f, p1->GetHeight()) : 
+					RE::NiPoint3()
+				);
 			}
 		}
 

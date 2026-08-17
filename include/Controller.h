@@ -372,6 +372,24 @@ namespace ALYSLC
 			return !inputStatesList[a_controllerID][!a_index].isPressed;
 		}
 
+		// Returns true if the input is just released/centered on the given controller.
+		inline constexpr bool JustReleased
+		(
+			const int32_t& a_controllerID, const InputAction& a_index
+		) const
+		{
+			return inputStatesList[a_controllerID][!a_index].justReleased;
+		}
+
+		// Returns true if the input is just pressed/moved from center on the given controller.
+		inline constexpr bool JustPressed
+		(
+			const int32_t& a_controllerID, const InputAction& a_index
+		) const
+		{
+			return inputStatesList[a_controllerID][!a_index].justPressed;
+		}
+
 		// Gets input index corresponding to the given keycode.
 		// Returns invalid index if keycode is invalid or not a controller mask/dxsc.
 		inline constexpr InputAction MappedKeyCodeToInputIndex(const uint32_t& a_keyCode) const

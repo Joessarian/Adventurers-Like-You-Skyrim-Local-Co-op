@@ -17425,7 +17425,11 @@ namespace ALYSLC
 											"Setting {}'s count to {}.",
 											favoritedItem->GetName(), count
 										);
-										entryStr += " (" + std::to_string(count) + ")";
+										if (count > 1)
+										{
+											entryStr += " (" + std::to_string(count) + ")";
+										}
+
 										entryText.SetString(entryStr);
 										entry.SetMember("text", entryText);
 									}

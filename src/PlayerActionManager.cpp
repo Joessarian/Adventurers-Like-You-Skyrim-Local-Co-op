@@ -969,13 +969,10 @@ namespace ALYSLC
 					// [Special Hotkey Equip Handling]:
 					//=================================
 
-					bool isHotkeyEquipSlotSelectionBind = 
-					(
-						HelperFuncs::HandleHotkeyEquipRequest(p, action, paState)
-					);
+					bool isHotkeySlotInput = ShouldHandleHotkeyEquipRequest(action, paState);
 					// If this action is used to equip a hotkeyed item, 
 					// skip running this action's perf func(s).
-					if (isHotkeyEquipSlotSelectionBind)
+					if (isHotkeySlotInput)
 					{
 						// After updating perf stage from 'InputsPressed' to 'Starting', 
 						// in order to prevent the action from being inserted multiple times

@@ -1433,9 +1433,10 @@ namespace ALYSLC
 			// we can move on to the next weapon in the favorited weapons list; 
 			// otherwise, maintain the current weapon index.
 			bool shouldMoveToNextIndex = false;
+			bool inOtherHand = false;
 			GetNextFavoritedExDataList
 			(
-				currentCycledAmmo, false, shouldMoveToNextIndex
+				currentCycledAmmo, false, shouldMoveToNextIndex, inOtherHand
 			);
 			if (shouldMoveToNextIndex)
 			{
@@ -2169,9 +2170,10 @@ namespace ALYSLC
 			// we can move on to the next weapon in the favorited weapons list; 
 			// otherwise, maintain the current weapon index.
 			bool shouldMoveToNextIndex = false;
+			bool inOtherHand = false;
 			GetNextFavoritedExDataList
 			(
-				currentCycledWeaponForm, !a_rightHand, shouldMoveToNextIndex
+				currentCycledWeaponForm, !a_rightHand, shouldMoveToNextIndex, inOtherHand
 			);
 			if (shouldMoveToNextIndex)
 			{
@@ -3079,6 +3081,87 @@ namespace ALYSLC
 		return equipableSpells;
 	}
 
+	EquipIndex EquipManager::GetEquipIndexForForm
+	(
+		RE::TESForm* a_form, const EquipIndex& a_preferredIndex
+	) const
+	{
+		// Resolve equip slot for the given form with the requested equip index.
+
+		DBG
+		(
+			"{}: form: {}, preferred index: {}.", 
+			coopActor->GetName(),
+			a_form ? a_form->GetName() : "NONE",
+			a_preferredIndex
+		);
+
+		if (!a_form) 
+		{
+			DBG("{}: No form -> given index {}.", coopActor->GetName(), a_preferredIndex);
+			return a_preferredIndex;
+		}
+		
+		auto asEquipType = a_form->As<RE::BGSEquipType>();
+		if (!asEquipType)
+		{
+			if (a_form->As<RE::TESAmmo>())
+			{
+				DBG("{}: {} -> Ammo.", coopActor->GetName(), a_form->GetName());
+				return EquipIndex::kAmmo;
+			}
+			
+			DBG("{}: {} -> No equip type, given index {}.",
+				coopActor->GetName(), a_form->GetName(), a_preferredIndex);
+			return a_preferredIndex;
+		}
+		else if ((a_form->Is(RE::FormType::Spell, RE::FormType::Shout)) &&
+				 (
+					 a_preferredIndex != EquipIndex::kLeftHand &&
+					 a_preferredIndex != EquipIndex::kRightHand &&
+					 a_preferredIndex != EquipIndex::kVoice
+				 ))
+		{
+			DBG("{}: {} -> Quick slot spell.", coopActor->GetName(), a_form->GetName());
+			return EquipIndex::kQuickSlotSpell;
+		}
+		else if (a_form->Is(RE::FormType::Shout))
+		{
+			DBG("{}: {} -> Shout.", coopActor->GetName(), a_form->GetName());
+			return EquipIndex::kVoice;
+		}
+		else if (Util::IsConsumable(a_form))
+		{
+			DBG("{}: {} -> Quick slot item.", coopActor->GetName(), a_form->GetName());
+			return EquipIndex::kQuickSlotItem;
+		}
+		
+		auto equipSlot = glob.eitherHandEquipSlot;
+		if (asEquipType->equipSlot == glob.bothHandsEquipSlot)
+		{
+			DBG
+			(
+				"{}: {} -> Two handed form, right hand.",
+				coopActor->GetName(), a_form->GetName()
+			);
+			return EquipIndex::kRightHand;
+		}
+		else if (asEquipType->equipSlot == glob.shieldEquipSlot)
+		{
+			DBG("{}: {} -> Shield form, left hand.", coopActor->GetName(), a_form->GetName());
+			return EquipIndex::kLeftHand;
+		}
+		else if (asEquipType->equipSlot == glob.voiceEquipSlot)
+		{
+			DBG("{}: {} -> Voice form, voice slot.", coopActor->GetName(), a_form->GetName());
+			return EquipIndex::kVoice;
+		}
+		
+		DBG("{}: {} -> Other form, given index: {}.", 
+			coopActor->GetName(), a_form->GetName(), a_preferredIndex);
+		return a_preferredIndex;
+	}
+
 	RE::BGSEquipSlot* EquipManager::GetEquipSlotForForm
 	(
 		RE::TESForm* a_form, const EquipIndex& a_index
@@ -3483,7 +3566,7 @@ namespace ALYSLC
 
 	RE::ExtraDataList* EquipManager::GetNextFavoritedExDataList
 	(
-		RE::TESForm* a_form, bool a_checkWornLeft, bool& a_shouldUnequip
+		RE::TESForm* a_form, bool a_checkWornLeft, bool& a_shouldUnequip, bool& a_inOtherHand
 	)
 	{
 		// Used to cycle-equip favorited items that have multiple favorited extra data lists.
@@ -3502,7 +3585,9 @@ namespace ALYSLC
 		// in the given hand, and return nullptr if the given form is not favorited,
 		// or if there are no additional favorited extra data lists 
 		// in the item's list of extra data lists.
-
+		
+		// Set to true if there is a favorited list equipped in the other hand.
+		a_inOtherHand = false;
 		// No form given, so unequip is desired.
 		if (!a_form)
 		{
@@ -3517,8 +3602,6 @@ namespace ALYSLC
 			return nullptr;
 		}
 
-		// Set to true if there is a favorited list equipped in the other hand.
-		bool equippedToOtherHand = false;
 		auto equipType = a_form->As<RE::BGSEquipType>();
 		// Check only if the item is a one handed weapon.
 		// Two handers and shields receive ExtraWorn data not ExtraWornLeft data when equipped.
@@ -3597,7 +3680,7 @@ namespace ALYSLC
 					{
 						DBG("{}: {}: IN THE OTHER HAND: {:p}.", 
 							coopActor->GetName(), boundObj->GetName(), fmt::ptr(extraDataList));
-						equippedToOtherHand = true;
+						a_inOtherHand = true;
 						continue;
 					}
 				}
@@ -3626,7 +3709,7 @@ namespace ALYSLC
 					{
 						DBG("{}: {}: IN THE OTHER HAND: {:p}.", 
 							coopActor->GetName(), boundObj->GetName(), fmt::ptr(extraDataList));
-						equippedToOtherHand = true;
+						a_inOtherHand = true;
 						continue;
 					}
 				}
@@ -3672,7 +3755,7 @@ namespace ALYSLC
 				a_shouldUnequip = false;
 				return firstUnequippedFavList;
 			}
-			else if (equippedToOtherHand)
+			else if (a_inOtherHand)
 			{
 				DBG("{}: {}: SHOULD UNEQUIP, only available list is in the other hand.", 
 					coopActor->GetName(), boundObj->GetName(), fmt::ptr(firstUnequippedFavList));
@@ -5983,7 +6066,15 @@ namespace ALYSLC
 			return false;
 		}
 
-		if (!a_form->As<RE::TESBoundObject>() && equippedFormFIDs.contains(a_form->formID))
+		bool nonPhysFormEquipped = 
+		(
+			(
+				!a_form->As<RE::TESBoundObject>() || 
+				a_form->Is(RE::FormType::Spell, RE::FormType::Shout)
+			) && 
+			(equippedFormFIDs.contains(a_form->formID))
+		);
+		if (nonPhysFormEquipped)
 		{
 			return true;
 		}
@@ -9157,6 +9248,14 @@ namespace ALYSLC
 		// No item is equipped at such an index. What are you thinking, melad?
 		if (a_equipIndex == EquipIndex::kNone)
 		{
+			return;
+		}
+		else if (a_equipIndex == EquipIndex::kQuickSlotItem ||
+				 a_equipIndex == EquipIndex::kQuickSlotSpell)
+		{
+			// Just clear out the equipped/desired equipped forms slots since these forms 
+			// were never 'equipped' by the game.
+			desiredForms[!a_equipIndex] = equippedForms[!a_equipIndex] = nullptr;
 			return;
 		}
 
