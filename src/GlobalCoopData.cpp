@@ -112,6 +112,19 @@ namespace ALYSLC
 				"Have fun!"
 			);
 		}
+
+		if (ALYSLC::RaceMenuCompat::g_installed)
+		{
+			for (const auto playerActorPtr : glob.coopPlayerCharacters)
+			{
+				if (!playerActorPtr)
+				{
+					continue;
+				}
+
+				LoadOrSaveRaceMenuPreset(playerActorPtr.get(), true);
+			}
+		}
 	}
 
 	//=============================================================================================
@@ -3887,17 +3900,6 @@ namespace ALYSLC
 					"No preset found for {} on save {}.",
 					a_playerActor->GetName(), saveMgr->lastFileName
 				);
-				// Notify the player that there is no preset to import.
-				RE::DebugNotification
-				(
-					fmt::format
-					(
-						"[ALYSLC] No RaceMenu preset for {} on this save file.",
-						a_playerActor->GetName()
-					).c_str()
-				);
-				RE::DebugNotification("[ALYSLC] Use the Debug Menu to import an existing one.");
-				RE::DebugNotification("[ALYSLC] Or create one through the Summoning Menu.");
 				return;
 			}
 

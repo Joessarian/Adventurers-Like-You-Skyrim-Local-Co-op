@@ -6119,7 +6119,7 @@ namespace ALYSLC
 					a_fromCurrentTarget,
 					screenTargetingAngle,
 					worldTargetingAngle,
-					Settings::vfAimCorrectionFOV[playerID],
+					PI / 2.0f,
 					Settings::fMaxRaycastAndZoomOutDistance,
 					angDistFactor,
 					inRangeAndFOV
@@ -6156,7 +6156,7 @@ namespace ALYSLC
 						a_fromCurrentTarget,
 						screenTargetingAngle,
 						worldTargetingAngle,
-						Settings::vfAimCorrectionFOV[playerID],
+						PI / 2.0f,
 						Settings::fMaxRaycastAndZoomOutDistance,
 						angDistFactor,
 						inRangeAndFOV
@@ -6236,7 +6236,7 @@ namespace ALYSLC
 						false,
 						screenTargetingAngle,
 						worldTargetingAngle,
-						Settings::vfAimCorrectionFOV[playerID],
+						PI / 2.0f,
 						maxCheckDist,
 						angDistFactor,
 						inRangeAndFOV
@@ -6275,7 +6275,7 @@ namespace ALYSLC
 						false,
 						screenTargetingAngle,
 						worldTargetingAngle,
-						Settings::vfAimCorrectionFOV[playerID],
+						PI / 2.0f,
 						maxCheckDist,
 						angDistFactor,
 						inRangeAndFOV
@@ -9396,9 +9396,7 @@ namespace ALYSLC
 			coopActor->GetName(),
 			a_sourceRefr->GetName(),
 			a_targetRefr->GetName(),
-			!isSourceOnScreen || 
-			!isTargetOnScreen || 
-			!Settings::vbScreenspaceBasedAimCorrectionCheck[playerID] ? 
+			!isSourceOnScreen || !isTargetOnScreen || !a_preferScreenspaceSelection ? 
 			"WORLDSPACE" :
 			"SCREENSPACE",
 			targetingAngle * TO_DEGREES, 
@@ -9411,7 +9409,7 @@ namespace ALYSLC
 		);
 	
 		// REMOVE when done debugging.
-		/*if (a_isScreenspaceTargetingAngle)
+		/*if (a_preferScreenspaceSelection)
 		{
 			glm::vec2 sourceScreenVec = glm::vec2(sourceScreenPos.x, sourceScreenPos.y);
 			DebugAPI::ClampPointToScreen(sourceScreenVec);
@@ -9456,8 +9454,8 @@ namespace ALYSLC
 			);
 			dir = glm::vec2
 			(
-				cosf(a_targetingAngle),
-				sinf(a_targetingAngle)
+				cosf(a_worldTargetingAngle),
+				sinf(a_worldTargetingAngle)
 			);
 			DebugAPI::QueueArrow2D
 			(
@@ -9512,7 +9510,10 @@ namespace ALYSLC
 				sourcePosVec,
 				sourcePosVec + 
 				100.0f * 
-				ToVec3(Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(a_targetingAngle))),
+				ToVec3
+				(
+					Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(a_worldTargetingAngle))
+				),
 				Settings::vuCrosshairOuterOutlineRGBAValues[playerID],
 				2.0f,
 				2.0f,

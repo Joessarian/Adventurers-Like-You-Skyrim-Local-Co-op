@@ -6168,6 +6168,72 @@ namespace ALYSLC
 		{
 			return;
 		}
+		
+		// IMPORTANT: 
+		// Do not remove items from the inventory
+		// while iterating through the inventory change's entry list.
+		// Will skip over entries.
+		// Also, do not remove items from the inventory while iterating 
+		// through GetInventory()'s inventory map because this can lead to crashes
+		// from accessing invalid pointers.
+		// 
+		// Ensure the inventory chest has at least all the same items as the player's inventory.
+		// Chest item set is a superset of the player's inventory item set.
+
+		// Add new items that the player character received outside co-op to the inventory chest.
+		auto playerInvChanges = coopActor->GetInventoryChanges();
+		if (playerInvChanges && playerInvChanges->entryList)
+		{
+			std::vector<RE::InventoryEntryData*> entriesToRemove{ };
+			for (auto entry : *playerInvChanges->entryList)
+			{
+				if (!entry)
+				{
+					continue;
+				}
+
+				auto boundObj = entry->object;
+				if (!boundObj)
+				{
+					continue;
+				}
+
+				DBG("BEFORE: {} has x{} {}.",
+					coopActor->GetName(), entry->countDelta, boundObj->GetName());
+				if (!Util::GetInventoryEntryDataForObject
+					(
+						inventoryChest.get(), boundObj, nullptr
+					))
+				{
+					entriesToRemove.emplace_back(entry);
+				}
+			}
+
+			for (const auto entry : entriesToRemove)
+			{
+				if (!entry || !entry->object)
+				{
+					continue;
+				}
+
+				DBG
+				(
+					"Removing x{} {} from {} to the inventory chest.", 
+					entry->countDelta,
+					entry->object->GetName(),
+					coopActor->GetName()
+				);
+				Util::MoveAllOfItem
+				(
+					coopActor.get(), 
+					inventoryChest.get(), 
+					entry->object, 
+					false,
+					entry->extraLists, 
+					entry->countDelta
+				);
+			}
+		}
 
 		// Keep desired forms in sync with chest state.
 		for (auto i = 0; i < desiredForms.size(); ++i)
@@ -6179,7 +6245,7 @@ namespace ALYSLC
 			}
 
 			const auto boundObj = form->As<RE::TESBoundObject>();
-			if (!boundObj)
+			if (!boundObj || form->Is(RE::FormType::Spell, RE::FormType::Shout))
 			{
 				continue;
 			}
@@ -6227,7 +6293,7 @@ namespace ALYSLC
 			bool noLongerInPlayerInventory = 
 			(
 				wornDataLH && 
-				!Util::GetWornRankExtraDataList(coopActor.get(), boundObj, true)
+				!Util::FindMatchingExtraDataList(coopActor.get(), boundObj, wornDataLH)
 			);
 			if (noLongerInPlayerInventory)
 			{
@@ -6274,7 +6340,7 @@ namespace ALYSLC
 			(
 				wornDataRH && 
 				wornDataRH != wornDataLH &&
-				!Util::GetWornRankExtraDataList(coopActor.get(), boundObj, false)
+				!Util::FindMatchingExtraDataList(coopActor.get(), boundObj, wornDataRH)
 			);
 			if (noLongerInPlayerInventory)
 			{
@@ -6314,117 +6380,56 @@ namespace ALYSLC
 				desiredExtraDataLists[i] = nullptr;
 			}
 		}
-		
-		auto playerInvChanges = coopActor->GetInventoryChanges();
-		if (!playerInvChanges || !playerInvChanges->entryList)
+
+		// Remove items that are already present in the inventory chest from the player.
+		playerInvChanges = coopActor->GetInventoryChanges();
+		if (playerInvChanges && playerInvChanges->entryList)
 		{
-			return;
-		}
-
-		// Ensure the inventory chest has at least all the same items as the player's inventory.
-		// Chest item set is a superset of the player's inventory item set.
-		for (const auto entry : *playerInvChanges->entryList)
-		{
-			if (!entry)
+			std::vector<RE::InventoryEntryData*> entriesToRemove{ };
+			for (auto entry : *playerInvChanges->entryList)
 			{
-				continue;
-			}
-
-			auto boundObj = entry->object;
-			if (!boundObj)
-			{
-				continue;
-			}
-
-			if (Util::GetInventoryEntryDataForObject
-				(
-					inventoryChest.get(), boundObj, nullptr
-				))
-			{
-				if (entry->countDelta > 0)
+				if (!entry)
 				{
-					DBG
+					continue;
+				}
+
+				auto boundObj = entry->object;
+				if (!boundObj)
+				{
+					continue;
+				}
+
+				DBG("AFTER: {} has x{} {}.",
+					coopActor->GetName(), entry->countDelta, boundObj->GetName());
+				if (entry->countDelta > 0 && 
+					Util::GetInventoryEntryDataForObject
 					(
-						"Removing x{} {} from {}.", 
-						entry->countDelta,
-						boundObj->GetName(),
-						coopActor->GetName()
-					);
-					coopActor->RemoveItem
-					(
-						boundObj, 
-						entry->countDelta,
-						RE::ITEM_REMOVE_REASON::kRemove, 
-						nullptr,
-						nullptr
-					);
+						inventoryChest.get(), boundObj, nullptr
+					))
+				{
+					entriesToRemove.emplace_back(entry);
 				}
 			}
-			else
-			{
-				DBG
-				(
-					"Removing x{} {} from {} to the inventory chest.", 
-					entry->countDelta,
-					boundObj->GetName(),
-					coopActor->GetName()
-				);
-				Util::MoveAllOfItem
-				(
-					coopActor.get(), 
-					inventoryChest.get(), 
-					boundObj, 
-					false,
-					entry->extraLists, 
-					entry->countDelta
-				);
-			}
-		}
 
-		// Ensure the inventory chest has at least all the same items as the player's inventory.
-		// Chest item set is a superset of the player's inventory item set.
-		/*auto inventory = coopActor->GetInventory();
-		auto chestInventory = inventoryChest->GetInventory();
-		for (const auto& [boundObj, entry] : inventory)
-		{
-			if (chestInventory.find(boundObj) == chestInventory.end())
+			for (const auto entry : entriesToRemove)
 			{
-				DBG
-				(
-					"Removing x{} {} from {} to the inventory chest.", 
-					entry.first,
-					boundObj->GetName(),
-					coopActor->GetName()
-				);
-				Util::MoveAllOfItem
-				(
-					coopActor.get(), 
-					inventoryChest.get(), 
-					boundObj, 
-					false,
-					entry.second->extraLists, 
-					entry.first
-				);
-			}
-			else
-			{
-				DBG
-				(
-					"Removing x{} {} from {}.", 
-					entry.first,
-					boundObj->GetName(),
-					coopActor->GetName()
-				);
+				if (!entry || !entry->object)
+				{
+					continue;
+				}
+					
+				DBG("Removing x{} {} from {}.", 
+					entry->countDelta, entry->object->GetName(), coopActor->GetName());
 				coopActor->RemoveItem
 				(
-					boundObj, 
-					entry.first,
+					entry->object, 
+					entry->countDelta,
 					RE::ITEM_REMOVE_REASON::kRemove, 
 					nullptr,
 					nullptr
 				);
 			}
-		}*/
+		}
 	}
 
 	void EquipManager::ReEquipAll(bool a_refreshBeforeEquipping, bool a_resetInventoryFirst)

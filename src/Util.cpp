@@ -5380,7 +5380,7 @@ namespace ALYSLC
 			if (a_forCrosshairSelection || glob.cam->camCollisions || !glob.cam->IsRunning())
 			{
 				// First, perform the less stringent P1 LOS check before raycasting.
-				/*bool inFrustum = false;
+				bool inFrustum = false;
 				if (const auto p1 = RE::PlayerCharacter::GetSingleton(); p1) 
 				{
 					if (a_showDebugInfo)
@@ -5389,7 +5389,7 @@ namespace ALYSLC
 					}
 
 					hasLOS = p1->HasLineOfSight(a_targetRefr, inFrustum);
-				}*/
+				}
 					
 				// A handful of different starting points.
 				// First, check from the camera node position.

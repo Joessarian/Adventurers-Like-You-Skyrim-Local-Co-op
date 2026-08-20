@@ -524,7 +524,8 @@ namespace ALYSLC
 		// Must set P1's DID again just in case P! wasn't using a controller before,
 		// otherwise, triggering the summoning menu while in co-op and re-summoning players
 		// will cause P1 to control multiple players.
-		if (glob.coopSessionActive && activeControllerCount > oldControllerCount)
+		if ((glob.coopSessionActive && activeControllerCount > oldControllerCount) ||
+			(glob.isSummoningPlayers && activeControllerCount != oldControllerCount))
 		{
 			DBG
 			(
@@ -541,8 +542,19 @@ namespace ALYSLC
 				).data()
 			);
 			GlobalCoopData::StopCoopSession(false, true);
-			// Must re-assign P1 device ID upon re-summoning.
+			// Must re-assign P1 device ID.
 			glob.player1DID = -1;
+			// Prompt directly if in the process of summoning players.
+			if (glob.isSummoningPlayers)
+			{
+				glob.taskRunner->AddTask
+				(
+					"GLOB Runner",
+					__FUNCTION__,
+					[]() { GlobalCoopData::PromptForPlayer1CIDTask(); }
+				);
+			}
+
 			return;
 		}
 
