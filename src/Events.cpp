@@ -45,11 +45,11 @@ namespace ALYSLC
 		// Register form delete event handler.
 		//CoopFormDeleteEventHandler::Register();
 		// Register actor kill event handler.
-		//CoopActorKillEventHandler::Register();
+		CoopActorKillEventHandler::Register();
 		// Register combat event handler.
 		//CoopCombatEventHandler::Register();
 		// Register death event handler.
-		//CoopDeathEventHandler::Register();
+		CoopDeathEventHandler::Register();
 
 		INF("Event registration complete.");
 	}
@@ -120,6 +120,25 @@ namespace ALYSLC
 			"NONE",
 			a_actorKillEvent->victim ? a_actorKillEvent->victim->GetName() : "NONE"
 		);
+		
+		if (glob.globalDataInit && 
+			glob.coopSessionActive &&
+			a_actorKillEvent->victim &&
+			ALYSLC::KillFeedCompat::g_installed)
+		{
+			// Killing player is saved as owner of the dead actor
+			// in HandleHealthDamage() before the killing blow is struck.
+			auto killer = a_actorKillEvent->victim->extraList.GetOwner();
+			if (killer && 
+				!killer->IsPlayerRef() &&
+				GlobalCoopData::IsCoopPlayer(killer) &&
+				a_actorKillEvent->killer && 
+				a_actorKillEvent->killer->IsPlayerRef())
+			{
+				DBG("Ignoring P1 as killer.");
+				return EventResult::kStop;
+			}
+		}
 
 		return EventResult::kContinue;
 	}
@@ -703,25 +722,53 @@ namespace ALYSLC
 	)
 	{
 		// Purely for debugging purposes right now.
-		DBG
-		(
-			"Death Event: {}, killed by death, I mean, erm... by {}. "
-			"Is dead: {}, essential flag set: {}, {}",
-			a_deathEvent->actorDying ? a_deathEvent->actorDying->GetName() : "N/A",
-			a_deathEvent->actorKiller ? a_deathEvent->actorKiller->GetName() : "N/A",
-			a_deathEvent->actorDying->IsDead(),
-			a_deathEvent->actorDying->As<RE::Actor>()->GetActorBase() ?
-			a_deathEvent->actorDying->As<RE::Actor>()->GetActorBase()->actorData.actorBaseFlags.all
+		if (a_deathEvent->actorDying)
+		{
+			const auto actorDying = a_deathEvent->actorDying;
+			DBG
 			(
-				RE::ACTOR_BASE_DATA::Flag::kEssential
-			) :
-			false,
-			a_deathEvent->actorDying->As<RE::Actor>()->boolFlags.all
-			(
-				RE::Actor::BOOL_FLAGS::kEssential
-			)
-		);
+				"Death Event: {}, killed by death, I mean, erm... by {} ({}). "
+				"Is dead: {}, essential flag set: {}, {}",
+				actorDying->GetName(),
+				a_deathEvent->actorKiller ? a_deathEvent->actorKiller->GetName() : "N/A",
+				actorDying->As<RE::Actor>() &&
+				actorDying->As<RE::Actor>()->GetKiller() ?
+				actorDying->As<RE::Actor>()->GetKiller()->GetName() :
+				"NONE",
+				actorDying->IsDead(),
+				actorDying->As<RE::Actor>()->GetActorBase() ?
+				actorDying->As<RE::Actor>()->GetActorBase()->actorData.actorBaseFlags.all
+				(
+					RE::ACTOR_BASE_DATA::Flag::kEssential
+				) :
+				false,
+				actorDying->As<RE::Actor>()->boolFlags.all(RE::Actor::BOOL_FLAGS::kEssential)
+			);
 
+			if (glob.globalDataInit && 
+				glob.coopSessionActive && 
+				ALYSLC::KillFeedCompat::g_installed)
+			{
+				// Killing player is saved as owner of the dead actor
+				// in HandleHealthDamage() before the killing blow is struck.
+				auto killer =
+				(
+					actorDying->As<RE::Actor>() ? 
+					actorDying->As<RE::Actor>()->extraList.GetOwner():
+					nullptr
+				);
+				if (killer && 
+					!killer->IsPlayerRef() &&
+					GlobalCoopData::IsCoopPlayer(killer) &&
+					a_deathEvent->actorKiller && 
+					a_deathEvent->actorKiller->IsPlayerRef())
+				{
+					DBG("Ignoring P1 as killer.");
+					return EventResult::kStop;
+				}
+			}
+		}
+		
 		return EventResult::kContinue;
 	}
 
@@ -1667,6 +1714,8 @@ namespace ALYSLC
 			flags.reset(RE::TESHitEvent::Flag::kSneakAttack);
 			// Remove our additional hit flags (bonk, slap, and splat starting at 1 << 4).
 			flags = static_cast<RE::TESHitEvent::Flag>((!(*flags) & ((1 << 4) - 1)));
+			DBG("Sending 'blame' hit event for P1: {} -> {}.",
+				p->coopActor->GetName(), a_hitEvent->target->GetName());
 			Util::SendHitEvent
 			(
 				glob.player1Actor.get(),

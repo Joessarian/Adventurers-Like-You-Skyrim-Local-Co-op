@@ -3133,39 +3133,49 @@ namespace ALYSLC
 						addDestructionXP(qsSpellForm);
 					}
 				}
-
+				
+				DBG("{}'s health is {}. Life state: {}. Killer: {}.",
+					a_this->GetName(),
+					a_this->GetActorValue(RE::ActorValue::kHealth),
+					a_this->GetLifeState(),
+					a_this->myKiller.get() ? a_this->myKiller.get()->GetName() : "NONE");
 				// Killed by co-op player.
 				auto p1 = RE::PlayerCharacter::GetSingleton(); 
 				if (p1 &&
 					!a_this->IsEssential() &&
-					a_this->GetActorValue(RE::ActorValue::kHealth) <= 0.0f)
+					!a_this->IsDead() &&
+					a_this->GetLifeState() == RE::ACTOR_LIFE_STATE::kAlive &&
+					a_this->GetActorValue(RE::ActorValue::kHealth) <= 0.0f &&
+					a_this->extraList.GetOwner() != p->coopActor.get())
 				{
-					// NOTE: 
-					// Enderal treats dead actors without an associated killer
-					// as killed by P1, so clear out the handle here 
-					// to get XP from killing this actor.
-					// Setting directly to P1 does not properly grant XP for some reason.
+					DBG("{} killed by {}.", a_this->GetName(), p->coopActor->GetName());
 					a_this->boolBits.set(RE::Actor::BOOL_BITS::kMurderAlarm);
-					if (ALYSLC::EnderalCompat::g_installed) 
+					// Use extra data to store the real killer, 
+					// since P1 takes the blame for any co-op companion kills.
+					// Use owner exData to keep track of killer.
+					a_this->extraList.SetOwner(p->coopActor.get());
+					a_this->myKiller = p->coopActor.get();
+					_HandleHealthDamage(a_this, a_attacker, a_damage);
+					// Send a replacement death event to ensure KillFeed 
+					// treats the companion player as the killer.
+					if (!p->isPlayer1)
 					{
-						a_this->KillImpl(p->coopActor.get(), FLT_MAX, false, false);
-						a_this->myKiller = p->coopActor.get();
-					}
-					else
-					{
-						a_this->KillImpl(p1, FLT_MAX, false, false);
-						a_this->myKiller = p1;
+						if (ALYSLC::KillFeedCompat::g_installed)
+						{
+							Util::SendDeathEvent(p->coopActor.get(), a_this);
+						}
+						
+						// SIDE NOTE: 
+						// Enderal treats dead actors without an associated killer
+						// as killed by P1.
+						// Setting directly to P1 does not properly grant XP for some reason.
+						if (ALYSLC::EnderalCompat::g_installed)
+						{
+							a_this->myKiller = RE::ActorHandle();
+						}
 					}
 
-					// Have to store info to give the killer player first rights 
-					// to loot the corpse with the QuickLoot menu.
-					if (ALYSLC::QuickLootCompat::g_installed)
-					{
-						// Use extra data to store the real killer, 
-						// since P1 takes the blame for any co-op companion kills.
-						// Use owner exData to keep track of killer.
-						a_this->extraList.SetOwner(p->coopActor.get());
-					}
+					return;
 				}
 			}
 
@@ -4125,6 +4135,28 @@ namespace ALYSLC
 			
 
 			DBG("SKIP: {}, leveled only: {}", a_this->GetName(), a_leveledOnly);
+		}
+
+		void CharacterHooks::Resurrect
+		(
+			RE::Character* a_this, bool a_resetInventory, bool a_attach3D
+		)
+		{
+			if (glob.globalDataInit && glob.allPlayersInit && glob.coopSessionActive)
+			{
+				// Should remove player owner because the HandleHealthDamage() Kill Feed check 
+				// will only send a death event if the dying actor's killer (owner) 
+				// is not recorded as a player.
+				if (!GlobalCoopData::IsCoopPlayer(a_this) && 
+					GlobalCoopData::IsCoopCharacter(a_this->extraList.GetOwner()))
+				{
+					DBG("Clear {}'s owner ({}) on resurrect.", 
+						a_this->GetName(), Util::GetEditorID(a_this->extraList.GetOwner()));
+					a_this->extraList.SetOwner(nullptr);
+				}
+			}
+
+			return _Resurrect(a_this, a_resetInventory, a_attach3D);
 		}
 
 		void CharacterHooks::SetCurrentScene(RE::Character* a_this, RE::BGSScene* a_scene)
@@ -14114,6 +14146,16 @@ namespace ALYSLC
 					// Direct at crosshair position offset from the target refr.
 					aimTargetPos += a_p->tm->crosshairLocalPosOffset;
 				}
+
+				if (targetActorValidity)
+				{
+					// Underlying end position when directing the released refr 
+					// is at the closest capsule axis position.
+					aimTargetPos = Util::GetClosestRefrCapsuleAxisPointToPos
+					(
+						targetActorPtr.get(), aimTargetPos
+					);
+				}
 			}
 			
 			// Saved pitch/yaw at launch.
@@ -14753,11 +14795,14 @@ namespace ALYSLC
 			if (targetActorValidity) 
 			{
 				// Aim at the locally offset crosshair hit position from the target actor's torso.
-				aimTargetPos = 
+				// Underlying end position when directing the released refr 
+				// is at the closest capsule axis position.
+				aimTargetPos = Util::GetClosestRefrCapsuleAxisPointToPos
 				(
-					Util::GetTorsoPosition(targetActorPtr.get()) + 
-					a_p->tm->crosshairLocalPosOffset
+					targetActorPtr.get(), 
+					Util::GetTorsoPosition(targetActorPtr.get()) + a_p->tm->crosshairLocalPosOffset
 				);
+
 				projectile->desiredTarget = targetActorHandle;
 			}
 			else if (a_p->tm->crosshairActive)

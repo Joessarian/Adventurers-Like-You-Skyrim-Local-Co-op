@@ -3983,6 +3983,29 @@ namespace ALYSLC
 			critEvent.reset();
 		}
 
+		// Send a death event constructed with the given killer and victim.
+		inline void SendDeathEvent(RE::TESObjectREFR* a_killer, RE::TESObjectREFR* a_victim)
+		{
+			auto sesh = RE::ScriptEventSourceHolder::GetSingleton();
+			if (!sesh)
+			{
+				return;
+			}
+			
+			// Construct and send event.
+			std::unique_ptr<RE::TESDeathEvent> deathEvent = std::make_unique<RE::TESDeathEvent>();
+			std::memset(deathEvent.get(), 0, sizeof(RE::TESDeathEvent));
+			if (deathEvent)
+			{
+				deathEvent->actorDying = RE::TESObjectREFRPtr(a_victim);
+				deathEvent->actorKiller = RE::TESObjectREFRPtr(a_killer);
+				deathEvent->dead = a_victim->IsDead();
+				sesh->SendEvent<RE::TESDeathEvent>(deathEvent.get());
+			}
+
+			deathEvent.reset();
+		}
+		
 		// Send a hit event constructed with the given cause refr,
 		// target refr, source FID, projectile FID, and hit flags.
 		inline void SendHitEvent
@@ -4714,6 +4737,16 @@ namespace ALYSLC
 		// calculate the pixel distance as if the refr were orientated such that
 		// their 'up' and 'right' axes were aligned with the camera's.
 		float GetBoundPixelDist(RE::TESObjectREFR* a_refr, bool&& a_vertAxis);
+
+		// First, get a pair of capsule rigid body endpoints (vertices + radii) 
+		// for the given refr that is closest to the given position.
+		// Then, using these two axis endpoints to define a line segment,
+		// return the closest point along the line segment to the given position.
+		// Return the given position if no valid capsule axis was obtainable.
+		RE::NiPoint3 GetClosestRefrCapsuleAxisPointToPos
+		(
+			RE::TESObjectREFR* a_refr, const RE::NiPoint3& a_pos
+		);
 
 		// Return the refr 3D's havok collision layer.
 		RE::COL_LAYER GetCollisionLayer(RE::NiAVObject* a_refr3D);

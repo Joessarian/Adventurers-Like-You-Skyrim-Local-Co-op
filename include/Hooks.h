@@ -259,6 +259,8 @@ namespace ALYSLC
 				INF("Installed RemoveWeapon() hook.");
 				_ResetInventory = vtbl.write_vfunc(0x8A, ResetInventory);
 				INF("Installed ResetInventory() hook.");
+				_Resurrect = vtbl.write_vfunc(0xAB, Resurrect);
+				INF("Installed Resurrect() hook.");
 				_SetCurrentScene = vtbl.write_vfunc(0x4B, SetCurrentScene);
 				INF("Installed SetCurrentScene() hook.");
 				_Update = vtbl.write_vfunc(0xAD, Update);
@@ -339,6 +341,7 @@ namespace ALYSLC
 			);
 			static void RemoveWeapon(RE::Character* a_this, RE::BIPED_OBJECT a_equipIndex);
 			static void ResetInventory(RE::Character* a_this, bool a_leveledOnly);
+			static void Resurrect(RE::Character* a_this, bool a_resetInventory, bool a_attach3D);
 			static void SetCurrentScene(RE::Character* a_this, RE::BGSScene* a_scene);
 			static void Update(RE::Character* a_this, float a_delta);
 			static std::uint32_t UseAmmo(RE::Character* a_this, std::uint32_t a_shotCount);
@@ -383,6 +386,7 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(RemoveItem)> _RemoveItem;
 			static inline REL::Relocation<decltype(RemoveWeapon)> _RemoveWeapon;
 			static inline REL::Relocation<decltype(ResetInventory)> _ResetInventory;
+			static inline REL::Relocation<decltype(Resurrect)> _Resurrect;
 			static inline REL::Relocation<decltype(SetCurrentScene)> _SetCurrentScene;
 			static inline REL::Relocation<decltype(Update)> _Update;
 			static inline REL::Relocation<decltype(UseAmmo)> _UseAmmo;

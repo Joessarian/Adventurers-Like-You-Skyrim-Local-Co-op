@@ -1051,7 +1051,7 @@ namespace ALYSLC
 			}
 
 			// REMOVE when done debugging.
-			/*DBG
+			DBG
 			(
 				"{} -> {}, damage: {}, trigger combat: {}, send event: {}, flags: 0x{:X}.",
 				a_sourceActor->GetName(),
@@ -1060,7 +1060,7 @@ namespace ALYSLC
 				a_triggerCombat,
 				a_sendEvent,
 				*a_hitEventFlags
-			);*/
+			);
 
 			// Add the target actor to the player's combat group, if it exists,
 			// and start combat if requested.
@@ -3833,6 +3833,160 @@ namespace ALYSLC
 					a_vertAxis ? DebugAPI::screenResY : DebugAPI::screenResX
 				)
 			);
+		}
+
+		RE::NiPoint3 GetClosestRefrCapsuleAxisPointToPos
+		(
+			RE::TESObjectREFR* a_refr, const RE::NiPoint3& a_pos
+		)
+		{
+			if (!a_refr)
+			{
+				return a_pos;
+			}
+
+			auto loadedData = a_refr->loadedData;
+			if (!loadedData)
+			{
+				return a_pos;
+			}
+
+			// Continue early if the player's 3D is invalid.
+			auto data3DPtr = loadedData->data3D;
+			if (!data3DPtr || !data3DPtr->parent)
+			{
+				return a_pos;
+			}
+
+			// REMOVE when done debugging.
+			RE::NiPoint3 closestCenterPos = RE::NiPoint3();
+			std::optional<std::pair<RE::NiPoint3, RE::NiPoint3>> closestEndpoints{ std::nullopt };
+			float minDist = FLT_MAX;
+			auto checkForMinDist = 
+			[&minDist, &closestEndpoints, &closestCenterPos, &a_pos]
+			(RE::NiAVObject* a_node)
+			{
+				auto hkpRigidBodyPtr = GethkpRigidBody(a_node);
+				if (!hkpRigidBodyPtr)
+				{
+					return;
+				}
+
+				auto hkpShape = hkpRigidBodyPtr->GetShape(); 
+				if (!hkpShape || hkpShape->type != RE::hkpShapeType::kCapsule)
+				{
+					return;
+				}
+
+				if (hkpShape->type == RE::hkpShapeType::kCapsule)
+				{
+					auto hkpCapsuleShape = static_cast<const RE::hkpCapsuleShape*>(hkpShape);
+					RE::NiPoint3 vertexA{ };
+					RE::NiPoint3 vertexB{ };
+					RE::NiPoint3 zAxisDir{ };
+					RE::NiPoint3 vertAOffset = ToNiPoint3(hkpCapsuleShape->vertexA) * HAVOK_TO_GAME;
+					RE::NiPoint3 vertBOffset = ToNiPoint3(hkpCapsuleShape->vertexB) * HAVOK_TO_GAME;
+				
+					const auto& hkTransform = hkpRigidBodyPtr->motion.motionState.transform;
+					RE::NiTransform niTransform{ };
+					niTransform.scale = 1.0f;
+					niTransform.translate = ToNiPoint3(hkTransform.translation) * HAVOK_TO_GAME;
+					niTransform.rotate.entry[0][0] = hkTransform.rotation.col0.quad.m128_f32[0];
+					niTransform.rotate.entry[1][0] = hkTransform.rotation.col0.quad.m128_f32[1];
+					niTransform.rotate.entry[2][0] = hkTransform.rotation.col0.quad.m128_f32[2];
+
+					niTransform.rotate.entry[0][1] = hkTransform.rotation.col1.quad.m128_f32[0];
+					niTransform.rotate.entry[1][1] = hkTransform.rotation.col1.quad.m128_f32[1];
+					niTransform.rotate.entry[2][1] = hkTransform.rotation.col1.quad.m128_f32[2];
+
+					niTransform.rotate.entry[0][2] = hkTransform.rotation.col2.quad.m128_f32[0];
+					niTransform.rotate.entry[1][2] = hkTransform.rotation.col2.quad.m128_f32[1];
+					niTransform.rotate.entry[2][2] = hkTransform.rotation.col2.quad.m128_f32[2];
+					vertexA = niTransform * vertAOffset;
+					vertexB = niTransform * vertBOffset;
+						
+					// Check distance from the given position to the center point
+					// between the two vertices.
+					float dist = a_pos.GetDistance(vertexA + (0.5f * (vertexB - vertexA)));
+					if (dist < minDist)
+					{
+						minDist = dist;
+						closestCenterPos = vertexA + (0.5f * (vertexB - vertexA));
+						if (vertexA == vertexB)
+						{
+							closestEndpoints = { vertexA, vertexB };
+							return;
+						}
+
+						const auto radius = hkpCapsuleShape->radius * HAVOK_TO_GAME;
+						auto dir = vertexA - vertexB;
+						dir.Unitize();
+						closestEndpoints =
+						{
+							vertexA + (dir * radius),
+							vertexB - (dir * radius)
+						};
+					}
+				}
+			};
+
+			TraverseChildNodesDFS(data3DPtr.get(), checkForMinDist);
+			// REMOVE when done debugging.
+			/*if (closestCenterPos != RE::NiPoint3())
+			{
+				DebugAPI::QueuePoint3D
+				(
+					ToVec3(closestCenterPos),
+					0xFF0000FF,
+					5.0f
+				);
+			}*/
+
+			if (!closestEndpoints.has_value())
+			{
+				return a_pos;
+			}
+
+			// Credits:
+			// https://gdbooks.gitbooks.io/3dcollisions/content/Chapter1/closest_point_on_line.html
+			/*const auto& a = closestEndpoints.value().first;
+			const auto& b = closestEndpoints.value().second;
+			if (a == b)
+			{
+				return a;
+			}
+
+			const auto aToB = b - a;
+			float ratio = std::clamp
+			(
+				(a_pos - a).Dot(aToB) / (aToB).Dot(aToB),
+				0.0f,
+				1.0f
+			);*/
+			
+			if (closestEndpoints.value().first == closestEndpoints.value().second)
+			{
+				return closestEndpoints.value().first;
+			}
+
+			const auto b = closestEndpoints.value().second - closestEndpoints.value().first;
+			const auto c = a_pos - closestEndpoints.value().first; 
+
+			float ratio = std::clamp
+			(
+				(c).Dot(b) / (b).Dot(b),
+				0.0f,
+				1.0f
+			);
+
+			// REMOVE when done debugging.
+			/*DebugAPI::QueuePoint3D
+			(
+				ToVec3(closestEndpoints.value().first + ratio * (b)),
+				0xFFFFFFFF,
+				5.0f
+			);*/
+			return closestEndpoints.value().first + ratio * (b);
 		}
 
 		RE::COL_LAYER GetCollisionLayer(RE::NiAVObject* a_refr3D)

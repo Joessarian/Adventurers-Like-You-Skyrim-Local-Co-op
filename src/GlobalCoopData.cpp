@@ -3476,6 +3476,57 @@ namespace ALYSLC
 		return false;
 	}
 
+	bool GlobalCoopData::IsCoopCharacter(RE::TESForm* a_form)
+	{
+		// Does the given form point to a character controllable by a player?
+		// Co-op session does not have to be active.
+	
+		if (!a_form)
+		{
+			return false;
+		}
+
+		auto asActor = a_form->As<RE::Actor>();
+		if (!asActor)
+		{
+			return false;
+		}
+
+		if (asActor->IsPlayerRef())
+		{
+			return true;
+		}
+
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (asActor == p1)
+		{
+			return true;
+		}
+		
+		auto& glob = GetSingleton();
+		if (glob.globalDataInit && glob.companionPlayerKeyword)
+		{
+			return asActor->HasKeyword(glob.companionPlayerKeyword);
+		}
+		else if (auto dataHandler = RE::TESDataHandler::GetSingleton(); dataHandler)
+		{
+			auto companionPlayerKeyword = 
+			(
+				dataHandler->LookupForm<RE::BGSKeyword>(0x861, PLUGIN_NAME)
+			);
+			if (companionPlayerKeyword)
+			{
+				return asActor->HasKeyword(companionPlayerKeyword);
+			}
+			else
+			{
+				return false;
+			}
+		}
+
+		return false;
+	}
+
 	bool GlobalCoopData::IsCoopCharacter(const RE::TESObjectREFRPtr& a_refrPtr)
 	{
 		// Does the given refr smart ptr point to a character controllable by a player?

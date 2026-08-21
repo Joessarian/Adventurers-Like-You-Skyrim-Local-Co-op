@@ -884,8 +884,10 @@ namespace ALYSLC
 						0x0000FF00
 					) >> 8
 				);
+
 			}
 		
+			alpha = 0x4F;
 			// Edge color here fills the entire shader, so we use the player's overlay color.		
 			a_shader->data.edgeEffectColor.alpha = alpha;
 			a_shader->data.edgeEffectColor.red = red;
@@ -895,6 +897,8 @@ namespace ALYSLC
 			a_shader->data.edgeColor.red = red;
 			a_shader->data.edgeColor.green = green;
 			a_shader->data.edgeColor.blue = blue;
+			// Slight blend of grey and the player's overlay color, more pop.
+			a_shader->data.edgeEffectFallOff = 0.2f;
 		}
 	}
 
@@ -6834,7 +6838,7 @@ namespace ALYSLC
 		const auto currentMount = p->GetCurrentMount();
 		const auto& lsAngle = p->analogStickParams[!AnalogStickParams::kLSCamRelAng];
 		// Re-populate nearby references if needed.
-		bool orientationChanged = 
+		bool orientationChanged =
 		(
 			p->lsMoved || 
 			fabsf
@@ -15693,7 +15697,12 @@ namespace ALYSLC
 		trajectoryEndPos = a_p->tm->crosshairWorldPos;
 		if (targetActor)
 		{
-			trajectoryEndPos = Util::GetTorsoPosition(targetActor) + targetLocalPosOffset;
+			// Underlying end position when directing the released refr 
+			// is at the closest capsule axis position.
+			trajectoryEndPos = Util::GetClosestRefrCapsuleAxisPointToPos
+			(
+				targetActor, Util::GetTorsoPosition(targetActor) + targetLocalPosOffset
+			);
 		}
 		else if (targetRefrPtrValidity)
 		{
@@ -15929,7 +15938,12 @@ namespace ALYSLC
 		trajectoryEndPos = a_p->tm->crosshairWorldPos;
 		if (targetActor)
 		{
-			trajectoryEndPos = Util::GetTorsoPosition(targetActor) + targetLocalPosOffset;
+			// Underlying end position when directing the released refr 
+			// is at the closest capsule axis position.
+			trajectoryEndPos = Util::GetClosestRefrCapsuleAxisPointToPos
+			(
+				targetActor, Util::GetTorsoPosition(targetActor) + targetLocalPosOffset
+			);
 		}
 		else if (targetRefrPtrValidity)
 		{
@@ -18625,6 +18639,16 @@ namespace ALYSLC
 			{
 				trajectoryEndPos += targetLocalPosOffset;
 			}
+
+			if (targetActorPtr)
+			{
+				// Underlying end position when directing the released refr 
+				// is at the closest capsule axis position.
+				trajectoryEndPos = Util::GetClosestRefrCapsuleAxisPointToPos
+				(
+					targetActorPtr.get(), trajectoryEndPos
+				);
+			}
 		}
 
 		// Firing an aim prediction or aim direction projectile 
@@ -18791,7 +18815,12 @@ namespace ALYSLC
 				// If the target is an aim correction or linked target, target the torso.
 				if (targetRefrHandle == a_p->tm->aimCorrectionTargetHandle)
 				{
-					trajectoryEndPos = Util::GetTorsoPosition(targetActorPtr.get());
+					// Underlying end position when directing the released refr 
+					// is at the closest capsule axis position.
+					trajectoryEndPos = Util::GetClosestRefrCapsuleAxisPointToPos
+					(
+						targetActorPtr.get(), Util::GetTorsoPosition(targetActorPtr.get())
+					);
 				}
 
 				straightLinePitch = -Util::GetPitchBetweenPositions(releasePos, trajectoryEndPos);

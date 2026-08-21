@@ -843,6 +843,7 @@ namespace ALYSLC
 		// Co-op session does not have to be active.
 		static bool IsCoopCharacter(const RE::ActorPtr& a_actorPtr);
 		static bool IsCoopCharacter(RE::TESObjectREFR* a_refr);
+		static bool IsCoopCharacter(RE::TESForm* a_form);
 		static bool IsCoopCharacter(const RE::TESObjectREFRPtr& a_refrPtr);
 		static bool IsCoopCharacter(const RE::ObjectRefHandle& a_refrHandle);
 		static bool IsCoopCharacter(const RE::FormID& a_formID);

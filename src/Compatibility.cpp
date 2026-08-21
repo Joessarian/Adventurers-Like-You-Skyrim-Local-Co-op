@@ -10,6 +10,7 @@ namespace ALYSLC
 	bool EldenSprintCompat::g_installed{ false };
 	bool EnderalCompat::g_installed{ false };
 	bool ExtendedUICompat::g_installed{ false };
+	bool KillFeedCompat::g_installed{ false };
 	bool MCOCompat::g_installed{ false };
 	bool NFFCompat::g_installed{ false };
 	bool PersistentFavoritesCompat::g_installed{ false };
@@ -115,6 +116,25 @@ namespace ALYSLC
 		}
 	}
 	
+	void KillFeedCompat::CheckForKillFeed(const SKSE::LoadInterface * a_loadInterface)
+	{
+		g_installed = 
+		(
+			a_loadInterface->GetPluginInfo("KillFeed") || 
+			static_cast<bool>(GetModuleHandleA("po3_KillFeed.dll"))
+		);
+		auto dataHandler = RE::TESDataHandler::GetSingleton();
+		if (!g_installed && dataHandler) 
+		{
+			g_installed = dataHandler->LookupModByName("KillFeed.esp") != nullptr;
+		}
+
+		if (g_installed)
+		{
+			INF("Kill Feed installed!");
+		}
+	}
+
 	void MCOCompat::CheckForMCO(const SKSE::LoadInterface* a_loadInterface)
 	{
 		g_installed = 

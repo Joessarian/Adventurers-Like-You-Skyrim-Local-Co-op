@@ -31,6 +31,12 @@ namespace ALYSLC
 		static bool g_installed;
 	};
 
+	struct KillFeedCompat
+	{
+		static void CheckForKillFeed(const SKSE::LoadInterface* a_loadInterface);
+		static bool g_installed;
+	};
+
 	struct MCOCompat
 	{
 		static void CheckForMCO(const SKSE::LoadInterface* a_loadInterface);
