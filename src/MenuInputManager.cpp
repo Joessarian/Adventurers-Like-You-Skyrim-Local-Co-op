@@ -26,7 +26,6 @@ namespace ALYSLC
 		fromContainerHandle = RE::ObjectRefHandle();
 		menuContainerHandle = RE::ObjectRefHandle();
 		menuCoopActorHandle = RE::ActorHandle();
-		gifteePlayerHandle = RE::ActorHandle();
 		// Extra data for selected entry in menu.
 		selectedExDataList = nullptr;
 		// Form selected in menu.
@@ -310,11 +309,14 @@ namespace ALYSLC
 		}
 		else if (giftMenu)
 		{
-			// Reload entries after importing companion player's inventory.
 			inventoryChestOpen = false;
-			isShowingInventory = true;
-			shouldReloadMenuEntries = true;
-			RefreshMenu();
+			// Reload entries after importing companion player's inventory.
+			if (PlayerToPlayerGiftMenuOpen())
+			{
+				isShowingInventory = true;
+				shouldReloadMenuEntries = true;
+				RefreshMenu();
+			}
 		}
 		else if (favoritesMenu)
 		{
@@ -350,7 +352,7 @@ namespace ALYSLC
 				// from triggering.
 				auto& bindInfo = menuControlMap[iter->first];
 				bindInfo.value = 1.0f;
-				bindInfo.firstPressTP = SteadyClock::now();
+				bindInfo.lastPressTP = SteadyClock::now();
 				bindInfo.eventType = MenuInputEventType::kPressedNoEvent;
 			}
 		}
@@ -417,8 +419,9 @@ namespace ALYSLC
 		// Is viewing P1's inventory from container.
 		RE::NiPointer<RE::TESObjectREFR> containerRefr{ };
 		RE::TESObjectREFR::LookupByHandle(RE::ContainerMenu::GetTargetRefHandle(), containerRefr);
-		// Container is not a companion player's inventory chest.
-		if (!GlobalCoopData::IsCoopPlayerInventoryChest(containerRefr)) 
+		auto pIndex = GlobalCoopData::GetCoopPlayerIndexFromChest(containerRefr); 
+		// The container is not a companion player's inventory chest.
+		if (pIndex <= 0) 
 		{
 			return currentState;
 		}
@@ -482,7 +485,7 @@ namespace ALYSLC
 		RE::TESObjectREFR::LookupByHandle(RE::ContainerMenu::GetTargetRefHandle(), containerRefr);
 		auto pIndex = GlobalCoopData::GetCoopPlayerIndexFromChest(containerRefr); 
 		// The container is not a companion player's inventory chest.
-		if (pIndex == -1) 
+		if (pIndex <= 0) 
 		{
 			return currentState;
 		}
@@ -561,11 +564,11 @@ namespace ALYSLC
 				{
 					// Set as just pressed.
 					bindInfo.value = 1.0f;
-					bindInfo.firstPressTP = SteadyClock::now();
+					bindInfo.lastPressTP = SteadyClock::now();
 				}
 
 				// Update held time.
-				bindInfo.heldTimeSecs = Util::GetElapsedSeconds(bindInfo.firstPressTP);
+				bindInfo.heldTimeSecs = Util::GetElapsedSeconds(bindInfo.lastPressTP);
 				// Special case (on hold):
 				// Preview the hotkey to set for the selected Favorites Menu entry.
 				if (openedMenuType == SupportedMenu::kFavorites && 
@@ -2911,6 +2914,34 @@ namespace ALYSLC
 		return false;
 	}
 
+	bool MenuInputManager::PlayerToPlayerGiftMenuOpen()
+	{
+		// Is a player gifting items to another player?
+		
+		// When giving items from one player to another, P1's inventory is always displayed,
+		// even when another player's inventory is copied over.
+		// Both gifter and giftee handles must be set to indicate player-to-player gifting.
+		RE::NiPointer<RE::TESObjectREFR> inventoryRefrPtr{ };
+		RE::TESObjectREFR::LookupByHandle(RE::GiftMenu::GetTargetRefHandle(), inventoryRefrPtr);
+		DBG("Inventory refr: {}, gifter/ee: {}, {}.",
+			inventoryRefrPtr ? inventoryRefrPtr->GetName() : "NONE",
+			Util::HandleIsValid(glob.gifterPlayerHandle) ?
+			glob.gifterPlayerHandle.get()->GetName() :
+			"NONE",
+			Util::HandleIsValid(glob.gifteePlayerHandle) ?
+			glob.gifteePlayerHandle.get()->GetName() :
+			"NONE");
+		if ((!inventoryRefrPtr) || 
+			(inventoryRefrPtr && inventoryRefrPtr.get() != RE::PlayerCharacter::GetSingleton()) ||
+			(!Util::HandleIsValid(glob.gifterPlayerHandle)) ||
+			(!Util::HandleIsValid(glob.gifteePlayerHandle)))
+		{
+			return false;
+		}
+
+		return true;
+	}
+
 	void MenuInputManager::ProcessBarterMenuButtonInput(const RE::BSFixedString& a_userEvent)
 	{
 		// Handle BarterMenu input.
@@ -3775,8 +3806,9 @@ namespace ALYSLC
 									nullptr,
 									menuP->em->inventoryChest.get()
 								);
-								// Extra data list changes after moving to P1/chest,
-								// so grab the new front list to use for the equip.
+								// Extra data list changes after moving to P1/chest.
+								// Since we've moved the whole stack, we're not equipping a specific
+								// instance of the item, so passing the front list will suffice.
 								selectedExDataList = Util::GetEntryFrontExtraDataList
 								(
 									Util::GetInventoryEntryDataForObject
@@ -4418,6 +4450,13 @@ namespace ALYSLC
 		{
 			return;
 		}
+		
+		// Just send emulated input events when not gifting between players,
+		// since we do not have to update the menu entries' equip states here.
+		if (!PlayerToPlayerGiftMenuOpen())
+		{
+			return;
+		}
 
 		if (a_userEvent == ue->accept)
 		{
@@ -4525,7 +4564,7 @@ namespace ALYSLC
 					menuCoopActorHandle.get()->GetName() :
 					"NONE"
 				);
-				Util::SendCrosshairEvent(nullptr);
+				Util::SendCrosshairEvent(nullptr, -1);
 			}
 
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
@@ -7358,10 +7397,10 @@ namespace ALYSLC
 		}
 		else if (giftMenu)
 		{
-			// Always showing companion player's inventory when in the Gift Menu
+			// If gifting items to another player, companion player's inventory is always shown
 			// as there is no tab switch.
 			inventoryChestOpen = false;
-			isShowingInventory = true;
+			isShowingInventory = PlayerToPlayerGiftMenuOpen();
 			return;
 		}
 		else
@@ -7397,7 +7436,7 @@ namespace ALYSLC
 		eventType(MenuInputEventType::kReleasedNoEvent),
 		value(0.0f),
 		heldTimeSecs(0.0f),
-		firstPressTP(SteadyClock::now())
+		lastPressTP(SteadyClock::now())
 	{ }
 	
 	MenuBindInfo::MenuBindInfo
@@ -7418,7 +7457,7 @@ namespace ALYSLC
 		),
 		value(0.0f), 
 		heldTimeSecs(0.0f), 
-		firstPressTP(SteadyClock::now())
+		lastPressTP(SteadyClock::now())
 	{ }
 
 	void MenuOpeningActionRequestsManager::ClearAllRequests()
@@ -8103,7 +8142,7 @@ namespace ALYSLC
 						}
 						case Hash(RE::GiftMenu::MENU_NAME.data(), RE::GiftMenu::MENU_NAME.size()):
 						{
-							// Wants to trade with another player.
+							// Wants to trade with another player or view nearby lootable items.
 							if (isRequestedMenu || 
 								currentReq.fromAction == InputAction::kTradeWithPlayer || 
 								currentReq.fromAction == InputAction::kActivate)
@@ -8446,7 +8485,8 @@ namespace ALYSLC
 							auto crosshairPickData = RE::CrosshairPickData::GetSingleton(); 
 							if ((!isRequestedMenu || !crosshairPickData) || 
 								(
-									currentReq.fromAction != InputAction::kMoveCrosshair
+									currentReq.fromAction != InputAction::kMoveCrosshair &&
+									currentReq.fromAction != InputAction::kActivate
 								))
 							{
 								break;
@@ -8461,6 +8501,19 @@ namespace ALYSLC
 								break;
 							}
 							
+							// Special case:
+							// Opening up the Loot Buddy's inventory to show nearby lootable items.
+							if (assocRefrPtr == glob.lootBuddyChest)
+							{
+								setAsChosen = true;
+								DBG
+								(
+									"{} is in control of the proximity QuickLoot menu.",
+									p->coopActor->GetName()
+								);
+								break;
+							}
+
 							// Get the container to display with the LootMenu.
 							auto reqContainerRefrPtr = Util::GetRefrPtrFromHandle
 							(

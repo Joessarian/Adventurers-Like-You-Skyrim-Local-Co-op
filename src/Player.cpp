@@ -50,7 +50,7 @@ namespace ALYSLC
 		// Time points.
 		expendSprintStaminaTP = SteadyClock::now();
 		jumpStartTP = SteadyClock::now();
-		lastActivationCheckTP = SteadyClock::now();
+		lastActivationRefrSelectedTP = SteadyClock::now();
 		lastActivationStartTP = SteadyClock::now();
 		lastAutoGrabTP = SteadyClock::now();
 		lastCrosshairUpdateTP = SteadyClock::now();
@@ -471,13 +471,7 @@ namespace ALYSLC
 			tm->SetCrosshairMessageRequest
 			(
 				CrosshairMessageType::kGeneralNotification, 
-				fmt::format("P{}: Refreshed player managers", playerID + 1),
-				{ 
-					CrosshairMessageType::kNone, 
-					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
+				fmt::format("P{}: Refreshed player managers", playerID + 1)
 			);
 		}
 		
@@ -542,7 +536,7 @@ namespace ALYSLC
 			// Time points.
 			expendSprintStaminaTP = SteadyClock::now();
 			jumpStartTP = SteadyClock::now();
-			lastActivationCheckTP = SteadyClock::now();
+			lastActivationRefrSelectedTP = SteadyClock::now();
 			lastActivationStartTP = SteadyClock::now();
 			lastAutoGrabTP = SteadyClock::now();
 			lastCrosshairUpdateTP = SteadyClock::now();
@@ -585,8 +579,6 @@ namespace ALYSLC
 			preTransformationRace = nullptr;
 			// Ensure all players' factions are equivalent to P1's.
 			SyncPlayerFactions();
-			// Set player actor flags.
-			GlobalCoopData::SetCoopCharacterFlags(coopActor.get(), true);
 			// Add serialized perks to the player.
 			GlobalCoopData::ImportUnlockedPerks(coopActor.get());
 
@@ -714,14 +706,14 @@ namespace ALYSLC
 		auto playerCam = RE::PlayerCamera::GetSingleton();
 		float camYaw = glob.cam->GetCurrentYaw();
 		// Game yaw angle relative to the camera for the LS.
-		float lsCamRelAng = 0.0f;
+		float lsWorldAng = 0.0f;
 		// Game yaw angle relative to the camera for the RS.
-		float rsCamRelAng = 0.0f;
+		float rsWorldAng = 0.0f;
 		// Obtain Cartesian angle for left stick orientation.
 		if (lsX == 0.0f && lsY == 0.0f) 
 		{
 			// Previous, no change, since the LS is centered.
-			lsGameAng = analogStickParams[!AnalogStickParams::kLSGameAng];
+			lsGameAng = analogStickParams[!AnalogStickParams::kLSAbsoluteAng];
 		}
 		else
 		{
@@ -731,7 +723,7 @@ namespace ALYSLC
 		if (rsX == 0.0f && rsY == 0.0f) 
 		{
 			// Previous, no change, since the RS is centered.
-			rsGameAng = analogStickParams[!AnalogStickParams::kRSGameAng];
+			rsGameAng = analogStickParams[!AnalogStickParams::kRSAbsoluteAng];
 		}
 		else
 		{
@@ -740,57 +732,56 @@ namespace ALYSLC
 
 		// Yaw angles for both analog sticks in the world's coordinate space 
 		// (relative to the camera).
-		lsCamRelAng = Util::NormalizeAng0To2Pi(camYaw + lsGameAng);
-		rsCamRelAng = Util::NormalizeAng0To2Pi(camYaw + rsGameAng);
+		lsWorldAng = Util::NormalizeAng0To2Pi(camYaw + lsGameAng);
+		rsWorldAng = Util::NormalizeAng0To2Pi(camYaw + rsGameAng);
 
 		// Get the absolute change in LS angle since the last check.
 		const float deltaLSGameAngMag = Util::NormalizeAngToPi
 		(
-			fabsf(lsGameAng - analogStickParams[!AnalogStickParams::kLSGameAng])
+			fabsf(lsGameAng - analogStickParams[!AnalogStickParams::kLSAbsoluteAng])
 		);
 		const float deltaRSGameAngMag = Util::NormalizeAngToPi
 		(
-			fabsf(rsGameAng - analogStickParams[!AnalogStickParams::kRSGameAng])
+			fabsf(rsGameAng - analogStickParams[!AnalogStickParams::kRSAbsoluteAng])
 		);
 
 		// Get X, Y components for both analog sticks, with respect to the camera's yaw.
 		if (rsMag != 0.0f)
 		{
-			rsCamRelAng = Util::ConvertAngle(rsCamRelAng);
-			rxComp = cosf(rsCamRelAng);
-			ryComp = sinf(rsCamRelAng);
-			rsCamRelAng = Util::ConvertAngle(rsCamRelAng);
+			rsWorldAng = Util::ConvertAngle(rsWorldAng);
+			rxComp = cosf(rsWorldAng);
+			ryComp = sinf(rsWorldAng);
+			rsWorldAng = Util::ConvertAngle(rsWorldAng);
 		}
 		else
 		{
 			// Unchanged.
-			rsCamRelAng = analogStickParams[!AnalogStickParams::kRSCamRelAng];
+			rsWorldAng = analogStickParams[!AnalogStickParams::kRSWorldAng];
 			rxComp = 0.0f;
 			ryComp = 0.0f;
 		}
 
 		if (lsMag != 0.0f)
 		{
-			lsCamRelAng = Util::ConvertAngle(lsCamRelAng);
-			lxComp = cosf(lsCamRelAng);
-			lyComp = sinf(lsCamRelAng);
-			lsCamRelAng = Util::ConvertAngle(lsCamRelAng);
+			lsWorldAng = Util::ConvertAngle(lsWorldAng);
+			lxComp = cosf(lsWorldAng);
+			lyComp = sinf(lsWorldAng);
+			lsWorldAng = Util::ConvertAngle(lsWorldAng);
 		}
 		else
 		{
 			// Unchanged.
-			lsCamRelAng = analogStickParams[!AnalogStickParams::kLSCamRelAng];
+			lsWorldAng = analogStickParams[!AnalogStickParams::kLSWorldAng];
 			lxComp = 0.0f;
 			lyComp = 0.0f;
 		}
 		
 		// Update moved flags next.
 		bool prevLSMoved = lsMoved;
+		bool prevRSMoved = rsMoved;
 		// LS/RS stopped when centered for two frames (norm mag is 0 this frame and last frame).
-		bool prevMoved = lsData.prevNormMag != 0.0f;
-		lsMoved = prevMoved || lxComp != 0.0f || lyComp != 0.0f;
-		prevMoved = rsData.prevNormMag != 0.0f;
-		rsMoved = prevMoved || rxComp != 0.0f || ryComp != 0.0f;
+		lsMoved = lsData.prevNormMag != 0.0f || lxComp != 0.0f || lyComp != 0.0f;
+		rsMoved = rsData.prevNormMag != 0.0f || rxComp != 0.0f || ryComp != 0.0f;
 		if (prevLSMoved && !lsMoved) 
 		{
 			lastMovementStopReqTP = SteadyClock::now();
@@ -799,29 +790,69 @@ namespace ALYSLC
 		{
 			lastMovementStartReqTP = SteadyClock::now();
 		}
-
+		
 		// All angles are in game coordinates before adding to params list.
 		analogStickParams[!AnalogStickParams::kLSXComp] = lxComp;
 		analogStickParams[!AnalogStickParams::kLSYComp] = lyComp;
 		analogStickParams[!AnalogStickParams::kRSXComp] = rxComp;
 		analogStickParams[!AnalogStickParams::kRSYComp] = ryComp;
-		analogStickParams[!AnalogStickParams::kLSCamRelAng] = lsCamRelAng;
-		analogStickParams[!AnalogStickParams::kRSCamRelAng] = rsCamRelAng;
+		analogStickParams[!AnalogStickParams::kLSWorldAng] = lsWorldAng;
+		analogStickParams[!AnalogStickParams::kRSWorldAng] = rsWorldAng;
 		analogStickParams[!AnalogStickParams::kDeltaLSGameAngMag] = deltaLSGameAngMag;
 		analogStickParams[!AnalogStickParams::kDeltaRSGameAngMag] = deltaRSGameAngMag;
-		analogStickParams[!AnalogStickParams::kLSGameAng] = lsGameAng;
-		analogStickParams[!AnalogStickParams::kRSGameAng] = rsGameAng;
-		analogStickParams[!AnalogStickParams::kLSCamRelAngMovingFromCenter] = 
+		analogStickParams[!AnalogStickParams::kLSAbsoluteAng] = lsGameAng;
+		analogStickParams[!AnalogStickParams::kRSAbsoluteAng] = rsGameAng;
+
+		// Last LS/RS angle recorded when moving away from center.
+		analogStickParams[!AnalogStickParams::kLSScreenAngMovingFromCenter] = 
 		(
 			lsData.MovingAwayFromCenter() ? 
-			lsCamRelAng : 
-			analogStickParams[!AnalogStickParams::kLSCamRelAngMovingFromCenter]
+			Util::NormalizeAng0To2Pi(atan2f(-lsY, lsX)) : 
+			analogStickParams[!AnalogStickParams::kLSScreenAngMovingFromCenter]
 		);
-		analogStickParams[!AnalogStickParams::kRSCamRelAngMovingFromCenter] = 
+		analogStickParams[!AnalogStickParams::kRSScreenAngMovingFromCenter] = 
 		(
 			rsData.MovingAwayFromCenter() ? 
-			rsCamRelAng : 
-			analogStickParams[!AnalogStickParams::kRSCamRelAngMovingFromCenter]
+			Util::NormalizeAng0To2Pi(atan2f(-rsY, rsX)) : 
+			analogStickParams[!AnalogStickParams::kRSScreenAngMovingFromCenter]
+		);
+		analogStickParams[!AnalogStickParams::kLSWorldAngMovingFromCenter] = 
+		(
+			lsData.MovingAwayFromCenter() ? 
+			lsWorldAng : 
+			analogStickParams[!AnalogStickParams::kLSWorldAngMovingFromCenter]
+		);
+		analogStickParams[!AnalogStickParams::kRSWorldAngMovingFromCenter] = 
+		(
+			rsData.MovingAwayFromCenter() ? 
+			rsWorldAng : 
+			analogStickParams[!AnalogStickParams::kRSWorldAngMovingFromCenter]
+		);
+
+		// Flick screen/world angles. Recorded when first moved from center.
+		analogStickParams[!AnalogStickParams::kLSScreenFlickAng] = 
+		(
+			!prevLSMoved && lsMoved ? 
+			Util::NormalizeAng0To2Pi(atan2f(-lsY, lsX)) : 
+			analogStickParams[!AnalogStickParams::kLSScreenFlickAng]
+		);
+		analogStickParams[!AnalogStickParams::kRSScreenFlickAng] = 
+		(
+			!prevRSMoved && rsMoved ? 
+			Util::NormalizeAng0To2Pi(atan2f(-rsY, rsX)) : 
+			analogStickParams[!AnalogStickParams::kRSScreenFlickAng]
+		);
+		analogStickParams[!AnalogStickParams::kLSWorldFlickAng] = 
+		(
+			!prevLSMoved && lsMoved ? 
+			lsWorldAng : 
+			analogStickParams[!AnalogStickParams::kLSWorldFlickAng]
+		);
+		analogStickParams[!AnalogStickParams::kRSWorldFlickAng] = 
+		(
+			!prevRSMoved && rsMoved ? 
+			rsWorldAng : 
+			analogStickParams[!AnalogStickParams::kRSWorldFlickAng]
 		);
 	}
 
@@ -977,7 +1008,6 @@ namespace ALYSLC
 			"Handled dismissal of {} (0x{:X}).", 
 			coopActor->GetName(), coopActor->formID
 		);
-		glob.canStartCoopGlob->value = true;
 	}
 
 	std::string CoopPlayer::GetHMSStatNotificationText()
@@ -2264,7 +2294,7 @@ namespace ALYSLC
 					// One last crosshair text update with final revive statistics.
 					reviveText = fmt::format
 					(
-						"P{}: <font color=\"#FF0000\">[Life]: 0.0%</font>, "
+						"P{}: <font color=\"#FF0000\">[Life]: 0.0%</font> | "
 						"<font color=\"#00FF00\">[Revive]: {:.1f}%</font>",
 						playerID + 1,
 						100.0f * min(1.0f, revivedHealth / fullReviveHealth)
@@ -2273,8 +2303,8 @@ namespace ALYSLC
 					(
 						CrosshairMessageType::kReviveAlert, 
 						reviveText,
-						{ },
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						Settings::fSecsBetweenDiffCrosshairMsgs,
+						{ }
 					);
 					tm->UpdateCrosshairMessage();
 
@@ -2309,7 +2339,7 @@ namespace ALYSLC
 					// One last crosshair text update with fully revived message.
 					reviveText = fmt::format
 					(
-						"P{}: <font color=\"#FF0000\">[Life]: {:.1f}%</font>, "
+						"P{}: <font color=\"#FF0000\">[Life]: {:.1f}%</font> | "
 						"<font color=\"#00FF00\">[Revive]: 100.0%</font>",
 						playerID + 1,
 						100.0f * 
@@ -2323,8 +2353,8 @@ namespace ALYSLC
 					(
 						CrosshairMessageType::kReviveAlert, 
 						reviveText,
-						{ },
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						Settings::fSecsBetweenDiffCrosshairMsgs,
+						{ }
 					);
 					tm->UpdateCrosshairMessage();
 
@@ -2490,7 +2520,7 @@ namespace ALYSLC
 			// - Revive percent: 100% * (revived health / full revive health).
 			reviveText = fmt::format
 			(
-				"P{}: <font color=\"#FF0000\">[Life]: {:.1f}%</font>, <font color=\"#00FF00\">"
+				"P{}: <font color=\"#FF0000\">[Life]: {:.1f}%</font> | <font color=\"#00FF00\">"
 				"[Revive]: {:.1f}%</font>",
 				playerID + 1, 
 				100.0f * 
@@ -2502,8 +2532,8 @@ namespace ALYSLC
 			(
 				CrosshairMessageType::kReviveAlert, 
 				reviveText,
-				{ },
-				Settings::fSecsBetweenDiffCrosshairMsgs
+				Settings::fSecsBetweenDiffCrosshairMsgs,
+				{ }
 			);
 			tm->UpdateCrosshairMessage();
 		}
@@ -3834,7 +3864,7 @@ namespace ALYSLC
 			{
 				pam->CastSpellWithMagicCaster
 				(
-					EquipIndex::kVoice, true, true, false, shouldCastWithP1
+					EquipIndex::kVoice, true, true, false, false, shouldCastWithP1
 				); 
 			}
 		);
@@ -3865,6 +3895,7 @@ namespace ALYSLC
 		(
 			[this, targetActor, &targetActorIsOOB]() 
 			{
+				DBG("OOB raycast check.");
 				// Cast downward from the target actor's head height.
 				// If nothing is hit, the player is likely under the map and freefalling.
 				const float lowerBound = 
@@ -4019,6 +4050,7 @@ namespace ALYSLC
 		(
 			[this, teleportalActivator]() 
 			{
+				DBG("Place entry portal and move player.");
 				const auto entryPortalPtr = mm->movementActorPtr->PlaceObjectAtMe
 				(
 					teleportalActivator, false
@@ -4040,6 +4072,7 @@ namespace ALYSLC
 		(
 			[this, &exitPortalPtr, &exitPortalPos, targetActor, teleportalActivator]() 
 			{
+				DBG("Move exit portal.");
 				exitPortalPtr = targetActor->PlaceObjectAtMe(teleportalActivator, false);
 				if (exitPortalPtr)
 				{

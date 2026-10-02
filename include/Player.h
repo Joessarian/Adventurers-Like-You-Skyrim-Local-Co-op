@@ -83,7 +83,7 @@ namespace ALYSLC
 		//
 		// Member funcs
 		//
-
+		
 		// Copy base NPC's headparts, skin tone, and more to the player.
 		// Set gender and opposite gender animations, if needed.
 		void CopyNPCAppearanceToPlayer
@@ -218,8 +218,8 @@ namespace ALYSLC
 		SteadyClock::time_point invalidPlayerMovedTP;
 		// Time point indicating when the player started jumping.
 		SteadyClock::time_point jumpStartTP;
-		// Time point indicating when the last activation check was performed.
-		SteadyClock::time_point lastActivationCheckTP;
+		// Time point indicating when the an activation refr was last selected.
+		SteadyClock::time_point lastActivationRefrSelectedTP;
 		// Time point indicating when the activate action last started.
 		SteadyClock::time_point lastActivationStartTP;
 		// Time points indicating when the player's activation target 
@@ -387,9 +387,9 @@ namespace ALYSLC
 		bool isTransformed;
 		// Is this player transforming post-spell cast (not the transformation race yet)?
 		bool isTransforming;
-		// Player is moving the left stick.
+		// Player has displaced the LS/RS or it has just returned to center this frame.
+		// Second condition in place to prevent stick bounce.
 		bool lsMoved;
-		// Player is moving the right stick.
 		bool rsMoved;
 		// Is the player actor valid this frame or was it invalid previously?
 		bool selfValid;

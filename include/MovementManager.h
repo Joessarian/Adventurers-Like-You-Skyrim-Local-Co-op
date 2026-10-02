@@ -451,6 +451,10 @@ namespace ALYSLC
 
 		// Clear movement offset for player actor/mount.
 		void ClearKeepOffsetFromActor();
+
+		// Set paraglider flag to true if requesting to use the paraglider from Loki's awesome mod:
+		// https://www.nexusmods.com/skyrimspecialedition/mods/53256
+		void CheckForParagliderRequest();
 		
 		// Get arm/player rotation slowdown factor when the player is rotating their arms.
 		// If requesting the factor for arm rotation speed, 
@@ -463,7 +467,7 @@ namespace ALYSLC
 
 		// Get the context-based Z rotation speed multiplier for the player.
 		float GetRotationMult();
-		
+
 		// Return true if the player has rotated at least one arm node.
 		bool HasRotatedArms();
 
@@ -494,6 +498,7 @@ namespace ALYSLC
 		// https://github.com/LXIV-CXXVIII/Skyrims-Paraglider/blob/main/src/main.cpp
 		// And P1 must have the paraglider already.
 		void PerformMagicalParaglide();
+		void PerformParaglide();
 
 		// Reset jump data.
 		void ResetJumpData();
@@ -591,6 +596,9 @@ namespace ALYSLC
 		bool aimPitchManuallyAdjusted;
 		// P1 should be set to motion driven in order to trigger a location discovery event.
 		bool attemptDiscovery;
+		// Can the player use the paraglider? 
+		// Player must possess a paraglider and be falling while airborne.
+		bool canParaglide;
 		// Was DontMove() successfully called on this player?
 		bool dontMoveSet;
 		// Were the player's weapons/magic drawn before interacting with furniture/objects?
@@ -598,6 +606,8 @@ namespace ALYSLC
 		// Face the crosshair world position directly at all times 
 		// after toggled on by the 'FaceTarget' bind.
 		bool faceCrosshairPos;
+		// Did the player divebomb while paragliding?
+		bool floppedFromParaglide;
 		// Nearby map marker is undiscovered and in range to discover.
 		bool inRangeOfUndiscoveredMarker;
 		// Is this player close enough to the interaction entry position 

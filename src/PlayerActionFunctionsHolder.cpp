@@ -205,6 +205,12 @@ namespace ALYSLC
 		ProgressFuncs::GrabObject;
 		_progFuncs[!InputAction::kHotkeyEquip - paOffset] = 
 		ProgressFuncs::HotkeyEquip;
+		_progFuncs[!InputAction::kPowerAttackDual - paOffset] = 
+		ProgressFuncs::PowerAttackDual;
+		_progFuncs[!InputAction::kPowerAttackLH - paOffset] = 
+		ProgressFuncs::PowerAttackLH;
+		_progFuncs[!InputAction::kPowerAttackRH - paOffset] = 
+		ProgressFuncs::PowerAttackRH;
 		_progFuncs[!InputAction::kQuickSlotCast - paOffset] = 
 		ProgressFuncs::QuickSlotCast;
 		_progFuncs[!InputAction::kShout - paOffset] =
@@ -264,12 +270,6 @@ namespace ALYSLC
 		StartFuncs::MapMenu;
 		_startFuncs[!InputAction::kPause - paOffset] = 
 		StartFuncs::Pause;
-		_startFuncs[!InputAction::kPowerAttackDual - paOffset] = 
-		StartFuncs::PowerAttackDual;
-		_startFuncs[!InputAction::kPowerAttackLH - paOffset] = 
-		StartFuncs::PowerAttackLH;
-		_startFuncs[!InputAction::kPowerAttackRH - paOffset] =
-		StartFuncs::PowerAttackRH;
 		_startFuncs[!InputAction::kQuickSlotItem - paOffset] =
 		StartFuncs::QuickSlotItem;
 		_startFuncs[!InputAction::kResetAim - paOffset] =
@@ -339,6 +339,12 @@ namespace ALYSLC
 		CleanupFuncs::GrabObject;
 		_cleanupFuncs[!InputAction::kHotkeyEquip - paOffset] = 
 		CleanupFuncs::HotkeyEquip;
+		_cleanupFuncs[!InputAction::kPowerAttackDual - paOffset] = 
+		CleanupFuncs::PowerAttackDual;
+		_cleanupFuncs[!InputAction::kPowerAttackLH - paOffset] = 
+		CleanupFuncs::PowerAttackLH;
+		_cleanupFuncs[!InputAction::kPowerAttackRH - paOffset] =
+		CleanupFuncs::PowerAttackRH;
 		_cleanupFuncs[!InputAction::kQuickSlotCast - paOffset] = 
 		CleanupFuncs::QuickSlotCast;
 		_cleanupFuncs[!InputAction::kRotateCam - paOffset] = 
@@ -386,14 +392,7 @@ namespace ALYSLC
 							"P{}: <font color=\"#FF0000\">"
 							"Not enough health to revive another player!</font>",
 							a_p->playerID + 1
-						),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kActivationInfo,
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						)
 					);
 					RE::PlaySound("UIActivateFail");
 				}
@@ -1028,17 +1027,20 @@ namespace ALYSLC
 
 		bool PowerAttackDual(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			return CanPlayPowerAttackAnimation(a_p, InputAction::kPowerAttackDual);
+			// Do not play if power attack animation conditions do not hold.
+			return ConditionFuncs::CanPlayPowerAttackAnimation(a_p, InputAction::kPowerAttackDual);
 		}
 
 		bool PowerAttackLH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			return CanPlayPowerAttackAnimation(a_p, InputAction::kPowerAttackLH);
+			// Do not play if power attack animation conditions do not hold.
+			return ConditionFuncs::CanPlayPowerAttackAnimation(a_p, InputAction::kPowerAttackLH);
 		}
 
 		bool PowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			return CanPlayPowerAttackAnimation(a_p, InputAction::kPowerAttackRH);
+			// Do not play if power attack animation conditions do not hold.
+			return ConditionFuncs::CanPlayPowerAttackAnimation(a_p, InputAction::kPowerAttackRH);
 		}
 
 		bool ResetAim(const std::shared_ptr<CoopPlayer>& a_p)
@@ -1080,17 +1082,7 @@ namespace ALYSLC
 				return false;
 			}
 
-			const auto& inputMask = 
-			(
-				a_p->pam->paParamsList
-				[!InputAction::kRotateCam - !InputAction::kFirstAction].inputMask
-			);
-			const auto& stickState = glob.cdh->GetAnalogStickState
-			(
-				a_p->deviceID, (inputMask & (1 << !InputAction::kLS)) == (1 << !InputAction::kLS)
-			);
-
-			return stickState.normMag > 0.0f;
+			return true;
 		}
 
 		bool Sheathe(const std::shared_ptr<CoopPlayer>& a_p)
@@ -1191,9 +1183,11 @@ namespace ALYSLC
 							);
 						}
 					);
-
+					
+					// Make sure the player does not have their weapons out
+					// or the equip state will glitch (weapons/magic stuck in hands but unusable).
 					// Can flop if grabbed by another player or if not ragdolled 
-					// and weapons/magic are sheathed or the player is paragliding.
+					// and weapons/magic are sheathed.
 					bool canFlop = 
 					(
 						(isGrabbed) || 
@@ -1201,8 +1195,7 @@ namespace ALYSLC
 							(!isRagdolled) && 
 							(
 								!a_p->coopActor->IsWeaponDrawn() || 
-								Util::IsWerewolf(a_p->coopActor.get()) || 
-								a_p->mm->isParagliding
+								Util::IsWerewolf(a_p->coopActor.get())
 							)
 						)
 					);
@@ -1234,22 +1227,6 @@ namespace ALYSLC
 					// Revert transformation if transformed into another non-playable race.
 					pam->reqSpecialAction = SpecialActionType::kTransformation;
 				}
-				else if (a_p->coopActor->race && 
-						 !a_p->coopActor->race->HasKeyword(glob.npcKeyword))
-				{
-					// Quick spell cast when using a non-humanoid character
-					// and holding the bind for longer than the minimum hold interval
-					// (to keep the cast from occurring before flopping).
-					// Do nothing otherwise.
-					float holdTime = a_p->pam->GetPlayerActionInputHoldTime
-					(
-						InputAction::kSpecialAction
-					);
-					if (em->quickSlotSpell && holdTime > Settings::fSecsDefMinHoldTime)
-					{
-						pam->reqSpecialAction = SpecialActionType::kQuickCast;
-					}
-				}
 				else if (a_p->coopActor->IsWeaponDrawn())
 				{
 					if ((em->HasRHMeleeWeapEquipped() || 
@@ -1267,7 +1244,7 @@ namespace ALYSLC
 						pam->reqSpecialAction = SpecialActionType::kBlock;
 					}
 					/*
-					else if (HelperFuncs::CanDualCast(a_p))
+					else if (HelperFuncs::CanDualCast(a_p, a_p->em->GetRHSpell()))
 					{
 						// TODO: 
 						// Dual cast when LH and RH both have the same 1H spells equipped 
@@ -1377,12 +1354,7 @@ namespace ALYSLC
 
 		bool ZoomCam(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			if (!CanAdjustCamera(a_p))
-			{
-				return false;
-			}
-
-			return true;
+			return CanAdjustCamera(a_p);
 			/*const auto& inputMask = 
 			(
 				a_p->pam->paParamsList
@@ -1421,7 +1393,7 @@ namespace ALYSLC
 
 			// If there is a focal player and this player is not the focal player,
 			// ignore requests to adjust the camera's rotation or zoom.
-			if (glob.cam->focalPlayerPID != -1 && a_p->playerID != glob.cam->focalPlayerPID)
+			if (glob.cam->focalPID != -1 && a_p->playerID != glob.cam->focalPID)
 			{
 				return false;
 			}
@@ -1464,19 +1436,26 @@ namespace ALYSLC
 		)
 		{
 			// Can play power attack animation if the player is transformed,
-			// or is not mounted, has enough stamina, has the unlocked right perks (if sprinting),
-			// is not already power attacking, has weapons drawn,
+			// or is not mounted, has the unlocked right perks (if sprinting),
+			// is not already power attacking,
 			// and has the correct LH/RH/2H weapon(s) equipped.
 
-			if ((!a_p->isTransformed) && 
-				(a_p->coopActor->IsOnMount() || !HelperFuncs::EnoughOfAVToPerformPA(a_p, a_action)))
+			if (!a_p->isTransformed && a_p->coopActor->IsOnMount())
 			{
 				return false;
 			}
 
-			// Must not be already power attacking and must have weapons drawn.
-			if (a_p->pam->isPowerAttacking || !a_p->coopActor->IsWeaponDrawn())
+			if ((ALYSLC::MCOCompat::g_installed) && 
+				(
+					a_action == InputAction::kPowerAttackDual ||
+					a_action == InputAction::kPowerAttackLH
+				))
 			{
+				return false;
+			}
+			else if (a_p->pam->isPowerAttacking)
+			{
+				// Must not be already power attacking.
 				return false;
 			}
 
@@ -1534,12 +1513,11 @@ namespace ALYSLC
 				{
 				case InputAction::kPowerAttackLH:
 				{
-					// Either unarmed, LH is empty, or using a 1H LH weapon.
+					// Either unarmed, using a 1H LH weapon, or LH is empty with a spell in the RH.
 					return 
 					(
-						a_p->em->IsUnarmed() ||
-						a_p->em->LHEmpty() || 
-						a_p->em->HasLHMeleeWeapEquipped()
+						(a_p->em->IsUnarmed() || a_p->em->HasLHMeleeWeapEquipped()) ||
+						(a_p->em->LHEmpty() && a_p->em->HasRHSpellEquipped())
 					);
 				}
 				case InputAction::kPowerAttackRH:
@@ -1555,12 +1533,10 @@ namespace ALYSLC
 				}
 				case InputAction::kPowerAttackDual:
 				{
-					// Either unarmed, has a 2H weapon equipped, 
-					// or is dual wielding (two 1H weapons).
+					// Either unarmed or is dual wielding (two 1H weapons).
 					return 
 					(
 						a_p->em->IsUnarmed() || 
-						a_p->em->Has2HMeleeWeapEquipped() ||
 						a_p->em->IsDualWielding()
 					);
 				}
@@ -1824,83 +1800,72 @@ namespace ALYSLC
 			);
 		}
 
-		bool CanDualCast(const std::shared_ptr<CoopPlayer>& a_p)
+		bool CanDualCast(const std::shared_ptr<CoopPlayer>& a_p, EquipIndex&& a_spellIndex)
 		{
 			// TODO:
 			// Dual cast if the player has the same 1H spell equipped in both hands,
 			// and has the required dual casting perk.
 			// Overrides default single-hand double cast.
 			
-			// Not a P1 action, since single trigger buttons events must
-			// be sent when dual casting.
 			bool isEquipping = false;
 			a_p->coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
 			bool isUnequipping = false;
 			a_p->coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
 			// Can't be (un)equipping items either.
-			if (a_p->isPlayer1 || isEquipping || isUnequipping)
+			if (isEquipping || isUnequipping)
 			{
 				return false;
 			}
-
+			
 			const auto& em = a_p->em;
-			const auto lhSpell = em->GetLHSpell();
-			const auto rhSpell = em->GetRHSpell();
-			// Must have the same 1H spell equipped in both hands.
-			bool sameSpellInBothHands = 
-			( 
-				lhSpell && 
-				rhSpell &&
-				em->copiedMagicFormIDs[!PlaceholderMagicIndex::kLH] == 
-				em->copiedMagicFormIDs[!PlaceholderMagicIndex::kRH] &&
-				lhSpell->equipSlot != glob.bothHandsEquipSlot 
-			);
-			if (!sameSpellInBothHands)
-			{
-				return false;
-			}
-
-			bool canDualCast = false;
-			// Same spell in both hands, so we'll just check the LH one.
-			auto lhSpellSchool = 
+			RE::SpellItem* spellToCast = 
 			(
-				lhSpell->avEffectSetting ? 
-				lhSpell->avEffectSetting->data.associatedSkill : 
-				RE::ActorValue::kNone
+				a_spellIndex != EquipIndex::kNone && 
+				a_p->em->equippedForms[!a_spellIndex] ?
+				a_p->em->equippedForms[!a_spellIndex]->As<RE::SpellItem>() :
+				nullptr
 			);
-			// Must have the corresponding perk.
-			switch (lhSpellSchool)
+			if (!spellToCast)
 			{
-			case RE::ActorValue::kAlteration:
-			{
-				canDualCast = a_p->coopActor->HasPerk(glob.dualCastingAlterationPerk);
-				break;
-			}
-			case RE::ActorValue::kConjuration:
-			{
-				canDualCast = a_p->coopActor->HasPerk(glob.dualCastingConjurationPerk);
-				break;
-			}
-			case RE::ActorValue::kDestruction:
-			{
-				canDualCast = a_p->coopActor->HasPerk(glob.dualCastingDestructionPerk);
-				break;
-			}
-			case RE::ActorValue::kIllusion:
-			{
-				canDualCast = a_p->coopActor->HasPerk(glob.dualCastingIllusionPerk);
-				break;
-			}
-			case RE::ActorValue::kRestoration:
-			{
-				canDualCast = a_p->coopActor->HasPerk(glob.dualCastingRestorationPerk);
-				break;
-			}
-			default:
 				return false;
 			}
-
-			return canDualCast;
+			
+			// Only check the same-spell condition for companion players 
+			// because the game will handle dual casting for P1 without our intervention.
+			if ((!a_p->isPlayer1) && 
+				(a_spellIndex == EquipIndex::kLeftHand || a_spellIndex == EquipIndex::kRightHand))
+			{
+				const auto lhSpell = em->GetLHSpell();
+				const auto rhSpell = em->GetRHSpell();
+				// Must have the same 1H spell equipped in both hands.
+				bool sameSpellInBothHands = 
+				( 
+					lhSpell && 
+					rhSpell &&
+					em->copiedMagicFormIDs[!PlaceholderMagicIndex::kLH] == 
+					em->copiedMagicFormIDs[!PlaceholderMagicIndex::kRH] &&
+					lhSpell->equipSlot != glob.bothHandsEquipSlot 
+				);
+				if (!sameSpellInBothHands)
+				{
+					return false;
+				}
+			}
+			
+			DBG
+			(
+				"{}: {} has dual cast data: {}, dual cast scale: {}.", 
+				a_p->coopActor->GetName(), 
+				spellToCast->GetName(),
+				spellToCast->avEffectSetting ? 
+				(bool)spellToCast->avEffectSetting->data.dualCastData :
+				false,
+				spellToCast->avEffectSetting ? 
+				spellToCast->avEffectSetting->data.dualCastScale :
+				-1.0f
+			);
+			// Check if the player has the required perk.
+			return Util::HasPerkToDualCast(a_p->coopActor.get(), spellToCast);
 		}
 
 		bool CanGrabRefr
@@ -2198,13 +2163,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kGeneralNotification,
-					fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Not enough magicka!", a_p->playerID + 1)
 				);
 
 				// Everyone's favorite sound.
@@ -2373,13 +2332,7 @@ namespace ALYSLC
 							equipIndex == EquipIndex::kQuickSlotSpell ?
 							"quick spell slot" :
 							"default slot"
-						),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						)
 					);
 				}
 				else
@@ -2878,6 +2831,14 @@ namespace ALYSLC
 				(
 					a_action == InputAction::kQuickSlotCast && a_p->em->quickSlotSpell
 				);
+				// Prefer dual cast if the player has enough magicka.
+				if (isQuickslotCastCheck && 
+					CanDualCast(a_p, EquipIndex::kQuickSlotSpell) && 
+					a_p->pam->currentMagicka >= 2.8f * baseCost)
+				{
+					baseCost *= 2.8f;
+				}
+
 				// Only check for adequate magicka if performing a quick slot cast,
 				// since the game does not charge magicka while the instant caster
 				// preps for the cast and we'll have to directly expend magicka later. 
@@ -2936,13 +2897,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kGeneralNotification,
-						fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Not enough magicka!", a_p->playerID + 1)
 					);
 
 					RE::PlaySound("MAGFailSD");
@@ -3792,17 +3747,8 @@ namespace ALYSLC
 			{
 				if (a_p->coopActor->IsSneaking())
 				{
-					// Takes encumbrance into account.
-					// Silent rolling in heavy armor will consume more stamina.
-					// The player will be able to roll at most once
-					// with full stamina and worn weight equal to carryweight
-					// and at most 10 times with full stamina and no worn weight.
-					float carryWeightRatio = 
-					(
-						a_p->coopActor->GetEquippedWeight() / 
-						a_p->coopActor->GetActorValue(RE::ActorValue::kCarryWeight)
-					);
-					cost = a_p->pam->baseStamina * (min(0.9f, sqrtf(carryWeightRatio)) + 0.1f);
+					// Silent roll.
+					cost = a_p->pam->GetEquippedWeightStaminaCost();
 				}
 				else if (!a_p->mm->isParagliding && !a_p->tm->isMARFing && !a_p->tm->isSMORFing)
 				{
@@ -3974,13 +3920,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kGeneralNotification,
-						fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Not enough magicka!", a_p->playerID + 1)
 					);
 
 					RE::PlaySound("MAGFailSD");
@@ -4141,13 +4081,14 @@ namespace ALYSLC
 						"Item quick slot" :
 						"Spell quick slot"
 					),
+					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f),
 					{ 
 						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kActivationInfo,
 						CrosshairMessageType::kHotkeySelection, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+						CrosshairMessageType::kCrosshairTarget 
+					}
 				);
 				return;
 			}
@@ -4223,13 +4164,14 @@ namespace ALYSLC
 						"quick spell slot" :
 						"default slot"
 					),
-					{
+					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
+					{ 
 						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kActivationInfo,
 						CrosshairMessageType::kHotkeySelection, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+						CrosshairMessageType::kCrosshairTarget 
+					}
 				);
 				return;
 			}
@@ -4263,13 +4205,14 @@ namespace ALYSLC
 						"P{}: {} is no longer favorited. Refreshing hotkeys.", 
 						a_p->playerID + 1, a_hotkeyedForm->GetName()
 					),
-					{
+					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f),
+					{ 
 						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kActivationInfo,
 						CrosshairMessageType::kHotkeySelection, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+						CrosshairMessageType::kCrosshairTarget 
+					}
 				);
 
 				// Do not update magical favorites for a companion player
@@ -4322,13 +4265,14 @@ namespace ALYSLC
 						"P{}: {} is no longer favorited. Refreshing hotkeys.", 
 						a_p->playerID + 1, a_hotkeyedForm->GetName()
 					),
-					{
+					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f),
+					{ 
 						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kActivationInfo,
 						CrosshairMessageType::kHotkeySelection, 
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+						CrosshairMessageType::kCrosshairTarget 
+					}
 				);
 
 				// Do not update magical favorites for a companion player
@@ -4355,13 +4299,14 @@ namespace ALYSLC
 								(
 									"P{}: Equipping {} in both hands", a_p->playerID + 1, name
 								),
-								{
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
+								{ 
 									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kActivationInfo,
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 							slot = glob.bothHandsEquipSlot;
 						}
@@ -4374,13 +4319,14 @@ namespace ALYSLC
 								(
 									"P{}: Equipping {} in the right hand", a_p->playerID + 1, name
 								),
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 								{ 
 									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kActivationInfo,
 									CrosshairMessageType::kHotkeySelection, 
-									CrosshairMessageType::kStealthState,
-									CrosshairMessageType::kTargetingState 
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 						}
 
@@ -4400,13 +4346,14 @@ namespace ALYSLC
 								(
 									"P{}: Equipping {} to the voice slot", a_p->playerID + 1, name
 								),
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 								{ 
 									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kActivationInfo,
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 							// Swap to voice equip slot and index.
 							slot = glob.voiceEquipSlot;
@@ -4421,13 +4368,14 @@ namespace ALYSLC
 								(
 									"P{}: Equipping {} in both hands", a_p->playerID + 1, name
 								),
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 								{ 
 									CrosshairMessageType::kNone, 
-									CrosshairMessageType::kHotkeySelection,
-									CrosshairMessageType::kStealthState,
-									CrosshairMessageType::kTargetingState 
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kActivationInfo,
+									CrosshairMessageType::kHotkeySelection, 
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 							slot = glob.bothHandsEquipSlot;
 						}
@@ -4440,13 +4388,14 @@ namespace ALYSLC
 								(
 									"P{}: Equipping {} in the right hand", a_p->playerID + 1, name
 								),
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 								{ 
 									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kActivationInfo,
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 						}
 
@@ -4461,13 +4410,14 @@ namespace ALYSLC
 							(
 								"P{}: Equipping {} to the voice slot", a_p->playerID + 1, name
 							),
-							{
+							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
+							{ 
 								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kActivationInfo,
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState 
-							},
-							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+								CrosshairMessageType::kCrosshairTarget 
+							}
 						);
 						a_p->em->EquipShout(shout);
 					}
@@ -4484,13 +4434,14 @@ namespace ALYSLC
 									"P{}: Cannot equip {} in the right hand", 
 									a_p->playerID + 1, name
 								),
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f),
 								{ 
 									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kActivationInfo,
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 							return;
 						}
@@ -4502,13 +4453,14 @@ namespace ALYSLC
 							(
 								"P{}: Equipping {} to an armor slot", a_p->playerID + 1, name
 							),
+							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 							{ 
 								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kActivationInfo,
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState 
-							},
-							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+								CrosshairMessageType::kCrosshairTarget 
+							}
 						);
 						a_p->em->EquipArmor(a_hotkeyedForm, extraDataList);
 					}
@@ -4522,13 +4474,14 @@ namespace ALYSLC
 							(
 								"P{}: Cannot equip {} in the right hand", a_p->playerID + 1, name
 							),
+							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f),
 							{ 
-								CrosshairMessageType::kNone,
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kActivationInfo,
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState
-							},
-							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+								CrosshairMessageType::kCrosshairTarget 
+							}
 						);
 						return;
 					}
@@ -4586,13 +4539,14 @@ namespace ALYSLC
 										"right hand weapon",
 										count
 									),
+									max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 									{ 
 										CrosshairMessageType::kNone, 
+										CrosshairMessageType::kActivationInfo,
 										CrosshairMessageType::kHotkeySelection, 
 										CrosshairMessageType::kStealthState, 
-										CrosshairMessageType::kTargetingState 
-									},
-									max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+										CrosshairMessageType::kCrosshairTarget 
+									}
 								);
 							}
 						}
@@ -4615,13 +4569,14 @@ namespace ALYSLC
 									"P{}: Consuming {}. {} remain.",
 									a_p->playerID + 1, name, count
 								),
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 								{ 
 									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kActivationInfo,
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 						}
 					}
@@ -4634,13 +4589,14 @@ namespace ALYSLC
 							(
 								"P{}: Equipping {} as ammo", a_p->playerID + 1, name
 							),
+							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 							{ 
 								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kActivationInfo,
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState 
-							},
-							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+								CrosshairMessageType::kCrosshairTarget 
+							}
 						);
 						a_p->em->EquipAmmo(a_hotkeyedForm, extraDataList);
 					}
@@ -4654,13 +4610,14 @@ namespace ALYSLC
 							(
 								"P{}: Equipping {}", a_p->playerID + 1, name
 							),
+							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 							{ 
 								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kActivationInfo,
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState 
-							},
-							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+								CrosshairMessageType::kCrosshairTarget 
+							}
 						);
 						a_p->em->EquipForm
 						(
@@ -4685,13 +4642,14 @@ namespace ALYSLC
 							"P{}: Emptied right hand", 
 							a_p->playerID + 1
 						),
+						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 						{ 
 							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kHotkeySelection,
+							CrosshairMessageType::kActivationInfo,
+							CrosshairMessageType::kHotkeySelection, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+							CrosshairMessageType::kCrosshairTarget 
+						}
 					);
 					a_p->em->UnequipFormAtIndex(EquipIndex::kRightHand);
 				}
@@ -4702,13 +4660,14 @@ namespace ALYSLC
 					(
 						CrosshairMessageType::kEquippedItem,
 						fmt::format("P{}: Right hand is already empty", a_p->playerID + 1),
+						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f),
 						{ 
 							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kActivationInfo,
 							CrosshairMessageType::kHotkeySelection, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+							CrosshairMessageType::kCrosshairTarget 
+						}
 					);
 				}
 			}
@@ -4729,13 +4688,14 @@ namespace ALYSLC
 								(
 									"P{}: Equipping {} in both hands", a_p->playerID + 1, name
 								),
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 								{ 
 									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kActivationInfo,
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 							slot = glob.bothHandsEquipSlot;
 							// Two handers go in the right hand equip index.
@@ -4750,13 +4710,14 @@ namespace ALYSLC
 								(
 									"P{}: Equipping {} in the left hand", a_p->playerID + 1, name
 								),
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 								{ 
 									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kActivationInfo,
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 						}
 
@@ -4776,13 +4737,14 @@ namespace ALYSLC
 								(
 									"P{}: Equipping {} to the voice slot", a_p->playerID + 1, name
 								),
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 								{ 
 									CrosshairMessageType::kNone, 
-									CrosshairMessageType::kHotkeySelection,
-									CrosshairMessageType::kStealthState,
-									CrosshairMessageType::kTargetingState
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kActivationInfo,
+									CrosshairMessageType::kHotkeySelection, 
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 							// Swap to voice equip slot and index.
 							slot = glob.voiceEquipSlot;
@@ -4797,13 +4759,14 @@ namespace ALYSLC
 								(
 									"P{}: Equipping {} in both hands", a_p->playerID + 1, name
 								),
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 								{ 
-									CrosshairMessageType::kNone,
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kActivationInfo,
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 							slot = glob.bothHandsEquipSlot;
 							// Two hand spells go in the right hand equip index.
@@ -4818,13 +4781,14 @@ namespace ALYSLC
 								(
 									"P{}: Equipping {} in the left hand", a_p->playerID + 1, name
 								),
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 								{ 
 									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kActivationInfo,
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 						}
 
@@ -4839,13 +4803,14 @@ namespace ALYSLC
 							(
 								"P{}: Equipping {} to the voice slot", a_p->playerID + 1, name
 							),
+							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 							{ 
 								CrosshairMessageType::kNone, 
-								CrosshairMessageType::kHotkeySelection,
-								CrosshairMessageType::kStealthState,
-								CrosshairMessageType::kTargetingState 
-							},
-							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+								CrosshairMessageType::kActivationInfo,
+								CrosshairMessageType::kHotkeySelection, 
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kCrosshairTarget 
+							}
 						);
 						a_p->em->EquipShout(shout);
 					}
@@ -4860,13 +4825,14 @@ namespace ALYSLC
 								(
 									"P{}: Equipping {} in the left hand", a_p->playerID + 1, name
 								),
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 								{ 
 									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kActivationInfo,
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 						}
 						else
@@ -4878,13 +4844,14 @@ namespace ALYSLC
 								(
 									"P{}: Equipping {} to an armor slot", a_p->playerID + 1, name
 								),
-								{
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
+								{ 
 									CrosshairMessageType::kNone, 
-									CrosshairMessageType::kHotkeySelection,
+									CrosshairMessageType::kActivationInfo,
+									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 						}
 
@@ -4899,13 +4866,14 @@ namespace ALYSLC
 							(
 								"P{}: Equipping {} in the left hand", a_p->playerID + 1, name
 							),
+							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 							{ 
 								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kActivationInfo,
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState 
-							},
-							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+								CrosshairMessageType::kCrosshairTarget 
+							}
 						);
 						a_p->em->EquipForm(a_hotkeyedForm, EquipIndex::kLeftHand, extraDataList, 1);
 					}
@@ -4963,13 +4931,14 @@ namespace ALYSLC
 										"left hand weapon",
 										count
 									),
+									max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 									{ 
 										CrosshairMessageType::kNone, 
+										CrosshairMessageType::kActivationInfo,
 										CrosshairMessageType::kHotkeySelection, 
 										CrosshairMessageType::kStealthState, 
-										CrosshairMessageType::kTargetingState 
-									},
-									max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+										CrosshairMessageType::kCrosshairTarget 
+									}
 								);
 							}
 						}
@@ -4990,13 +4959,14 @@ namespace ALYSLC
 								(
 									"P{}: Consuming {}. {} remain.", a_p->playerID + 1, name, count
 								),
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 								{ 
 									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kActivationInfo,
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 						}
 					}
@@ -5009,13 +4979,14 @@ namespace ALYSLC
 							(
 								"P{}: Equipping {} as ammo", a_p->playerID + 1, name
 							),
+							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 							{ 
 								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kActivationInfo,
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState 
-							},
-							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+								CrosshairMessageType::kCrosshairTarget 
+							}
 						);
 						a_p->em->EquipAmmo(a_hotkeyedForm, extraDataList);
 					}
@@ -5029,13 +5000,14 @@ namespace ALYSLC
 							(
 								"P{}: Equipping {}", a_p->playerID + 1, name
 							),
+							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 							{ 
 								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kActivationInfo,
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState 
-							},
-							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+								CrosshairMessageType::kCrosshairTarget 
+							}
 						);
 						a_p->em->EquipForm
 						(
@@ -5060,13 +5032,14 @@ namespace ALYSLC
 							"P{}: Emptied left hand", 
 							a_p->playerID + 1
 						),
+						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 						{ 
 							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kActivationInfo,
 							CrosshairMessageType::kHotkeySelection, 
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kCrosshairTarget 
+						}
 					);
 					a_p->em->UnequipFormAtIndex(EquipIndex::kLeftHand);
 				}
@@ -5077,13 +5050,14 @@ namespace ALYSLC
 					(
 						CrosshairMessageType::kEquippedItem,
 						fmt::format("P{}: Left hand is already empty", a_p->playerID + 1),
+						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f),
 						{ 
 							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kActivationInfo,
 							CrosshairMessageType::kHotkeySelection, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+							CrosshairMessageType::kCrosshairTarget 
+						}
 					);
 				}
 			}
@@ -5103,13 +5077,14 @@ namespace ALYSLC
 									"P{}: Equipping poison {} to the item quick slot", 
 									a_p->playerID + 1, name
 								),
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 								{ 
 									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kActivationInfo,
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 						}
 						else
@@ -5122,13 +5097,14 @@ namespace ALYSLC
 									"P{}: Equipping {} to the item quick slot",
 									a_p->playerID + 1, name
 								),
+								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 								{ 
 									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kActivationInfo,
 									CrosshairMessageType::kHotkeySelection, 
 									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+									CrosshairMessageType::kCrosshairTarget 
+								}
 							);
 						}
 
@@ -5147,13 +5123,14 @@ namespace ALYSLC
 								"P{}: Cannot equip {} to the item quick slot",
 								a_p->playerID + 1, name
 							),
+							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f),
 							{ 
 								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kActivationInfo,
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState 
-							},
-							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+								CrosshairMessageType::kCrosshairTarget 
+							}
 						);
 					}
 				}
@@ -5168,13 +5145,14 @@ namespace ALYSLC
 							"P{}: Emptied item quick slot",
 							a_p->playerID + 1, a_p->em->quickSlotItem->GetName()
 						),
+						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 						{ 
 							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kActivationInfo,
 							CrosshairMessageType::kHotkeySelection, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+							CrosshairMessageType::kCrosshairTarget 
+						}
 					);
 					// Just clear out directly.
 					a_p->em->quickSlotItem = nullptr;
@@ -5188,13 +5166,14 @@ namespace ALYSLC
 					(
 						CrosshairMessageType::kEquippedItem,
 						fmt::format("P{}: Item quick slot is already empty", a_p->playerID + 1),
+						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f),
 						{ 
 							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kActivationInfo,
 							CrosshairMessageType::kHotkeySelection, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+							CrosshairMessageType::kCrosshairTarget 
+						}
 					);
 				}
 			}
@@ -5211,13 +5190,14 @@ namespace ALYSLC
 							(
 								"P{}: Equipping {} to the spell quick slot", a_p->playerID + 1, name
 							),
+							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 							{ 
 								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kActivationInfo,
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState 
-							},
-							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+								CrosshairMessageType::kCrosshairTarget 
+							}
 						);
 						// Just set directly.
 						a_p->em->quickSlotSpell = spell;
@@ -5234,13 +5214,14 @@ namespace ALYSLC
 								"P{}: Cannot equip {} to the spell quick slot",
 								a_p->playerID + 1, name
 							),
+							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f),
 							{ 
 								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kActivationInfo,
 								CrosshairMessageType::kHotkeySelection, 
 								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState 
-							},
-							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+								CrosshairMessageType::kCrosshairTarget 
+							}
 						);
 					}
 				}
@@ -5255,13 +5236,14 @@ namespace ALYSLC
 							"P{}: Emptied spell quick slot",
 							a_p->playerID + 1
 						),
+						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f),
 						{ 
 							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kActivationInfo,
 							CrosshairMessageType::kHotkeySelection, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
+							CrosshairMessageType::kCrosshairTarget 
+						}
 					);
 					// Just clear out directly.
 					a_p->em->quickSlotSpell = nullptr;
@@ -5275,13 +5257,14 @@ namespace ALYSLC
 					(
 						CrosshairMessageType::kEquippedItem,
 						fmt::format("P{}: Spell quick slot is already empty", a_p->playerID + 1),
+						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f),
 						{ 
 							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kActivationInfo,
 							CrosshairMessageType::kHotkeySelection, 
 							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+							CrosshairMessageType::kCrosshairTarget 
+						}
 					);
 				}
 			}
@@ -5990,7 +5973,7 @@ namespace ALYSLC
 				);
 			}
 		}
-		
+
 		void PlayEmoteIdle(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Play idle animation corresponding to current cycled emote if not already requested. 
@@ -6314,61 +6297,9 @@ namespace ALYSLC
 			}
 		}
 
-		bool RequestToUseParaglider(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Check if this player is requesting to paraglide.
-			// Must have Skyrim's Paraglider installed:
-			// https://www.nexusmods.com/skyrimspecialedition/mods/53256
-			// Wish I could provide companion player compatibility 
-			// for the slick paraglide animations. Sadge.
-			// Return true if the request was successful.
-
-			if (!ALYSLC::SkyrimsParagliderCompat::g_installed)
-			{
-				return false;
-			}
-
-			auto charController = a_p->coopActor->GetCharController(); 
-			if (!charController)
-			{
-				return false;
-			}
-
-			bool justStarted = HelperFuncs::ActionJustStarted(a_p, InputAction::kActivate);
-			if (justStarted)
-			{
-				// Reset request flag when the action starts.
-				a_p->pam->requestedToParaglide = false;
-			}
-
-			// P1 must have the paraglider.
-			if (!ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider)
-			{
-				return false;
-			}
-
-			bool isAirborne = 
-			(
-				charController->context.currentState == RE::hkpCharacterStateType::kInAir
-			);
-			// Indicate that this player would like to paraglide if P1 has one 
-			// and the player is in the air.
-			if (justStarted && isAirborne)
-			{
-				a_p->pam->requestedToParaglide = true;
-				// Toggle magical paraglide state for companion players.
-				if (!a_p->isPlayer1)
-				{
-					a_p->mm->shouldParaglide = !a_p->mm->isParagliding;
-				}
-			}
-
-			return a_p->pam->requestedToParaglide;
-		}
-
 		void SetCameraAdjustmentMode
 		(
-			const int32_t& a_reqPID, const InputAction& a_action, bool&& a_set
+			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action, bool&& a_set
 		)
 		{
 			// Set or reset the co-op camera's adjustment mode (Rotate, Zoom, or None).
@@ -6379,16 +6310,16 @@ namespace ALYSLC
 				CamAdjustmentMode::kRotate : 
 				CamAdjustmentMode::kZoom
 			);
-			auto& controllingPID = glob.cam->controlCamPID;
 			// Can only set if no other mode is set, 
 			// meaning no other player is controlling the cam.
-			if (controllingPID != a_reqPID && glob.cam->camAdjMode == CamAdjustmentMode::kNone)
+			if (glob.cam->adjustingCamPID != a_p->playerID &&
+				glob.cam->camAdjMode == CamAdjustmentMode::kNone)
 			{
-				controllingPID = a_reqPID;
+				glob.cam->adjustingCamPID = a_p->playerID;
 			}
 
 			// Player with control over the camera can adjust the cam mode freely.
-			if (controllingPID == a_reqPID)
+			if (glob.cam->adjustingCamPID == a_p->playerID)
 			{
 				// Set if not already set, reset to none otherwise.
 				if (a_set)
@@ -6398,84 +6329,18 @@ namespace ALYSLC
 				else
 				{
 					glob.cam->camAdjMode = CamAdjustmentMode::kNone;
+					glob.cam->adjustingCamPID = -1;
 				}
 			}
-		}
-
-		void SetCameraState(const int32_t& a_reqPID, const InputAction& a_action)
-		{
-			// Set camera state to 'LockOn' or 'ManualPositioning' or reset to 'AutoTrail'.
-
-			const auto newCamState = 
-			(
-				a_action == InputAction::kCamLockOn ? 
-				CamState::kLockOn : 
-				CamState::kManualPositioning
-			);
-			auto& controllingPID = glob.cam->controlCamPID;
-			// Set new cam control PID if no players are adjusting the camera.
-			if (controllingPID != a_reqPID && glob.cam->camAdjMode == CamAdjustmentMode::kNone)
+			else if (HelperFuncs::ActionJustStarted(a_p, a_action) && 
+					 a_p->playerID > -1 && 
+					 a_p->playerID < ALYSLC_MAX_PLAYER_COUNT)
 			{
-				controllingPID = a_reqPID;
-			}
-
-			// Player with control over the camera can adjust the cam state freely.
-			if (controllingPID == a_reqPID)
-			{
-				if (glob.cam->camState != newCamState)
-				{
-					glob.cam->camState = newCamState;
-				}
-				else
-				{
-					// Pressing the same cam state bind twice resets to the default.
-					glob.cam->camState = CamState::kAutoTrail;
-				}
-
-				// Notify the player of the cam state change.
-				const auto& p = glob.coopPlayers[a_reqPID];
-				if (glob.cam->camState == CamState::kAutoTrail) 
-				{
-					p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Camera auto-trail mode", a_reqPID + 1),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
-					);
-				}
-				else if (glob.cam->camState == CamState::kLockOn)
-				{
-					p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Camera lock-on mode", a_reqPID + 1),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
-					);
-				}
-				else
-				{
-					p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Camera manual positioning mode", a_reqPID + 1),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
-					);
-				}
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kCamera,
+					fmt::format("P{}: Another player has camera control", a_p->playerID + 1)
+				);
 			}
 		}
 
@@ -6587,13 +6452,7 @@ namespace ALYSLC
 						a_p->tm->SetCrosshairMessageRequest
 						(
 							CrosshairMessageType::kGeneralNotification,
-							fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
-							{ 
-								CrosshairMessageType::kNone, 
-								CrosshairMessageType::kStealthState,
-								CrosshairMessageType::kTargetingState 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
+							fmt::format("P{}: Not enough magicka!", a_p->playerID + 1)
 						);
 
 						RE::PlaySound("MAGFailSD");
@@ -6915,12 +6774,13 @@ namespace ALYSLC
 							a_p->em->lastChosenHotkeyedForm->GetName(),
 							count
 						),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f),
+						{
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kActivationInfo,
+							CrosshairMessageType::kCrosshairTarget,
+							CrosshairMessageType::kStealthState
+						}
 					);
 				}
 				else
@@ -6935,12 +6795,13 @@ namespace ALYSLC
 							a_hotkeySlot + 1, 
 							a_p->em->lastChosenHotkeyedForm->GetName()
 						),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f),
+						{
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kActivationInfo,
+							CrosshairMessageType::kCrosshairTarget,
+							CrosshairMessageType::kStealthState
+						}
 					);
 				}
 			}
@@ -6954,12 +6815,13 @@ namespace ALYSLC
 					(
 						"P{}: Hotkey ({}): NONE", a_p->playerID + 1, a_hotkeySlot + 1
 					),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f),
+					{
+						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kActivationInfo,
+						CrosshairMessageType::kCrosshairTarget,
+						CrosshairMessageType::kStealthState
+					}
 				);
 			}
 		}
@@ -7014,14 +6876,26 @@ namespace ALYSLC
 
 			const auto& pam = a_p->pam;
 			const auto& em = a_p->em;
+			const bool justStarted = ActionJustStarted(a_p, a_action);
 			// Draw weapon/mag/fists if not out already.
-			if (ActionJustStarted(a_p, a_action) && !a_p->coopActor->IsWeaponDrawn())
+			if (justStarted && !a_p->coopActor->IsWeaponDrawn())
 			{
 				pam->ReadyWeapon(true);
 				return;
 			}
 			
 			bool isLeftHand = a_action == InputAction::kAttackLH;
+			// For left hand attacks, start blocking if MCO is installed.
+			//if (ALYSLC::MCOCompat::g_installed && isLeftHand && justStarted)
+			//{
+			//	// Generic attack and release.
+			//	Util::RunPlayerActionCommand
+			//	(
+			//		RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
+			//	);
+			//	return;
+			//}
+
 			if (a_p->isPlayer1) 
 			{
 				if (em->Has2HRangedWeapEquipped() && !isLeftHand)
@@ -7049,12 +6923,13 @@ namespace ALYSLC
 								(
 									CrosshairMessageType::kGeneralNotification,
 									fmt::format("P{}: No equipped ammo!", a_p->playerID + 1),
-									{ 
-										CrosshairMessageType::kNone,
-										CrosshairMessageType::kStealthState,
-										CrosshairMessageType::kTargetingState 
-									},
-									0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+									0.5f * Settings::fSecsBetweenDiffCrosshairMsgs,
+									{
+										CrosshairMessageType::kNone, 
+										CrosshairMessageType::kActivationInfo,
+										CrosshairMessageType::kCrosshairTarget,
+										CrosshairMessageType::kStealthState
+									}
 								);
 							}
 							else
@@ -7078,12 +6953,13 @@ namespace ALYSLC
 											a_p->playerID + 1,
 											Util::GetDescriptiveName(newAmmo, exDataList)
 										),
-										{ 
-											CrosshairMessageType::kNone,
-											CrosshairMessageType::kStealthState,
-											CrosshairMessageType::kTargetingState 
-										},
-										0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+										0.5f * Settings::fSecsBetweenDiffCrosshairMsgs,
+										{
+											CrosshairMessageType::kNone, 
+											CrosshairMessageType::kActivationInfo,
+											CrosshairMessageType::kCrosshairTarget,
+											CrosshairMessageType::kStealthState
+										}
 									);
 								}
 								else
@@ -7092,12 +6968,13 @@ namespace ALYSLC
 									(
 										CrosshairMessageType::kGeneralNotification,
 										fmt::format("P{}: No equipped ammo!", a_p->playerID + 1),
-										{ 
-											CrosshairMessageType::kNone,
-											CrosshairMessageType::kStealthState,
-											CrosshairMessageType::kTargetingState 
-										},
-										0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+										0.5f * Settings::fSecsBetweenDiffCrosshairMsgs,
+										{
+											CrosshairMessageType::kNone, 
+											CrosshairMessageType::kActivationInfo,
+											CrosshairMessageType::kCrosshairTarget,
+											CrosshairMessageType::kStealthState
+										}
 									);
 								}
 							}
@@ -7113,12 +6990,13 @@ namespace ALYSLC
 								(
 									"P{}: Ammo counter: {}", a_p->playerID + 1, max(0, ammoCount)
 								),
-								{ 
+								0.5f * Settings::fSecsBetweenDiffCrosshairMsgs,
+								{
 									CrosshairMessageType::kNone, 
-									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+									CrosshairMessageType::kActivationInfo,
+									CrosshairMessageType::kCrosshairTarget,
+									CrosshairMessageType::kStealthState
+								}
 							);
 						}
 						
@@ -7169,12 +7047,13 @@ namespace ALYSLC
 							(
 								CrosshairMessageType::kGeneralNotification,
 								fmt::format("P{}: No equipped ammo!", a_p->playerID + 1),
-								{ 
-									CrosshairMessageType::kNone,
-									CrosshairMessageType::kStealthState,
-									CrosshairMessageType::kTargetingState 
-								},
-								0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+								0.5f * Settings::fSecsBetweenDiffCrosshairMsgs,
+								{
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kActivationInfo,
+									CrosshairMessageType::kCrosshairTarget,
+									CrosshairMessageType::kStealthState
+								}
 							);
 						}
 						else
@@ -7198,12 +7077,13 @@ namespace ALYSLC
 										a_p->playerID + 1,
 										Util::GetDescriptiveName(newAmmo, exDataList)
 									),
-									{ 
-										CrosshairMessageType::kNone,
-										CrosshairMessageType::kStealthState,
-										CrosshairMessageType::kTargetingState 
-									},
-									0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+									0.5f * Settings::fSecsBetweenDiffCrosshairMsgs,
+									{
+										CrosshairMessageType::kNone, 
+										CrosshairMessageType::kActivationInfo,
+										CrosshairMessageType::kCrosshairTarget,
+										CrosshairMessageType::kStealthState
+									}
 								);
 							}
 							else
@@ -7212,12 +7092,13 @@ namespace ALYSLC
 								(
 									CrosshairMessageType::kGeneralNotification,
 									fmt::format("P{}: No equipped ammo!", a_p->playerID + 1),
-									{ 
-										CrosshairMessageType::kNone,
-										CrosshairMessageType::kStealthState,
-										CrosshairMessageType::kTargetingState 
-									},
-									0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+									0.5f * Settings::fSecsBetweenDiffCrosshairMsgs,
+									{
+										CrosshairMessageType::kNone, 
+										CrosshairMessageType::kActivationInfo,
+										CrosshairMessageType::kCrosshairTarget,
+										CrosshairMessageType::kStealthState
+									}
 								);
 							}
 						}
@@ -7232,12 +7113,13 @@ namespace ALYSLC
 							(
 								"P{}: Ammo counter: {}", a_p->playerID + 1, max(0, ammoCount)
 							),
-							{ 
-								CrosshairMessageType::kNone,  
-								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState 
-							},
-							0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+							0.5f * Settings::fSecsBetweenDiffCrosshairMsgs,
+							{
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kActivationInfo,
+								CrosshairMessageType::kCrosshairTarget,
+								CrosshairMessageType::kStealthState
+							}
 						);
 					}
 
@@ -7278,7 +7160,10 @@ namespace ALYSLC
 			const bool justStarted = a_p->pam->JustStarted(InputAction::kActivate);
 			if (justStarted)
 			{
+				// Clear activation-type flags each time the bind is pressed.
 				a_p->tm->performSecondaryActivationAction = false;
+				a_p->tm->cycleSelectionWithLS = false;
+				a_p->tm->shouldOpenProximityLootMenu = false;
 				if (a_p->pam->downedPlayerTarget) 
 				{
 					// Shouldn't still be set to the downed player since we clear it on release,
@@ -7300,8 +7185,8 @@ namespace ALYSLC
 			}
 
 			// No activation if trying to use the paraglider.
-			bool wantsToUseParaglider = HelperFuncs::RequestToUseParaglider(a_p); 
-			if (wantsToUseParaglider)
+			a_p->mm->CheckForParagliderRequest();
+			if (a_p->mm->canParaglide)
 			{
 				return;
 			}
@@ -7350,11 +7235,10 @@ namespace ALYSLC
 						float minSelectionFactor = FLT_MAX;
 						const float convLSAngle = Util::ConvertAngle
 						(
-							a_p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+							a_p->analogStickParams[!AnalogStickParams::kLSWorldAng]
 						);
 						auto movingDirXY = Util::RotationToDirectionVect(0.0f, convLSAngle);
 						movingDirXY.Unitize();
-						const float maxCheckDist = a_p->tm->GetMaxActivationDist();
 						const auto& playerTorsoPos = a_p->mm->playerTorsoPosition;
 						for (const auto& p : glob.coopPlayers) 
 						{
@@ -7370,13 +7254,16 @@ namespace ALYSLC
 								selectionFactor = 
 								(
 									(0.5f * (1.0f - movingDirXY.Dot(toPlayerDirXY))) +
-									(playerTorsoPos.GetDistance(downedPlayerLoc) / maxCheckDist)
+									(
+										playerTorsoPos.GetDistance(downedPlayerLoc) / 
+										Settings::fMaxDistToRevive
+									)
 								);
 								if (selectionFactor < minSelectionFactor)
 								{
 									// Set all activation-related handles to the downed player
-									// and set the downed player target
-									a_p->tm->activationRefrHandle = p->coopActor->GetHandle();
+									// and set the downed player target.
+									a_p->tm->SetActivationRefrHandle(p->coopActor->GetHandle());
 									a_p->pam->downedPlayerTarget = p;
 									justStartedReviving = true;
 									// Update minimum selection factor in preparation for
@@ -7389,38 +7276,16 @@ namespace ALYSLC
 				}
 			}
 			
-			if (justStarted)
-			{
-				// Select the closest interactable object in front of the player
-				// if there is no lock on activation refr chosen.
-				// Will keep until a revivable player is chosen or until the bind is released,
-				// upon which the chosen lock on target will be activated.
-				if (!Util::HandleIsValid(a_p->tm->activationRefrHandle))
-				{
-					a_p->tm->UpdateActivationTarget(false, true, true);
-				}
-				else
-				{
-					a_p->tm->ValidateActivationRefr(false);
-				}
-				
-				DBG
-				(
-					"{}: On press: {}. Chose quick target: {}.", 
-					a_p->coopActor->GetName(), 
-					Util::HandleIsValid(a_p->tm->activationRefrHandle) ?
-					a_p->tm->activationRefrHandle.get()->GetName() : 
-					"NONE",
-					a_p->tm->choseQuickActivationTarget
-				);
-			}
+			//=========
+			// [Revive]
+			//=========
 
 			// Start or continue reviving the downed player target.
 			// Otherwise, nothing to do for now.
 			if (a_p->pam->downedPlayerTarget)
 			{
 				// Validate and make sure the correct revive crosshair message is showing.
-				a_p->tm->ValidateActivationRefr(false);
+				// a_p->tm->ValidateActivationRefr(false);
 				// Just started reviving the player.
 				if (justStartedReviving)
 				{
@@ -7473,25 +7338,154 @@ namespace ALYSLC
 					// once the downed player is fully revived.
 					a_p->pam->RevivePlayer();
 				}
+
+				return;
 			}
-			else if (a_p->pam->GetPlayerActionInputHoldTime(InputAction::kActivate) > 
-					 Settings::fSecsBeforeAlternateActivation &&
-					 !a_p->tm->performSecondaryActivationAction && 
-					 Util::HandleIsValid(a_p->tm->activationRefrHandle))
+			
+			const auto holdTime = a_p->pam->GetPlayerActionInputHoldTime
+			(
+				InputAction::kActivate
+			);
+
+			// !!TEMPORARY BIND!!
+			//==================
+			//[Nearby Loot Menu]
+			//==================
+
+			const auto& rbInputState = glob.cdh->GetInputState
+			(
+				a_p->deviceID, InputAction::kRShoulder
+			);
+			if (rbInputState.isPressed && rbInputState.heldTimeSecs > holdTime)
+			{
+				// Clear previous cached handles when first passing the hold time threshold.
+				if (justStarted)
+				{
+					a_p->tm->shouldOpenProximityLootMenu = true;
+					a_p->tm->proximityLootHandles.clear();
+				}
+
+				if (Util::HandleIsValid(a_p->tm->activationRefrHandle))
+				{
+					a_p->tm->ClearActivationTargetData();
+				}
+					
+				if (holdTime >= Settings::fSecsBeforeAlternateActivation * 4.0f)
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kActivationInfo,
+						fmt::format("P{}: Search complete!", a_p->playerID + 1)
+					);
+				}
+				else
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kActivationInfo,
+						fmt::format("P{}: Searching for nearby items...", a_p->playerID + 1)
+					);
+				}
+
+				DBG("{}: Populate list and highlight items.", a_p->coopActor->GetName());
+				// Populate nearby lootable items list and highlight such items.
+				a_p->tm->HandleProximityLootMenu(false);
+				return;
+			}
+
+			//=================
+			//[Cycle Selection]
+			//=================
+
+			// Stop activating and clear data if the player started moving the LS 
+			// after already holding down Activate. 
+			// Done to prevent activation while cycle-selecting an activation target.
+			const auto& lsInputState = glob.cdh->GetInputState(a_p->deviceID, InputAction::kLS);
+			if (lsInputState.isPressed && lsInputState.heldTimeSecs < holdTime)
+			{
+				const auto& lsData = glob.cdh->GetAnalogStickState(a_p->deviceID, true);
+				if (lsData.normMag > 0.0f)
+				{
+					const auto oldTargetHandle = a_p->tm->activationRefrHandle;
+					a_p->tm->SetAimOrActivationTarget
+					(
+						false, true, true, true, false, true, false, PI / 2.0f
+					);
+					// Only set as cycling if a new target was chosen.
+					// Do not want to cancel activation of an already selected refr otherwise.
+					if (Util::HandleIsValid(a_p->tm->activationRefrHandle) && 
+						a_p->tm->activationRefrHandle != oldTargetHandle)
+					{
+						a_p->tm->cycleSelectionWithLS = true;
+					}
+				}
+			}
+
+			// Do not highlight or attempt to open the nearby items menu if cycling through refrs.
+			if (a_p->tm->cycleSelectionWithLS)
+			{
+				return;
+			}
+
+			// Toggle auto-selection on release.
+			if (!a_p->tm->autoSelectionActive)
+			{
+				return;
+			}
+
+			//========================================
+			//[Highlighting Refr And Nearby Loot Menu]
+			//========================================
+
+			if (a_p->pam->JustStarted(InputAction::kActivate) && 
+				Util::HandleIsValid(a_p->tm->activationRefrHandle))
 			{
 				const auto activationRefr = a_p->tm->activationRefrHandle.get().get();
-				DBG("{}: Use {}.", a_p->coopActor->GetName(), activationRefr->GetName());
-				// Cannot use items without Use Or Take installed.
-				// Flag for use on release of the bind.
-				a_p->tm->performSecondaryActivationAction = true;
-				a_p->tm->ValidateActivationRefr(false);
+				// a_p->tm->ValidateActivationRefr(false);
 				Util::StopAllActivationEffectShaders(activationRefr, a_p->playerID);
-				a_p->tm->ColorizeActivationShader(glob.activateUseShader, a_p->tm->canActivateRefr);
+				a_p->tm->AdjustHighlightShader
+				(
+					glob.activateHighlightShaders[a_p->playerID], 
+					Util::ActivationCanTriggerBounty(a_p->coopActor.get(), activationRefr),
+					false,
+					a_p->tm->holdToActivate,
+					false, 
+					false
+				);
 				Util::StartEffectShader
 				(
-					activationRefr, glob.activateUseShader,
+					activationRefr,
+					glob.activateHighlightShaders[a_p->playerID],
 					max(0.1f, Settings::fSecsBeforeAlternateActivation)
 				);
+			}
+			else if (!a_p->tm->performSecondaryActivationAction &&
+					 holdTime >= Settings::fSecsBeforeAlternateActivation)
+			{
+				// Flag for use on release of the bind and to indicate 
+				// that the requisite hold time was reached.
+				a_p->tm->performSecondaryActivationAction = true;
+				if (Util::HandleIsValid(a_p->tm->activationRefrHandle))
+				{
+					const auto activationRefr = a_p->tm->activationRefrHandle.get().get();
+					DBG("{}: Use {}.", a_p->coopActor->GetName(), activationRefr->GetName());
+					// Cannot use items without Use Or Take installed.
+					// a_p->tm->ValidateActivationRefr(false);
+					Util::StopAllActivationEffectShaders(activationRefr, a_p->playerID);
+					a_p->tm->AdjustHighlightShader
+					(
+						glob.useHighlightShaders[a_p->playerID], 
+						Util::ActivationCanTriggerBounty(a_p->coopActor.get(), activationRefr),
+						false,
+						a_p->tm->holdToActivate,
+						false, 
+						true
+					);
+					Util::StartEffectShader
+					(
+						activationRefr, glob.useHighlightShaders[a_p->playerID], 1.0f
+					);
+				}
 			}
 		}
 
@@ -7618,13 +7612,7 @@ namespace ALYSLC
 						a_p->tm->SetCrosshairMessageRequest
 						(
 							CrosshairMessageType::kGeneralNotification,
-							fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
-							{ 
-								CrosshairMessageType::kNone, 
-								CrosshairMessageType::kStealthState,
-								CrosshairMessageType::kTargetingState 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
+							fmt::format("P{}: Not enough magicka!", a_p->playerID + 1)
 						);
 
 						RE::PlaySound("MAGFailSD");
@@ -7725,6 +7713,7 @@ namespace ALYSLC
 							justStarted,
 							true,
 							true,
+							false,
 							shouldCastWithP1
 						);
 					}
@@ -7774,13 +7763,7 @@ namespace ALYSLC
 						a_p->tm->SetCrosshairMessageRequest
 						(
 							CrosshairMessageType::kGeneralNotification,
-							fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
-							{ 
-								CrosshairMessageType::kNone, 
-								CrosshairMessageType::kStealthState,
-								CrosshairMessageType::kTargetingState 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
+							fmt::format("P{}: Not enough magicka!", a_p->playerID + 1)
 						);
 
 						RE::PlaySound("MAGFailSD");
@@ -7880,7 +7863,8 @@ namespace ALYSLC
 							EquipIndex::kRightHand,
 							justStarted,
 							true,
-							true, 
+							true,
+							false,
 							shouldCastWithP1
 						);
 					}
@@ -7900,13 +7884,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Release to unequip ammo", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Release to unequip ammo", a_p->playerID + 1)
 				);
 			}
 			
@@ -7926,14 +7904,10 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Release to reset category to 'All Favorites'", 
-						a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format
+					(
+						"P{}: Release to reset category to 'All Favorites'", a_p->playerID + 1
+					)
 				);
 			}
 			
@@ -7953,14 +7927,10 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Release to reset category to 'All Favorites'.", 
-						a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format
+					(
+						"P{}: Release to reset category to 'All Favorites'.", a_p->playerID + 1
+					)
 				);
 			}
 			
@@ -7980,13 +7950,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Release to empty left hand", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Release to empty left hand", a_p->playerID + 1)
 				);
 			}
 			
@@ -8006,13 +7970,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Release to empty right hand", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Release to empty right hand", a_p->playerID + 1)
 				);
 			}
 			
@@ -8032,13 +7990,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Release to unequip shout/power", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Release to unequip shout/power", a_p->playerID + 1)
 				);
 			}
 			
@@ -8058,14 +8010,10 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Release to reset category to 'All Favorites'.", 
-						a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format
+					(
+						"P{}: Release to reset category to 'All Favorites'.", a_p->playerID + 1
+					)
 				);
 			}
 			
@@ -8085,14 +8033,10 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Release to reset category to 'All Favorites'.", 
-						a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format
+					(
+						"P{}: Release to reset category to 'All Favorites'.", a_p->playerID + 1
+					)
 				);
 			}
 			
@@ -8112,13 +8056,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Release to empty left hand", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Release to empty left hand", a_p->playerID + 1)
 				);
 			}
 			
@@ -8139,13 +8077,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Release to empty right hand", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Release to empty right hand", a_p->playerID + 1)
 				);
 			}
 			
@@ -8179,41 +8111,55 @@ namespace ALYSLC
 				a_p->lastAutoGrabTP = SteadyClock::now();
 			}
 
-			bool canGrabAnotherRefr = a_p->tm->rmm->CanGrabAnotherRefr();
-			// Cannot auto-grab on press/hold if facing the crosshair, 
-			// or if a refr is targeted by the crosshair (target for the throw), 
+			// Has an open slot for another grabbed object.
+			const bool canGrabAnotherRefr = a_p->tm->rmm->CanGrabAnotherRefr();
+			// Has targeted an object for activation with the croshair.
+			const bool crosshairTargetForActivation = 
+			(
+				Util::HandleIsValid(a_p->tm->crosshairRefrHandle) &&
+				a_p->tm->crosshairRefrHandle == a_p->tm->activationRefrHandle
+			);
+			// Cannot auto-grab if a refr is targeted by the crosshair 
+			// (not activation target, so target for a throw), 
 			// or if another refr cannot be grabbed.
-			if (a_p->tm->crosshairActive || !canGrabAnotherRefr)
+			const bool canChooseObjectToGrab = 
+			(
+				!a_p->tm->crosshairActive || crosshairTargetForActivation
+			);
+			if (canChooseObjectToGrab && !canGrabAnotherRefr)
 			{
 				// Trying to grab, but no more slots available.
-				if (!a_p->tm->crosshairActive && !canGrabAnotherRefr)
-				{
-					// Notify the player that they've reached max capacity for grabbed objects.
-					a_p->tm->SetCrosshairMessageRequest
+				// Notify the player that they've reached max capacity for grabbed objects.
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kActivationInfo,
+					fmt::format
 					(
+						"P{}: <font color=\"#FF0000\">"
+						"Cannot grab another object!</font>",
+						a_p->playerID + 1
+					),
+					Settings::fSecsBetweenDiffCrosshairMsgs,
+					{
+						CrosshairMessageType::kNone,
 						CrosshairMessageType::kActivationInfo,
-						fmt::format
-						(
-							"P{}: <font color=\"#FF0000\">"
-							"Cannot grab another object!</font>",
-							a_p->playerID + 1
-						),
-						{
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kEquippedItem,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
-					);
-				}
+						CrosshairMessageType::kEquippedItem,
+						CrosshairMessageType::kStealthState,
+						CrosshairMessageType::kCrosshairTarget 
+					}
+				);
 
 				// Base requirements for grabbing not met; return early.
 				return;
 			}
+
+			// Skip instances where the crosshair is active and the crosshair target is not selected 
+			// for activation as this means the player is trying to throw any grabbed objects.
+			if (a_p->tm->crosshairActive && !crosshairTargetForActivation)
+			{
+				return;
+			}
 			
-			// Max distance away from the player's torso to check for grabbable objects.
-			const float maxGrabDist = a_p->tm->GetMaxActivationDist();
 			// Remaining amount of magicka dictates 
 			// how forgiving the projectile grab frame window is
 			// by scaling down the additional distance added to the capture radius
@@ -8299,7 +8245,7 @@ namespace ALYSLC
 					if (projDistWindow != FLT_MAX)
 					{
 						// REMOVE when done debugging.
-						/*if (auto trueHUD = TrueHUDCompat::g_trueHUDAPI3; trueHUD)
+						if (auto trueHUD = TrueHUDCompat::g_trueHUDAPI3; trueHUD)
 						{
 							trueHUD->DrawCapsule
 							(
@@ -8312,7 +8258,7 @@ namespace ALYSLC
 								Settings::vuOverlayRGBAValues[a_p->playerID],
 								2.0f
 							);
-						}*/
+						}
 
 						// Not close enough to grab.
 						// Separate XY plane and Z axis distance checks -> 
@@ -8534,8 +8480,7 @@ namespace ALYSLC
 			
 			// Next up, auto-grab checks.
 			// Check for nearby lootable refrs within activation range 
-			// if no projectile was grabbed, if nothing is selected with the crosshair,
-			// and if auto-grab is enabled.
+			// if no projectile was grabbed and if auto-grab is enabled.
 			if (!grabIncomingProjectiles)
 			{
 				// Nothing to do if auto-grab is not enabled.
@@ -8571,7 +8516,7 @@ namespace ALYSLC
 					const auto& targetRefrHandle = a_p->tm->activationRefrHandle;
 					auto targetRefrPtr = Util::GetRefrPtrFromHandle(targetRefrHandle);
 					if (targetRefrPtr && 
-						a_p->tm->choseProximityActivationTarget &&
+						targetRefrHandle == a_p->tm->crosshairRefrHandle &&
 						HelperFuncs::CanGrabRefr(a_p, targetRefrPtr.get(), true))
 					{
 						shouldGrab = true;
@@ -8592,6 +8537,8 @@ namespace ALYSLC
 					)) 
 				{
 					a_p->lastAutoGrabTP = SteadyClock::now();
+					// Max distance away from the player's torso to check for grabbable objects.
+					const float maxGrabDist = a_p->tm->GetMaxActivationDist();
 					Util::ForEachReferenceInRange
 					(
 						playerTorsoPos, 
@@ -8605,7 +8552,8 @@ namespace ALYSLC
 								return RE::BSContainer::ForEachResult::kContinue;
 							}
 
-							if (HelperFuncs::CanGrabRefr(a_p, a_refr, false))
+							if (HelperFuncs::CanGrabRefr(a_p, a_refr, false) &&
+								Util::IsClutter(a_refr))
 							{
 								// Found an object to auto-grab.
 								// Save handle and stop iterating through nearby refrs.
@@ -8733,13 +8681,14 @@ namespace ALYSLC
 								numGrabbedProjectiles,
 								numGrabbedProjectiles > 1 ? "projectiles" : "projectile"
 							),
+							Settings::fSecsBetweenDiffCrosshairMsgs,
 							{
 								CrosshairMessageType::kNone,
+								CrosshairMessageType::kActivationInfo,
 								CrosshairMessageType::kEquippedItem,
 								CrosshairMessageType::kStealthState,
-								CrosshairMessageType::kTargetingState 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
+								CrosshairMessageType::kCrosshairTarget 
+							}
 						);
 					}
 
@@ -8764,13 +8713,14 @@ namespace ALYSLC
 							a_p->playerID + 1, 
 							targetRefrPtr->GetName()
 						),
+						Settings::fSecsBetweenDiffCrosshairMsgs,
 						{
 							CrosshairMessageType::kNone,
+							CrosshairMessageType::kActivationInfo,
 							CrosshairMessageType::kEquippedItem,
 							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+							CrosshairMessageType::kCrosshairTarget 
+						}
 					);
 					a_p->tm->SetIsGrabbing(true);
 					a_p->tm->rmm->AddGrabbedRefr(a_p, targetRefrPtr->GetHandle());
@@ -8805,12 +8755,13 @@ namespace ALYSLC
 				(
 					CrosshairMessageType::kHotkeySelection,
 					fmt::format("P{}: Invalid Hotkey ({})", a_p->playerID + 1, hotkeySlot + 1),
+					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f),
 					{ 
 						CrosshairMessageType::kNone,
+						CrosshairMessageType::kActivationInfo,
 						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+						CrosshairMessageType::kCrosshairTarget 
+					}
 				);
 				return;
 			}
@@ -8842,6 +8793,154 @@ namespace ALYSLC
 			}
 		}
 
+		void PowerAttackDual(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// Play dual-wield power attack animation.
+
+			// Creature race support-ish. 
+			// Directly send the attack animation event (no stamina cost).
+			if (a_p->coopActor->race && 
+				!a_p->coopActor->HasKeyword(glob.npcKeyword) &&
+				!Util::IsWerewolf(a_p->coopActor.get()) &&
+				!Util::IsVampireLord(a_p->coopActor.get()))
+			{
+				std::string skeleName{ "" };
+				Util::GetSkeletonModelNameForRace(a_p->coopActor->race, skeleName);
+				if (Hash(skeleName) == "bear"_h)
+				{
+					if (a_p->lsMoved)
+					{
+						a_p->coopActor->NotifyAnimationGraph("attackStart_ForwardPowerShort");
+					}
+					else
+					{
+						a_p->coopActor->NotifyAnimationGraph("attackStart_StandingPower");
+					}
+
+					return;
+				}
+			}
+			
+			// Do nothing if the player's weapon is sheathed or the player has insufficient stamina.
+			// Will draw or perform regular attack on release instead.
+			if (!a_p->coopActor->IsWeaponDrawn() || 
+				!HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kPowerAttackDual))
+			{
+				return;
+			}
+
+			// Attempt to perform a power attack if the player's weapon is drawn 
+			// and they are not in a killmove.
+			// Otherwise, draw weapons/magic if arms rotation is disabled.
+			// Check if a killmove should be played first.
+			bool performingKillmove = HelperFuncs::CheckForKillmove
+			(
+				a_p, InputAction::kAttackRH
+			);
+			if (!performingKillmove)
+			{
+				HelperFuncs::PlayPowerAttackAnimation(a_p, InputAction::kPowerAttackDual);
+			}
+		}
+
+		void PowerAttackLH(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// Play LH power attack animation.
+			
+			// Creature race support-ish. 
+			// Directly send the attack animation event (no stamina cost).
+			if (a_p->coopActor->race && 
+				!a_p->coopActor->HasKeyword(glob.npcKeyword) &&
+				!Util::IsWerewolf(a_p->coopActor.get()) &&
+				!Util::IsVampireLord(a_p->coopActor.get()))
+			{
+				std::string skeleName{ "" };
+				Util::GetSkeletonModelNameForRace(a_p->coopActor->race, skeleName);
+				if (Hash(skeleName) == "bear"_h)
+				{
+					if (a_p->lsMoved)
+					{
+						a_p->coopActor->NotifyAnimationGraph("attackStart_ForwardPowerShort");
+					}
+					else
+					{
+						a_p->coopActor->NotifyAnimationGraph("attackStart_StandingPower");
+					}
+
+					return;
+				}
+			}
+
+			// Do nothing if the player's weapon is sheathed or the player has insufficient stamina.
+			// Will draw or perform regular attack on release instead.
+			if (!a_p->coopActor->IsWeaponDrawn() || 
+				!HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kPowerAttackLH))
+			{
+				return;
+			}
+
+			// Attempt to perform power attack if the player's weapon is drawn 
+			// and they are not in a killmove.
+			// Check if a killmove should be played first.
+			bool performingKillmove = HelperFuncs::CheckForKillmove
+			(
+				a_p, InputAction::kAttackLH
+			);
+			if (!performingKillmove)
+			{
+				HelperFuncs::PlayPowerAttackAnimation(a_p, InputAction::kPowerAttackLH);
+			}
+		}
+
+		void PowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// Play RH power attack animation.
+	
+			// Creature race support-ish. 
+			// Directly send the attack animation event (no stamina cost).
+			if (a_p->coopActor->race && 
+				!a_p->coopActor->HasKeyword(glob.npcKeyword) &&
+				!Util::IsWerewolf(a_p->coopActor.get()) &&
+				!Util::IsVampireLord(a_p->coopActor.get()))
+			{
+				std::string skeleName{ "" };
+				Util::GetSkeletonModelNameForRace(a_p->coopActor->race, skeleName);
+				if (Hash(skeleName) == "bear"_h)
+				{
+					if (a_p->lsMoved)
+					{
+						a_p->coopActor->NotifyAnimationGraph("attackStart_ForwardPowerShort");
+					}
+					else
+					{
+						a_p->coopActor->NotifyAnimationGraph("attackStart_StandingPower");
+					}
+
+					return;
+				}
+			}
+
+			// Do nothing if the player's weapon is sheathed or the player has insufficient stamina.
+			// Will draw or perform regular attack on release instead.
+			if (!a_p->coopActor->IsWeaponDrawn() || 
+				!HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kPowerAttackLH))
+			{
+				return;
+			}
+
+			// Attempt to perform power attack if the player's weapon is drawn 
+			// and they are not in a killmove.
+			// Check if a killmove should be played first.
+			bool performingKillmove = HelperFuncs::CheckForKillmove
+			(
+				a_p, InputAction::kAttackRH
+			);
+			if (!performingKillmove)
+			{
+				HelperFuncs::PlayPowerAttackAnimation(a_p, InputAction::kPowerAttackRH);
+			}
+		}
+
 		void QuickSlotCast(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cast QS spell if one is equipped, the player's instant caster is available,
@@ -8854,12 +8953,13 @@ namespace ALYSLC
 				(
 					CrosshairMessageType::kGeneralNotification,
 					fmt::format("P{}: No quick slot spell equipped!", a_p->playerID + 1),
+					0.5f * Settings::fSecsBetweenDiffCrosshairMsgs,
 					{ 
 						CrosshairMessageType::kNone,
+						CrosshairMessageType::kActivationInfo,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState
-					},
-					0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+						CrosshairMessageType::kCrosshairTarget
+					}
 				);
 				return;
 			}
@@ -8904,6 +9004,7 @@ namespace ALYSLC
 					justStarted,
 					true,
 					false,
+					HelperFuncs::CanDualCast(a_p, EquipIndex::kQuickSlotSpell),
 					Util::ShouldCastWithP1(quickSlotSpell)
 				);
 			}
@@ -9025,13 +9126,7 @@ namespace ALYSLC
 							a_p->tm->SetCrosshairMessageRequest
 							(
 								CrosshairMessageType::kGeneralNotification,
-								fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
-								{ 
-									CrosshairMessageType::kNone, 
-									CrosshairMessageType::kStealthState,
-									CrosshairMessageType::kTargetingState 
-								},
-								Settings::fSecsBetweenDiffCrosshairMsgs
+								fmt::format("P{}: Not enough magicka!", a_p->playerID + 1)
 							);
 
 							RE::PlaySound("MAGFailSD");
@@ -9142,7 +9237,12 @@ namespace ALYSLC
 						{
 							a_p->pam->CastSpellWithMagicCaster
 							(
-								EquipIndex::kLeftHand, justStarted, true, true, shouldCastWithP1
+								EquipIndex::kLeftHand,
+								justStarted,
+								true,
+								true,
+								false, 
+								shouldCastWithP1
 							);
 						}
 
@@ -9151,7 +9251,12 @@ namespace ALYSLC
 						{
 							a_p->pam->CastSpellWithMagicCaster
 							(
-								EquipIndex::kRightHand, justStarted, true, true, shouldCastWithP1
+								EquipIndex::kRightHand,
+								justStarted, 
+								true,
+								true, 
+								false,
+								shouldCastWithP1
 							);
 						}
 					}
@@ -9171,7 +9276,12 @@ namespace ALYSLC
 						{
 							a_p->pam->CastSpellWithMagicCaster
 							(
-								EquipIndex::kRightHand, justStarted, true, true, shouldCastWithP1
+								EquipIndex::kRightHand,
+								justStarted,
+								true,
+								true,
+								false,
+								shouldCastWithP1
 							);
 						}
 					}
@@ -9186,7 +9296,12 @@ namespace ALYSLC
 						{
 							a_p->pam->CastSpellWithMagicCaster
 							(
-								EquipIndex::kLeftHand, justStarted, true, true, shouldCastWithP1
+								EquipIndex::kLeftHand, 
+								justStarted,
+								true,
+								true,
+								false, 
+								shouldCastWithP1
 							);
 						}
 					}
@@ -9219,13 +9334,7 @@ namespace ALYSLC
 					fmt::format
 					(
 						"P{}: Selected emote idle '{}'", a_p->playerID + 1, emoteIdleToPlay
-					),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					)
 				);
 
 				// Update cycling time point after cycling.
@@ -9248,28 +9357,21 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kActivationInfo,
-					fmt::format("P{}: Another player is controlling menus", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Another player is controlling menus", a_p->playerID + 1)
 				);
 				return;
 			}
-			
+
 			const auto activationRefrHandle = a_p->tm->activationRefrHandle;
 			// Clear out to prevent carryover when activating later.
 			a_p->tm->ClearActivationTargetData();
 			DBG
 			(
-				"{}: On release: {}. Chose quick target: {}.", 
+				"{}: On release: {}.", 
 				a_p->coopActor->GetName(), 
 				Util::HandleIsValid(activationRefrHandle) ?
 				activationRefrHandle.get()->GetName() : 
-				"NONE",
-				a_p->tm->choseQuickActivationTarget
+				"NONE"
 			);
 
 			// If the player has a crosshair refr, get all refrs of the same type.
@@ -9287,15 +9389,8 @@ namespace ALYSLC
 					CrosshairMessageType::kActivationInfo,
 					fmt::format
 					(
-						"P{}: No object chosen to interact with", 
-						a_p->playerID + 1
-					),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+						"P{}: No object chosen to interact with", a_p->playerID + 1
+					)
 				);
 				return;
 			}
@@ -9311,397 +9406,220 @@ namespace ALYSLC
 						"P{}: {} is too far away", 
 						a_p->playerID + 1,
 						baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
-					),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					)
 				);
 				return;
 			}
 			
 			uint32_t lootedObjects = 0;
-			if (a_p->tm->choseQuickActivationTarget)
+			auto asActor = activationRefrPtr->As<RE::Actor>();
+			// Next, the targeted refr must not be off limits, 
+			// or the player must be sneaking to signal intent to steal.
+			// Finally, the refr must be a lootable loose refr,
+			// a corpse, or an unlocked container.
+			if (Util::ActivationIsOffLimits(a_p->coopActor.get(), activationRefrPtr.get()) &&
+				!a_p->coopActor->IsSneaking())
 			{
-				// If a loose refr is chosen via quick selection, 
-				// activate all lootable objects in range,
-				// or if a container is selected for activation,
-				// activate all objects from all lootable containers in range.
-				// Is lootable refr, but not a corpse or container.
-				bool hasContainer = activationRefrPtr->HasContainer();
-				bool isLootable = !hasContainer && Util::IsLootableRefr(activationRefrPtr.get());
-				bool isStealing = Util::ActivationIsOffLimits
+				a_p->tm->SetCrosshairMessageRequest
 				(
-					a_p->coopActor.get(), activationRefrPtr.get()
+					CrosshairMessageType::kActivationInfo,
+					fmt::format
+					(
+						"P{}: Sneak to <font color=\"#FF0000\">interact</font> "
+						"with every '{}' in range", 
+						a_p->playerID + 1,
+						baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
+					)
 				);
-				if (isStealing && !a_p->coopActor->IsSneaking())
+				return;
+			}
+			
+			bool isLootableRefr = 
+			(
+				(Util::IsLootableRefr(activationRefrPtr.get())) || 
+				(
+					asActor &&
+					asActor->IsDead()
+				)	
+			);
+			if (!isLootableRefr)
+			{
+				if (activationRefrPtr->IsLocked() ||
+					asActor || 
+					!activationRefrPtr->HasContainer())
 				{
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kActivationInfo,
 						fmt::format
 						(
-							"P{}: Sneak to <font color=\"#FF0000\">steal</font> "
-							"{}", 
+							"P{}: Cannot interact with every '{}' in range", 
 							a_p->playerID + 1,
-							hasContainer ? 
-							"from every container in range" : 
-							"every object in range"
-						),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+							baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
+						)
 					);
 					return;
 				}
+			}
 
-				// Get potential refrs to activate.
-				const auto refrsToActivate = a_p->tm->GetLootableRefrsInRange
-				(
-					hasContainer, Settings::uMaxGrabbedReferences
-				);
-				for (const auto& handle : refrsToActivate)
+			// If the targeted activation refr is grabbed,
+			// loot all lootable objects that the player is currently grabbing.
+			bool isGrabbedRefr = a_p->tm->rmm->IsManaged(activationRefrPtr->GetHandle(), true);
+			if (isGrabbedRefr) 
+			{
+				// Have to clear all grabbed objects before looting,
+				// since looting and removing one at a time
+				// causes a crash from accessing an invalid handle 
+				// due to the grabbed refr info list changing in size during iteration.
+
+				// Save grabbed refr handles before they're cleared.
+				std::vector<RE::ObjectRefHandle> grabbedRefrHandles{ };
+				for (auto& grabbedRefrInfo : a_p->tm->rmm->grabbedRefrInfoList)
 				{
-					auto objectPtr = Util::GetRefrPtrFromHandle(handle);
-					auto objectValidity = 
-					(
-						objectPtr && Util::IsValidRefrForTargeting(objectPtr.get())
-					);
-					if (!objectValidity)
+					grabbedRefrHandles.emplace_back(grabbedRefrInfo->refrHandle);
+				}
+
+				// No longer managed once looted.
+				// Clear grabbed refrs.
+				a_p->tm->rmm->ClearAll();
+				// Loot all saved grabbed refrs.
+				for (const auto& grabbedRefrHandle : grabbedRefrHandles) 
+				{
+					auto grabbedRefrPtr = Util::GetRefrPtrFromHandle(grabbedRefrHandle);
+					if (!grabbedRefrPtr)
 					{
 						continue;
 					}
 
-					// Clear grabbed/released refr if activating it, 
-					// as its 3D will be removed once picked up 
-					// and will no longer need to be tracked in the targeting manager.
-					if (a_p->tm->rmm->IsManaged(handle, true) || 
-						a_p->tm->rmm->IsManaged(handle, false))
+					if (Util::IsLootableRefr(grabbedRefrPtr.get()))
 					{
-						a_p->tm->rmm->ClearRefr(handle);
+						// Loot individual item/aggregation of the same item.
+						lootedObjects += HelperFuncs::LootRefr(a_p, grabbedRefrPtr);
 					}
-
-					if (objectPtr->HasContainer())
+					else if (grabbedRefrPtr->As<RE::Actor>() && grabbedRefrPtr->IsDead())
 					{
-						if (!objectPtr->As<RE::Actor>())
-						{
-							lootedObjects += HelperFuncs::LootAllItemsFromContainer
-							(
-								a_p, objectPtr
-							);
-						}
-						else if (objectPtr->IsDead())
-						{
-							lootedObjects += HelperFuncs::LootAllItemsFromCorpse(a_p, objectPtr);
-						}
-					}
-					else
-					{
-						lootedObjects += HelperFuncs::LootRefr(a_p, objectPtr);
+						// Loot all items from grabbed corpse.
+						lootedObjects += HelperFuncs::LootAllItemsFromCorpse
+						(
+							a_p, grabbedRefrPtr
+						);
 					}
 				}
 
-				if (hasContainer)
-				{
-					a_p->tm->SetCrosshairMessageRequest
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kActivationInfo,
+					fmt::format
 					(
-						CrosshairMessageType::kActivationInfo,
-						fmt::format
-						(
-							"P{}: {} {} {} from all unlocked containers in range", 
-							a_p->playerID + 1,
-							isStealing ? "<font color=\"#FF0000\">Stealing</font>" : "Looting",
-							lootedObjects,
-							lootedObjects == 1 ? "item" : "items"
-						),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
-					);
-				}
-				else
-				{
-					a_p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kActivationInfo,
-						fmt::format
-						(
-							"P{}: {} {} {} in range", 
-							a_p->playerID + 1,
-							isStealing ? "<font color=\"#FF0000\">Stealing</font>" : "Looting",
-							lootedObjects,
-							lootedObjects == 1 ? "item" : "items"
-						),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
-					);
-				}
+						"P{}: Looted {} {} from all grabbed objects",
+						a_p->playerID + 1, 
+						lootedObjects,
+						lootedObjects == 1 ? "item" : "items"
+					)
+				);
 			}
 			else
 			{
 				auto asActor = activationRefrPtr->As<RE::Actor>();
-				// Next, the targeted refr must not be off limits, 
-				// or the player must be sneaking to signal intent to steal.
-				// Finally, the refr must be a lootable loose refr,
-				// a corpse, or an unlocked container.
-				if (Util::ActivationIsOffLimits(a_p->coopActor.get(), activationRefrPtr.get()) &&
-					!a_p->coopActor->IsSneaking())
+				bool isCorpse = asActor && asActor->IsDead();
+				if (isCorpse)
 				{
-					a_p->tm->SetCrosshairMessageRequest
+					// Is corpse.
+					lootedObjects = HelperFuncs::LootAllItemsFromCorpse
 					(
-						CrosshairMessageType::kActivationInfo,
-						fmt::format
-						(
-							"P{}: Sneak to <font color=\"#FF0000\">interact</font> "
-							"with every '{}' in range", 
-							a_p->playerID + 1,
-							baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
-						),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						a_p, activationRefrPtr
 					);
-					return;
-				}
-			
-				bool isLootableRefr = 
-				(
-					(Util::IsLootableRefr(activationRefrPtr.get())) || 
-					(
-						asActor &&
-						asActor->IsDead()
-					)	
-				);
-				if (!isLootableRefr)
-				{
-					if (activationRefrPtr->IsLocked() ||
-						asActor || 
-						!activationRefrPtr->HasContainer())
-					{
-						a_p->tm->SetCrosshairMessageRequest
-						(
-							CrosshairMessageType::kActivationInfo,
-							fmt::format
-							(
-								"P{}: Cannot interact with every '{}' in range", 
-								a_p->playerID + 1,
-								baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
-							),
-							{ 
-								CrosshairMessageType::kNone, 
-								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
-						);
-						return;
-					}
-				}
-
-				// If the targeted activation refr is grabbed,
-				// loot all lootable objects that the player is currently grabbing.
-				bool isGrabbedRefr = a_p->tm->rmm->IsManaged(activationRefrPtr->GetHandle(), true);
-				if (isGrabbedRefr) 
-				{
-					// Have to clear all grabbed objects before looting,
-					// since looting and removing one at a time
-					// causes a crash from accessing an invalid handle 
-					// due to the grabbed refr info list changing in size during iteration.
-
-					// Save grabbed refr handles before they're cleared.
-					std::vector<RE::ObjectRefHandle> grabbedRefrHandles{ };
-					for (auto& grabbedRefrInfo : a_p->tm->rmm->grabbedRefrInfoList)
-					{
-						grabbedRefrHandles.emplace_back(grabbedRefrInfo->refrHandle);
-					}
-
-					// No longer managed once looted.
-					// Clear grabbed refrs.
-					a_p->tm->rmm->ClearAll();
-					// Loot all saved grabbed refrs.
-					for (const auto& grabbedRefrHandle : grabbedRefrHandles) 
-					{
-						auto grabbedRefrPtr = Util::GetRefrPtrFromHandle(grabbedRefrHandle);
-						if (!grabbedRefrPtr)
-						{
-							continue;
-						}
-
-						if (Util::IsLootableRefr(grabbedRefrPtr.get()))
-						{
-							// Loot individual item/aggregation of the same item.
-							lootedObjects += HelperFuncs::LootRefr(a_p, grabbedRefrPtr);
-						}
-						else if (grabbedRefrPtr->As<RE::Actor>() && grabbedRefrPtr->IsDead())
-						{
-							// Loot all items from grabbed corpse.
-							lootedObjects += HelperFuncs::LootAllItemsFromCorpse
-							(
-								a_p, grabbedRefrPtr
-							);
-						}
-					}
-
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kActivationInfo,
 						fmt::format
 						(
-							"P{}: Looted {} {} from all grabbed objects",
+							"P{}: Looted {} {} from '{}'",
 							a_p->playerID + 1, 
 							lootedObjects,
-							lootedObjects == 1 ? "item" : "items"
-						),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+							lootedObjects == 1 ? "item" : "items",
+							activationRefrPtr->GetName()
+						)
+					);
+				}
+				else if (!activationRefrPtr->IsLocked() && activationRefrPtr->HasContainer())
+				{
+					// Is unlocked container.
+					lootedObjects = HelperFuncs::LootAllItemsFromContainer
+					(
+						a_p, activationRefrPtr
+					);
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kActivationInfo,
+						fmt::format
+						(
+							"P{}: Looted {} {} from container '{}'",
+							a_p->playerID + 1,
+							lootedObjects,
+							lootedObjects == 1 ? "item" : "items",
+							activationRefrPtr->GetName()
+						)
 					);
 				}
 				else
 				{
-					auto asActor = activationRefrPtr->As<RE::Actor>();
-					bool isCorpse = asActor && asActor->IsDead();
-					if (isCorpse)
+					// Is lootable refr, but not a corpse or container.
+					const auto& nearbyObjectsOfSameType = a_p->tm->GetNearbyRefrsOfSameType
+					(
+						activationRefrHandle, Settings::uMaxGrabbedReferences
+					);
+					for (const auto& handle : nearbyObjectsOfSameType)
 					{
-						// Is corpse.
-						lootedObjects = HelperFuncs::LootAllItemsFromCorpse
+						auto objectPtr = Util::GetRefrPtrFromHandle(handle);
+						auto objectValidity = 
 						(
-							a_p, activationRefrPtr
+							objectPtr && Util::IsValidRefrForTargeting(objectPtr.get())
 						);
+						if (!objectValidity)
+						{
+							continue;
+						}
+
+						// Clear released refr if activating it, 
+						// as its 3D will be removed once picked up 
+						// and will no longer need to be tracked in the targeting manager.
+						if (a_p->tm->rmm->IsManaged(handle, true) || 
+							a_p->tm->rmm->IsManaged(handle, false))
+						{
+							a_p->tm->rmm->ClearRefr(handle);
+						}
+
+						lootedObjects += HelperFuncs::LootRefr(a_p, objectPtr);
+					}
+
+					// Notify player.
+					if (!nearbyObjectsOfSameType.empty())
+					{
 						a_p->tm->SetCrosshairMessageRequest
 						(
 							CrosshairMessageType::kActivationInfo,
 							fmt::format
 							(
-								"P{}: Looted {} {} from '{}'",
+								"P{}: Looted {} of '{}' in range", 
 								a_p->playerID + 1, 
 								lootedObjects,
-								lootedObjects == 1 ? "item" : "items",
-								activationRefrPtr->GetName()
-							),
-							{
-								CrosshairMessageType::kNone,
-								CrosshairMessageType::kStealthState,
-								CrosshairMessageType::kTargetingState 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
-						);
-					}
-					else if (!activationRefrPtr->IsLocked() && activationRefrPtr->HasContainer())
-					{
-						// Is unlocked container.
-						lootedObjects = HelperFuncs::LootAllItemsFromContainer
-						(
-							a_p, activationRefrPtr
-						);
-						a_p->tm->SetCrosshairMessageRequest
-						(
-							CrosshairMessageType::kActivationInfo,
-							fmt::format
-							(
-								"P{}: Looted {} {} from container '{}'",
-								a_p->playerID + 1,
-								lootedObjects,
-								lootedObjects == 1 ? "item" : "items",
-								activationRefrPtr->GetName()
-							),
-							{ 
-								CrosshairMessageType::kNone,
-								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
+								baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
+							)
 						);
 					}
 					else
 					{
-						// Is lootable refr, but not a corpse or container.
-						const auto& nearbyObjectsOfSameType = a_p->tm->GetNearbyRefrsOfSameType
+						a_p->tm->SetCrosshairMessageRequest
 						(
-							activationRefrHandle, Settings::uMaxGrabbedReferences
+							CrosshairMessageType::kActivationInfo,
+							fmt::format
+							(
+								"P{}: No '{}' in range", 
+								a_p->playerID + 1, 
+								baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
+							)
 						);
-						for (const auto& handle : nearbyObjectsOfSameType)
-						{
-							auto objectPtr = Util::GetRefrPtrFromHandle(handle);
-							auto objectValidity = 
-							(
-								objectPtr && Util::IsValidRefrForTargeting(objectPtr.get())
-							);
-							if (!objectValidity)
-							{
-								continue;
-							}
-
-							// Clear released refr if activating it, 
-							// as its 3D will be removed once picked up 
-							// and will no longer need to be tracked in the targeting manager.
-							if (a_p->tm->rmm->IsManaged(handle, true) || 
-								a_p->tm->rmm->IsManaged(handle, false))
-							{
-								a_p->tm->rmm->ClearRefr(handle);
-							}
-
-							lootedObjects += HelperFuncs::LootRefr(a_p, objectPtr);
-						}
-
-						// Notify player.
-						if (!nearbyObjectsOfSameType.empty())
-						{
-							a_p->tm->SetCrosshairMessageRequest
-							(
-								CrosshairMessageType::kActivationInfo,
-								fmt::format
-								(
-									"P{}: Looted {} of '{}' in range", 
-									a_p->playerID + 1, 
-									lootedObjects,
-									baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
-								),
-								{
-									CrosshairMessageType::kNone, 
-									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								Settings::fSecsBetweenDiffCrosshairMsgs
-							);
-						}
-						else
-						{
-							a_p->tm->SetCrosshairMessageRequest
-							(
-								CrosshairMessageType::kActivationInfo,
-								fmt::format
-								(
-									"P{}: No '{}' in range", 
-									a_p->playerID + 1, 
-									baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
-								),
-								{
-									CrosshairMessageType::kNone, 
-									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								Settings::fSecsBetweenDiffCrosshairMsgs
-							);
-						}
 					}
 				}
 			}
@@ -9717,12 +9635,11 @@ namespace ALYSLC
 			a_p->tm->ClearActivationTargetData();
 			DBG
 			(
-				"{}: On release: {}. Chose quick target: {}.", 
+				"{}: On release: {}.", 
 				a_p->coopActor->GetName(), 
 				Util::HandleIsValid(activationRefrHandle) ?
 				activationRefrHandle.get()->GetName() : 
-				"NONE",
-				a_p->tm->choseQuickActivationTarget
+				"NONE"
 			);
 
 			auto activationRefrPtr = Util::GetRefrPtrFromHandle(activationRefrHandle);
@@ -9745,13 +9662,7 @@ namespace ALYSLC
 				(
 					"P{}: Cancelling activation", 
 					a_p->playerID + 1
-				),
-				{ 
-					CrosshairMessageType::kNone,
-					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
+				)
 			);
 		}
 
@@ -9842,29 +9753,19 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kCamera,
-					fmt::format("P{}: Cannot switch to lock-on mode", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Cannot switch to lock-on mode", a_p->playerID + 1)
 				);
 				return;
 			}
 
-			// Give this player control of the camera.
-			auto& controllingPID = glob.cam->controlCamPID;
-			if (controllingPID != a_p->playerID && 
-				glob.cam->camAdjMode == CamAdjustmentMode::kNone)
+			// Skip if another player is adjusting the camera.
+			if (glob.cam->camAdjMode != CamAdjustmentMode::kNone)
 			{
-				controllingPID = a_p->playerID;
-			}
-
-			// Same player as the one with control over camera can adjust the cam state freely.
-			// Nothing to do otherwise.
-			if (controllingPID != a_p->playerID)
-			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kCamera,
+					fmt::format("P{}: Another player has camera control", a_p->playerID + 1)
+				);
 				return;
 			}
 
@@ -9891,8 +9792,8 @@ namespace ALYSLC
 			);
 			auto currentFocalPlayerPtr = 
 			(
-				Settings::bFocalPlayerMode && glob.cam->focalPlayerPID != -1 ?
-				glob.coopPlayers[glob.cam->focalPlayerPID]->coopActor :
+				Settings::bFocalPlayerMode && glob.cam->focalPID != -1 ?
+				glob.coopPlayers[glob.cam->focalPID]->coopActor :
 				nullptr
 			);
 			auto currentLockOnTargetPtr = 
@@ -9936,18 +9837,12 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Camera lock-on mode", a_p->playerID + 1),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Camera lock-on mode", a_p->playerID + 1)
 					);
 				}
 				else
 				{
-					glob.cam->focalPlayerPID = targetPlayerPID;
+					glob.cam->focalPID = targetPlayerPID;
 					a_p->tm->ClearActivationTargetData();
 					a_p->tm->DeactivateCrosshair();
 					// Inform the player.
@@ -9959,13 +9854,7 @@ namespace ALYSLC
 							"P{}: Gave P{} camera focus", 
 							a_p->playerID + 1,
 							glob.coopPlayers[targetPlayerPID]->playerID + 1
-						),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						)
 					);
 				}
 			}
@@ -9982,38 +9871,22 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1)
 					);
 				}
 				else if (targetActorPtr == currentFocalPlayerPtr)
 				{
-					glob.cam->focalPlayerPID = -1;
+					glob.cam->focalPID = -1;
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
-						fmt::format
-						(
-							"P{}: Reset camera focus", 
-							a_p->playerID + 1
-						),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Reset camera focus", a_p->playerID + 1)
 					);
 				}
 			}
 			else
 			{
-				if (glob.cam->focalPlayerPID != -1)
+				if (glob.cam->focalPID != -1)
 				{
 					// Inform the player of the removal of camera focus
 					// and the switch back to auto-trail mode.
@@ -10022,15 +9895,8 @@ namespace ALYSLC
 						CrosshairMessageType::kCamera,
 						fmt::format
 						(
-							"P{}: Reset camera focus and now auto-trailing", 
-							a_p->playerID + 1
-						),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+							"P{}: Reset camera focus and now auto-trailing", a_p->playerID + 1
+						)
 					);
 				}
 				else
@@ -10039,18 +9905,12 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1)
 					);
 				}
 
 				// Clear focal player and current lock-on target if not targeting anything.
-				glob.cam->focalPlayerPID = -1;
+				glob.cam->focalPID = -1;
 				// Send a request to clear the cam lock-on target
 				// and reset the cam state to auto-trail.
 				glob.cam->lockOnActorReq = RE::ActorHandle();
@@ -10071,28 +9931,19 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kCamera,
-					fmt::format("P{}: Cannot switch to manual positioning mode", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Cannot switch to manual positioning mode", a_p->playerID + 1)
 				);
 				return;
 			}
 
-			auto& controllingPID = glob.cam->controlCamPID;
-			if (controllingPID != a_p->playerID &&
-				glob.cam->camAdjMode == CamAdjustmentMode::kNone)
+			// Skip if another player is adjusting the camera.
+			if (glob.cam->camAdjMode != CamAdjustmentMode::kNone)
 			{
-				controllingPID = a_p->playerID;
-			}
-
-			// Same player as one with control over camera can adjust the cam state freely.
-			// Nothing to do otherwise.
-			if (controllingPID != a_p->playerID)
-			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kCamera,
+					fmt::format("P{}: Another player has camera control", a_p->playerID + 1)
+				);
 				return;
 			}
 
@@ -10100,9 +9951,9 @@ namespace ALYSLC
 			if (glob.cam->camState != CamState::kManualPositioning)
 			{
 				// Clear focal player if switching to manual positioning.
-				if (glob.cam->camState == CamState::kLockOn && glob.cam->focalPlayerPID != -1)
+				if (glob.cam->camState == CamState::kLockOn && glob.cam->focalPID != -1)
 				{
-					glob.cam->focalPlayerPID = -1;
+					glob.cam->focalPID = -1;
 				}
 
 				a_p->tm->SetCrosshairMessageRequest
@@ -10112,13 +9963,7 @@ namespace ALYSLC
 					(
 						"P{}: Camera manual positioning mode. Press again to unfreeze.", 
 						a_p->playerID + 1
-					),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					)
 				);
 				glob.cam->camState = CamState::kManualPositioning;
 				glob.cam->manualPositioningTimeFrozen = true;
@@ -10133,17 +9978,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
-						fmt::format
-						(
-							"P{}: Resuming the flow of time.",
-							a_p->playerID + 1
-						),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Resuming the flow of time.", a_p->playerID + 1)
 					);
 					glob.cam->manualPositioningTimeFrozen = false;
 					Util::ToggleFreezeTime(false);
@@ -10154,13 +9989,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1)
 					);
 					glob.cam->camState = CamState::kAutoTrail;
 					glob.cam->manualPositioningTimeFrozen = false;
@@ -10286,13 +10115,7 @@ namespace ALYSLC
 										"P{}: <font color=\"#E66100\">"
 										"Now controlling dialogue</font>", 
 										reqP->playerID + 1
-									),
-									{
-										CrosshairMessageType::kNone,
-										CrosshairMessageType::kStealthState,
-										CrosshairMessageType::kTargetingState 
-									},
-									Settings::fSecsBetweenDiffCrosshairMsgs
+									)
 								);
 							}
 							else
@@ -10305,13 +10128,7 @@ namespace ALYSLC
 										"P{}: <font color=\"#E66100\">"
 										"Gave dialogue control to P1</font>", 
 										a_p->playerID + 1
-									),
-									{
-										CrosshairMessageType::kNone,
-										CrosshairMessageType::kStealthState,
-										CrosshairMessageType::kTargetingState 
-									},
-									Settings::fSecsBetweenDiffCrosshairMsgs
+									)
 								);
 							}
 							
@@ -10361,13 +10178,7 @@ namespace ALYSLC
 									"P{}: <font color=\"#E66100\">"
 									"Requesting dialogue control</font>", 
 									a_p->playerID + 1
-								),
-								{ 
-									CrosshairMessageType::kNone, 
-									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetingState 
-								},
-								Settings::fSecsBetweenDiffCrosshairMsgs
+								)
 							);
 						}
 						else if (glob.menuPID != -1)
@@ -10380,13 +10191,7 @@ namespace ALYSLC
 									"P{}: <font color=\"#E66100\">"
 									"P1 is requesting dialogue control</font>", 
 									glob.menuPID + 1
-								),
-								{
-									CrosshairMessageType::kNone,
-									CrosshairMessageType::kStealthState,
-									CrosshairMessageType::kTargetingState 
-								},
-								Settings::fSecsBetweenDiffCrosshairMsgs
+								)
 							);
 						}
 					}
@@ -10473,13 +10278,7 @@ namespace ALYSLC
 			a_p->tm->SetCrosshairMessageRequest
 			(
 				CrosshairMessageType::kGeneralNotification,
-				fmt::format("P{}: Re-equipped items in hands", a_p->playerID + 1),
-				{ 
-					CrosshairMessageType::kNone,
-					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
+				fmt::format("P{}: Re-equipped items in hands", a_p->playerID + 1)
 			);
 		}
 
@@ -10539,13 +10338,7 @@ namespace ALYSLC
 			a_p->tm->SetCrosshairMessageRequest
 			(
 				CrosshairMessageType::kGeneralNotification,
-				fmt::format("P{}: Reset player", a_p->playerID + 1),
-				{ 
-					CrosshairMessageType::kNone, 
-					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
+				fmt::format("P{}: Reset player", a_p->playerID + 1)
 			);
 		}
 
@@ -10571,13 +10364,7 @@ namespace ALYSLC
 			a_p->tm->SetCrosshairMessageRequest
 			(
 				CrosshairMessageType::kGeneralNotification,
-				fmt::format("P{}: Ragdolling", a_p->playerID + 1),
-				{ 
-					CrosshairMessageType::kNone,
-					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
+				fmt::format("P{}: Ragdolling", a_p->playerID + 1)
 			);
 		}
 
@@ -10601,12 +10388,13 @@ namespace ALYSLC
 					"Hold 'Sneak' and tap 'Toggle POV' with P1 to restart the co-op camera.</font>", 
 					a_p->playerID + 1
 				),
+				Settings::fSecsBetweenDiffCrosshairMsgs * 2.0f,
 				{ 
 					CrosshairMessageType::kNone,
+					CrosshairMessageType::kActivationInfo,
 					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs * 2.0f
+					CrosshairMessageType::kCrosshairTarget 
+				}
 			);
 		}
 
@@ -10686,7 +10474,7 @@ namespace ALYSLC
 						)
 					)
 				);
-				const float& lsGameAngle = a_p->analogStickParams[!AnalogStickParams::kLSCamRelAng];
+				const float& lsGameAngle = a_p->analogStickParams[!AnalogStickParams::kLSWorldAng];
 				// Facing to moving angle difference.
 				float facingToMovingAngDiff = 0.0f;
 				if (hasTarget)
@@ -10779,12 +10567,13 @@ namespace ALYSLC
 				(
 					CrosshairMessageType::kGeneralNotification,
 					fmt::format("P{}: No favorites!", a_p->playerID + 1),
+					0.5f * Settings::fSecsBetweenDiffCrosshairMsgs,
 					{ 
 						CrosshairMessageType::kNone,
+						CrosshairMessageType::kActivationInfo,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState
-					},
-					0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+						CrosshairMessageType::kCrosshairTarget
+					}
 				);
 				return;
 			}
@@ -10960,209 +10749,6 @@ namespace ALYSLC
 			HelperFuncs::OpenMenuWithKeyboard(a_p, InputAction::kPause);
 		}
 
-		void PowerAttackDual(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Play dual-wield power attack animation.
-
-			// Do not play if power attack animation conditions do not hold.
-			if (!ConditionFuncs::CanPlayPowerAttackAnimation(a_p, InputAction::kPowerAttackDual))
-			{
-				if (!a_p->coopActor->IsWeaponDrawn() && !HelperFuncs::IsTryingToRotateArms(a_p))
-				{
-					// Unsheathe even on condition failure.
-					a_p->pam->ReadyWeapon(true, false);
-				}
-				else if ((ConditionFuncs::AttackRH(a_p)) && 
-						 (a_p->em->Has2HMeleeWeapEquipped() || a_p->em->HasRHMeleeWeapEquipped()))
-				{
-					// Perform a regular RH attack if the player has a melee weapon.
-					ProgressFuncs::AttackRH(a_p);
-					CleanupFuncs::AttackRH(a_p);
-				}
-
-				return;
-			}
-
-			// Creature race support-ish. 
-			// Directly send the attack animation event (no stamina cost).
-			if (a_p->coopActor->race && 
-				!a_p->coopActor->HasKeyword(glob.npcKeyword) &&
-				!Util::IsWerewolf(a_p->coopActor.get()) &&
-				!Util::IsVampireLord(a_p->coopActor.get()))
-			{
-				std::string skeleName{ "" };
-				Util::GetSkeletonModelNameForRace(a_p->coopActor->race, skeleName);
-				if (Hash(skeleName) == "bear"_h)
-				{
-					if (a_p->lsMoved)
-					{
-						a_p->coopActor->NotifyAnimationGraph("attackStart_ForwardPowerShort");
-					}
-					else
-					{
-						a_p->coopActor->NotifyAnimationGraph("attackStart_StandingPower");
-					}
-
-					return;
-				}
-			}
-
-			// Attempt to perform a power attack if the player's weapon is drawn 
-			// and they are not in a killmove.
-			// Otherwise, draw weapons/magic if arms rotation is disabled.
-			if (a_p->coopActor->IsWeaponDrawn())
-			{
-				// Check if a killmove should be played first.
-				bool performingKillmove = HelperFuncs::CheckForKillmove
-				(
-					a_p, InputAction::kAttackLH
-				);
-				if (!performingKillmove)
-				{
-					HelperFuncs::PlayPowerAttackAnimation(a_p, InputAction::kPowerAttackDual);
-				}
-			}
-			else
-			{
-				a_p->pam->ReadyWeapon(true, false);
-			}
-		}
-
-		void PowerAttackLH(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Play LH power attack animation.
-			
-			// Do not play if power attack animation conditions do not hold.
-			if (!ConditionFuncs::CanPlayPowerAttackAnimation(a_p, InputAction::kPowerAttackLH))
-			{
-				if (!a_p->coopActor->IsWeaponDrawn() && !HelperFuncs::IsTryingToRotateArms(a_p))
-				{
-					// Unsheathe even on condition failure.
-					a_p->pam->ReadyWeapon(true, false);
-				}
-				else if (ConditionFuncs::AttackLH(a_p) && a_p->em->HasLHMeleeWeapEquipped())
-				{
-					// Perform a regular LH attack if the player has a melee weapon.
-					ProgressFuncs::AttackLH(a_p);
-					CleanupFuncs::AttackLH(a_p);
-				}
-
-				return;
-			}
-
-			// Creature race support-ish. 
-			// Directly send the attack animation event (no stamina cost).
-			if (a_p->coopActor->race && 
-				!a_p->coopActor->HasKeyword(glob.npcKeyword) &&
-				!Util::IsWerewolf(a_p->coopActor.get()) &&
-				!Util::IsVampireLord(a_p->coopActor.get()))
-			{
-				std::string skeleName{ "" };
-				Util::GetSkeletonModelNameForRace(a_p->coopActor->race, skeleName);
-				if (Hash(skeleName) == "bear"_h)
-				{
-					if (a_p->lsMoved)
-					{
-						a_p->coopActor->NotifyAnimationGraph("attackStart_ForwardPowerShort");
-					}
-					else
-					{
-						a_p->coopActor->NotifyAnimationGraph("attackStart_StandingPower");
-					}
-
-					return;
-				}
-			}
-
-			// Attempt to perform power attack if the player's weapon is drawn 
-			// and they are not in a killmove.
-			// Otherwise, draw weapons/magic if arms rotation is disabled.
-			if (a_p->coopActor->IsWeaponDrawn()) 
-			{
-				// Check if a killmove should be played first.
-				bool performingKillmove = HelperFuncs::CheckForKillmove
-				(
-					a_p, InputAction::kAttackLH
-				);
-				if (!performingKillmove)
-				{
-					HelperFuncs::PlayPowerAttackAnimation(a_p, InputAction::kPowerAttackLH);
-				}
-			}
-			else
-			{
-				a_p->pam->ReadyWeapon(true, false);
-			}
-		}
-
-		void PowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Play RH power attack animation.
-	
-			// Do not play if power attack animation conditions do not hold.
-			if (!ConditionFuncs::CanPlayPowerAttackAnimation(a_p, InputAction::kPowerAttackRH))
-			{
-				if (!a_p->coopActor->IsWeaponDrawn() && !HelperFuncs::IsTryingToRotateArms(a_p))
-				{
-					// Unsheathe even on condition failure.
-					a_p->pam->ReadyWeapon(true, false);
-				}
-				else if ((ConditionFuncs::AttackRH(a_p)) && 
-						 (a_p->em->Has2HMeleeWeapEquipped() || a_p->em->HasRHMeleeWeapEquipped()))
-				{
-					// Perform a regular attack if the player has a melee weapon.
-					ProgressFuncs::AttackRH(a_p);
-					CleanupFuncs::AttackRH(a_p);
-				}
-
-				return;
-			}
-
-			// Creature race support-ish. 
-			// Directly send the attack animation event (no stamina cost).
-			if (a_p->coopActor->race && 
-				!a_p->coopActor->HasKeyword(glob.npcKeyword) &&
-				!Util::IsWerewolf(a_p->coopActor.get()) &&
-				!Util::IsVampireLord(a_p->coopActor.get()))
-			{
-				std::string skeleName{ "" };
-				Util::GetSkeletonModelNameForRace(a_p->coopActor->race, skeleName);
-				if (Hash(skeleName) == "bear"_h)
-				{
-					if (a_p->lsMoved)
-					{
-						a_p->coopActor->NotifyAnimationGraph("attackStart_ForwardPowerShort");
-					}
-					else
-					{
-						a_p->coopActor->NotifyAnimationGraph("attackStart_StandingPower");
-					}
-
-					return;
-				}
-			}
-
-			// Attempt to perform power attack if the player's weapon is drawn 
-			// and they are not in a killmove.
-			// Otherwise, draw weapons/magic if arms rotation is disabled.
-			if (a_p->coopActor->IsWeaponDrawn())
-			{
-				// Check if a killmove should be played first.
-				bool performingKillmove = HelperFuncs::CheckForKillmove
-				(
-					a_p, InputAction::kAttackLH
-				);
-				if (!performingKillmove)
-				{
-					HelperFuncs::PlayPowerAttackAnimation(a_p, InputAction::kPowerAttackRH);
-				}
-			}
-			else
-			{
-				a_p->pam->ReadyWeapon(true, false);
-			}
-		}
-
 		void QuickSlotItem(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Use the quickslot consumable item if the player has at least 1.
@@ -11181,12 +10767,13 @@ namespace ALYSLC
 				(
 					CrosshairMessageType::kGeneralNotification,
 					fmt::format("P{}: No quick slot item equipped!", a_p->playerID + 1),
+					0.5f * Settings::fSecsBetweenDiffCrosshairMsgs,
 					{ 
 						CrosshairMessageType::kNone,
+						CrosshairMessageType::kActivationInfo,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState
-					},
-					0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+						CrosshairMessageType::kCrosshairTarget
+					}
 				);
 				return;
 			}
@@ -11281,13 +10868,7 @@ namespace ALYSLC
 								qsItem->GetName(),
 								objectEntryToPoison->GetDisplayName(),
 								count
-							),
-							{ 
-								CrosshairMessageType::kNone, 
-								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
+							)
 						);
 					}
 					else
@@ -11307,13 +10888,7 @@ namespace ALYSLC
 							(
 								"P{}: Failed to apply poison '{}' ({} remaining)",
 								a_p->playerID + 1, qsItem->GetName(), count
-							),
-							{ 
-								CrosshairMessageType::kNone, 
-								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
+							)
 						);
 					}
 				}
@@ -11335,13 +10910,7 @@ namespace ALYSLC
 						(
 							"P{}: Using item '{}' ({} remaining)",
 							a_p->playerID + 1, qsItem->GetName(), count
-						),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						)
 					);
 				}
 			}
@@ -11350,17 +10919,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format
-					(
-						"P{}: Out of item '{}'",
-						a_p->playerID + 1, qsItem->GetName()
-					),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Out of item '{}'", a_p->playerID + 1, qsItem->GetName())
 				);
 				// Remove QS item since the player does not have the item anymore.
 				a_p->em->quickSlotItem = nullptr;
@@ -11379,13 +10938,7 @@ namespace ALYSLC
 			a_p->tm->SetCrosshairMessageRequest
 			(
 				CrosshairMessageType::kGeneralNotification,
-				fmt::format("P{}: Reset aim pitch angle", a_p->playerID + 1),
-				{ 
-					CrosshairMessageType::kNone,
-					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
+				fmt::format("P{}: Reset aim pitch angle", a_p->playerID + 1)
 			);
 		}
 
@@ -11397,21 +10950,19 @@ namespace ALYSLC
 			glob.cam->manualPositioningTimeFrozen = false;
 			Util::ToggleFreezeTime(false);
 
-			// Give this player control of the camera.
-			auto& controllingPID = glob.cam->controlCamPID;
-			if (controllingPID != a_p->playerID && 
-				glob.cam->camAdjMode == CamAdjustmentMode::kNone)
+			// Skip if another player is adjusting the camera.
+			if (glob.cam->camAdjMode != CamAdjustmentMode::kNone)
 			{
-				controllingPID = a_p->playerID;
-			}
-
-			// Same player as the one with control over camera can adjust the cam state freely.
-			// Nothing to do otherwise.
-			if (controllingPID != a_p->playerID)
-			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kCamera,
+					fmt::format("P{}: Another player has camera control", a_p->playerID + 1)
+				);
 				return;
 			}
-
+			
+			// Zoom back in to place the camera behind the dialogue player.
+			glob.cam->adjustedAfterReachingDialoguePos = false;
 			glob.cam->camRadialDistanceOffset = 
 			glob.cam->camSavedRadialDistanceOffset =
 			glob.cam->camBaseHeightOffset = 0.0f;
@@ -11419,13 +10970,7 @@ namespace ALYSLC
 			a_p->tm->SetCrosshairMessageRequest
 			(
 				CrosshairMessageType::kCamera,
-				fmt::format("P{}: Reset camera orientation", a_p->playerID + 1),
-				{ 
-					CrosshairMessageType::kNone,
-					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
+				fmt::format("P{}: Reset camera orientation", a_p->playerID + 1)
 			);
 		}
 
@@ -11433,7 +10978,7 @@ namespace ALYSLC
 		{
 			// Set cam adjustment mode to rotate if this player can obtain control of the camera.
 
-			HelperFuncs::SetCameraAdjustmentMode(a_p->playerID, InputAction::kRotateCam, true);
+			HelperFuncs::SetCameraAdjustmentMode(a_p, InputAction::kRotateCam, true);
 		}
 
 		void Sheathe(const std::shared_ptr<CoopPlayer>& a_p)
@@ -11471,6 +11016,29 @@ namespace ALYSLC
 			}
 			else
 			{
+				// SkyParkour slide compatibility.
+				bool isSliding = false;
+				bool succ = a_p->coopActor->GetGraphVariableBool("SkyParkourSliding", isSliding);
+				if (succ && 
+					!isSliding && 
+					!a_p->coopActor->IsSneaking() &&
+					a_p->pam->AllButtonsPressedForAction(InputAction::kSprint) &&
+					a_p->pam->currentStamina > 0.0f &&
+					a_p->pam->secsTotalStaminaRegenCooldown == 0.0f)
+                {
+					a_p->coopActor->SetGraphVariableBool("SkyParkourIsLandingRoll", false);
+					a_p->coopActor->NotifyAnimationGraph("SprintStop");
+                    bool succ = a_p->coopActor->NotifyAnimationGraph("SkyParkour_Slide");
+					if (succ)
+					{
+						a_p->tm->bumpDamagedActorFIDs.clear();
+						// Stamina cost equal to generic equipped-weight-based cost.
+						a_p->pam->ExpendStamina(a_p->pam->GetEquippedWeightStaminaCost());
+					}
+
+					return;
+				}
+
 				a_p->pam->wantsToSneak = !a_p->pam->wantsToSneak;
 				if (a_p->isPlayer1)
 				{
@@ -11599,13 +11167,7 @@ namespace ALYSLC
 						a_p->playerID + 1,
 						inventoryWeight,
 						max(1.0f, a_p->coopActor->GetTotalCarryWeight())
-					),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					)
 				);
 
 				return;
@@ -11992,7 +11554,7 @@ namespace ALYSLC
 		{
 			// Adjust camera zoom if camera control is given.
 
-			HelperFuncs::SetCameraAdjustmentMode(a_p->playerID, InputAction::kZoomCam, true);
+			HelperFuncs::SetCameraAdjustmentMode(a_p, InputAction::kZoomCam, true);
 		}
 	};
 
@@ -12009,15 +11571,83 @@ namespace ALYSLC
 			// the incorrect activation text in subsequent crosshair messages,
 			// and so we can properly execute secondary activation actions below.
 			const bool performSecondaryActivationAction = a_p->tm->performSecondaryActivationAction;
-			a_p->tm->performSecondaryActivationAction = false;
-
+			const bool cycleSelectionWithLS = a_p->tm->cycleSelectionWithLS;
+			const bool shouldOpenProximityLootMenu = a_p->tm->shouldOpenProximityLootMenu;
+			// Clear flags on release to prevent carry-over.
+			a_p->tm->performSecondaryActivationAction = 
+			a_p->tm->cycleSelectionWithLS =
+			a_p->tm->shouldOpenProximityLootMenu = false;
+			DBG
+			(
+				"{}: On release: {}. Auto-selection active: {}. Downed player target: {}. "
+				"Perform secondary activation: {} (hold time: {}). "
+				"Cycle selection with LS: {}. Can start paragliding: {}.", 
+				a_p->coopActor->GetName(), 
+				Util::HandleIsValid(a_p->tm->activationRefrHandle) ?
+				a_p->tm->activationRefrHandle.get()->GetName() : 
+				"NONE",
+				a_p->tm->autoSelectionActive,
+				(bool)a_p->pam->downedPlayerTarget,
+				performSecondaryActivationAction,
+				a_p->pam->GetPlayerActionInputHoldTime(InputAction::kActivate),
+				cycleSelectionWithLS,
+				a_p->mm->canParaglide
+			);
+			const auto& perfStage = 
+			(
+				a_p->pam->paStatesList
+				[!InputAction::kActivate - !InputAction::kFirstAction].perfStage
+			);
+			bool notInterrupted = 
+			(
+				perfStage == PerfStage::kInputsReleased || 
+				perfStage == PerfStage::kSomeInputsReleased
+			);
 			// NOTE:
-			// Once the player requests to paraglide, activation of objects is disabled 
-			// until the player presses activate again on the ground.
+			// If the player can start paragliding, activation of objects is cancelled.
 			// Prevents activation of objects while paragliding or when landing after paragliding.
-			if (a_p->pam->requestedToParaglide)
+			if (a_p->mm->canParaglide && notInterrupted)
 			{				
 				DBG("{} has requested to paraglide.", a_p->coopActor->GetName());
+				if (!a_p->isPlayer1)
+				{
+					// All credits for the method used to spawn and attach the paraglider 
+					// anim object go to zfroggyman. Thanks a mill, bro! 
+					// Can retire my jank magical paraglider visuals.
+					// https://www.nexusmods.com/skyrimspecialedition/mods/192387
+					a_p->coopActor->SetGraphVariableInt("hasParaGlider"sv, 1);
+					a_p->coopActor->SetGraphVariableInt("hasparaglider"sv, 1);
+					bool isParagliding = false;
+					a_p->coopActor->GetGraphVariableBool
+					(
+						"bParaGliding", isParagliding
+					);
+					if (isParagliding)
+					{
+						// Cancel if already paragliding.
+						a_p->coopActor->NotifyAnimationGraph("EndPara");
+						a_p->mm->shouldParaglide = false;
+						DBG("{}: SHTOP PARAGLOIDE: {}", 
+							a_p->coopActor->GetName(), a_p->mm->shouldParaglide);
+					}
+					else if (a_p->coopActor->NotifyAnimationGraph("JumpFallDirectional") ||
+							 a_p->coopActor->NotifyAnimationGraph("JumpFall") ||
+							 a_p->coopActor->NotifyAnimationGraph("JumpDown"))
+					{
+						if (a_p->coopActor->NotifyAnimationGraph("StartPara"))
+						{
+							a_p->mm->shouldParaglide = true;
+						}
+						
+						// Animation event must play and update the paragliding state flag.
+						a_p->coopActor->GetGraphVariableBool
+						(
+							"bParaGliding", isParagliding
+						);
+						a_p->mm->shouldParaglide &= isParagliding;
+					}
+				}
+
 				return;
 			}
 
@@ -12077,15 +11707,55 @@ namespace ALYSLC
 			}
 			else 
 			{
+				// !!TEMPORARY!!
+				// Open the proximity loot menu if Loot Buddy received some nearby items earlier.
+				if (shouldOpenProximityLootMenu)
+				{
+					a_p->tm->HandleProximityLootMenu(true);
+					return;
+				}
+
+				// Turn on auto-selection, no activation of the current target.
+				if (!a_p->tm->autoSelectionActive)
+				{
+					a_p->lastActivationRefrSelectedTP = SteadyClock::now();
+					a_p->tm->autoSelectionActive = true;
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kGeneralNotification,
+						fmt::format
+						(
+							"P{}: Automatic item selection <font color=\"#00FF00\">[On]</font>",
+							a_p->playerID + 1
+						),
+						Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f,
+						{
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kCrosshairTarget,
+							CrosshairMessageType::kStealthState
+						}
+					);
+					// If there is no current selection, 
+					// choose a new target right after toggling on, 
+					// so the player does not have to move to select a new target.
+					if (!Util::HandleIsValid(a_p->tm->activationRefrHandle))
+					{
+						a_p->tm->UpdateQuickActivationTarget(true);
+					}
+
+					return;
+				}
+				
+				// Skip activation if selecting with a flick.
+				// Do not turn on auto-selection if it is off.
+				if (cycleSelectionWithLS)
+				{
+					return;
+				}
+
 				// Only attempt activation on input release, not if 'Activate' was interrupted.
 				// Keep the activation refr, which may be used by the interrupting player action.
-				const auto& perfStage = 
-				(
-					a_p->pam->paStatesList
-					[!InputAction::kActivate - !InputAction::kFirstAction].perfStage
-				);
-				if (perfStage != PerfStage::kInputsReleased && 
-					perfStage != PerfStage::kSomeInputsReleased) 
+				if (!notInterrupted) 
 				{
 					DBG("{}'s activate action has perf stage {}",
 						a_p->coopActor->GetName(), perfStage);
@@ -12097,19 +11767,10 @@ namespace ALYSLC
 				// after activation.
 				const auto activationRefrHandle = a_p->tm->activationRefrHandle;
 				const auto crosshairRefrHandle = a_p->tm->crosshairRefrHandle;
-				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(activationRefrHandle); 
-				DBG
-				(
-					"{}: On release: {}. Chose quick target: {}.", 
-					a_p->coopActor->GetName(), 
-					Util::HandleIsValid(activationRefrHandle) ?
-					activationRefrHandle.get()->GetName() : 
-					"NONE",
-					a_p->tm->choseQuickActivationTarget
-				);
 				// Clear out to prevent carryover when activating later.
-				a_p->tm->ClearActivationTargetData();
+				//a_p->tm->ClearActivationTargetData();
 
+				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(activationRefrHandle); 
 				auto p1 = RE::PlayerCharacter::GetSingleton();
 				auto activationRefrPtr = Util::GetRefrPtrFromHandle(activationRefrHandle);
 				auto activationRefrValidity = 
@@ -12145,10 +11806,7 @@ namespace ALYSLC
 
 				// Open gift menu to transfer items to the targeted player
 				// if the activate bind was held long enough.
-				if (pIndex != -1 &&
-					pIndex != a_p->playerID &&
-					a_p->pam->GetPlayerActionInputHoldTime(InputAction::kActivate) >= 
-					Settings::fSecsBeforeAlternateActivation)
+				if (performSecondaryActivationAction && pIndex != -1 && pIndex != a_p->playerID)
 				{
 					const auto& otherP = glob.coopPlayers[pIndex];
 					bool succ = glob.moarm->InsertRequest
@@ -12162,10 +11820,12 @@ namespace ALYSLC
 					if (succ)
 					{
 						// Set player to gift items to.
-						glob.mim->gifteePlayerHandle = otherP->coopActor->GetHandle();
+						glob.gifterPlayerHandle = a_p->coopActor->GetHandle();
+						glob.gifteePlayerHandle = otherP->coopActor->GetHandle();
 						DBG("{}: Giving items to {}.", 
 							a_p->coopActor->GetName(), otherP->coopActor->GetName());
-						// Never open the Gift Menu with P1 as the target.
+						// When giving to another player, never set P1 as the target.
+						// Will then maintain the 'Give' button text in the button bar.
 						// Can still give P1 items by importing the companion player's
 						// inventory and then moving whatever items they decide to transfer
 						// over to P1's inventory chest while the menu is open.
@@ -12394,9 +12054,6 @@ namespace ALYSLC
 					(
 						(
 							(menusOnlyAlwaysOpen) &&
-							(
-								anotherPlayerControllingMenus || a_p->tm->choseQuickActivationTarget
-							) &&
 							(!isQuestItem || a_p->isPlayer1) && 
 							(isBook || isNote)
 						) ||
@@ -12412,6 +12069,12 @@ namespace ALYSLC
 					if (forcePickup)
 					{
 						a_p->coopActor->PickUpObject(activationRefrPtr.get(), count);
+					}
+					else if (a_p->tm->OpenQuickLootMenu(activationRefrHandle))
+					{
+						// If a request was successfully sent to open the QuickLoot Menu,
+						// we don't have anything else to do here.
+						return;
 					}
 					else if (menusOnlyAlwaysOpen)
 					{
@@ -12658,6 +12321,12 @@ namespace ALYSLC
 							// Pick up the object to loot it.
 							a_p->coopActor->PickUpObject(activationRefrPtr.get(), count);
 						}
+						else if (a_p->tm->OpenQuickLootMenu(activationRefrHandle))
+						{
+							// If a request was successfully sent to open the QuickLoot Menu,
+							// we don't have anything else to do here.
+							return;
+						}
 						else if (p1Activate)
 						{
 							// Can only activate with P1 if no player is controlling menus.
@@ -12861,15 +12530,27 @@ namespace ALYSLC
 			}
 			else
 			{
-				// Generic attack and release.
-				Util::RunPlayerActionCommand
-				(
-					RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
-				);
-				Util::RunPlayerActionCommand
-				(
-					RE::DEFAULT_OBJECT::kActionLeftRelease, a_p->coopActor.get()
-				);
+				// Left Attack action makes the player start blocking when MCO is installed.
+				//if (ALYSLC::MCOCompat::g_installed)
+				//{
+				//	// Stop blocking.
+				//	Util::RunPlayerActionCommand
+				//	(
+				//		RE::DEFAULT_OBJECT::kActionLeftRelease, a_p->coopActor.get()
+				//	);
+				//}
+				//else
+				{
+					// Generic attack and release.
+					Util::RunPlayerActionCommand
+					(
+						RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
+					);
+					Util::RunPlayerActionCommand
+					(
+						RE::DEFAULT_OBJECT::kActionLeftRelease, a_p->coopActor.get()
+					);
+				}
 			}
 		}
 
@@ -13208,7 +12889,7 @@ namespace ALYSLC
 				{
 					a_p->pam->CastSpellWithMagicCaster
 					(
-						EquipIndex::kLeftHand, false, false, false, shouldCastWithP1
+						EquipIndex::kLeftHand, false, false, false, false, shouldCastWithP1
 					);
 				}
 			}	
@@ -13269,7 +12950,7 @@ namespace ALYSLC
 				{
 					a_p->pam->CastSpellWithMagicCaster
 					(
-						EquipIndex::kRightHand, false, false, false, shouldCastWithP1
+						EquipIndex::kRightHand, false, false, false, false, shouldCastWithP1
 					);
 				}
 			}
@@ -13290,14 +12971,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kEquippedItem,
-						fmt::format("P{}: Unequip '{}'",
-							a_p->playerID + 1, currentForm->GetName()),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Unequip '{}'", a_p->playerID + 1, currentForm->GetName())
 					);
 					a_p->em->UnequipAmmo(currentForm);
 				}
@@ -13306,13 +12980,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kEquippedItem,
-						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1)
 					);
 				}
 
@@ -13360,13 +13028,7 @@ namespace ALYSLC
 						"P{}: Equip '{}'", 
 						a_p->playerID + 1, 
 						Util::GetDescriptiveName(ammoForm, extraDataList)
-					),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					)
 				);
 			}
 			else
@@ -13375,13 +13037,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: No favorited ammo", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: No favorited ammo", a_p->playerID + 1)
 				);
 			}
 		}
@@ -13398,13 +13054,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Reset category to 'All Favorites'", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Reset category to 'All Favorites'", a_p->playerID + 1)
 				);
 				a_p->em->lhSpellCategory = FavMagicCyclingCategory::kAllFavorites;
 				// Set cycling TP.
@@ -13435,13 +13085,7 @@ namespace ALYSLC
 			a_p->tm->SetCrosshairMessageRequest
 			(
 				CrosshairMessageType::kEquippedItem,
-				fmt::format("P{}: Left hand spell category: '{}'", a_p->playerID + 1, newCategory),
-				{ 
-					CrosshairMessageType::kNone, 
-					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
+				fmt::format("P{}: Left hand spell category: '{}'", a_p->playerID + 1, newCategory)
 			);;
 		}
 
@@ -13457,13 +13101,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Reset category to 'All Favorites'", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Reset category to 'All Favorites'", a_p->playerID + 1)
 				);
 				a_p->em->rhSpellCategory = FavMagicCyclingCategory::kAllFavorites;
 				// Set cycling TP.
@@ -13497,13 +13135,7 @@ namespace ALYSLC
 				fmt::format
 				(
 					"P{}: Right hand spell category: '{}'", a_p->playerID + 1, newCategory
-				),
-				{ 
-					CrosshairMessageType::kNone, 
-					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
+				)
 			);
 		}
 
@@ -13522,14 +13154,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kEquippedItem,
-						fmt::format("P{}: Unequip '{}'",
-							a_p->playerID + 1, currentForm->GetName()),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Unequip '{}'", a_p->playerID + 1, currentForm->GetName())
 					);
 					a_p->em->UnequipFormAtIndex(EquipIndex::kLeftHand);
 				}
@@ -13538,13 +13163,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kEquippedItem,
-						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1)
 					);
 				}
 
@@ -13596,13 +13215,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Equip '{}'", a_p->playerID + 1, spell->GetName()),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Equip '{}'", a_p->playerID + 1, spell->GetName())
 				);
 			}
 			else if (!a_p->em->HasCyclableSpellInCategory(a_p->em->lhSpellCategory))
@@ -13616,13 +13229,7 @@ namespace ALYSLC
 						"P{}: '{}' category is empty",
 						a_p->playerID + 1,
 						a_p->em->FavMagCyclingCategoryToString(a_p->em->lhSpellCategory)
-					),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					)
 				);
 			}
 		}
@@ -13642,14 +13249,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kEquippedItem,
-						fmt::format("P{}: Unequip '{}'",
-							a_p->playerID + 1, currentForm->GetName()),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Unequip '{}'", a_p->playerID + 1, currentForm->GetName())
 					);
 					a_p->em->UnequipFormAtIndex(EquipIndex::kRightHand);
 				}
@@ -13658,13 +13258,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kEquippedItem,
-						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1)
 					);
 				}
 
@@ -13716,13 +13310,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Equip '{}'", a_p->playerID + 1, spell->GetName()),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Equip '{}'", a_p->playerID + 1, spell->GetName())
 				);
 			}
 			else if (!a_p->em->HasCyclableSpellInCategory(a_p->em->rhSpellCategory))
@@ -13736,13 +13324,7 @@ namespace ALYSLC
 						"P{}: '{}' category is empty",
 						a_p->playerID + 1, 
 						a_p->em->FavMagCyclingCategoryToString(a_p->em->rhSpellCategory)
-					),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					)
 				);
 			}
 		}
@@ -13769,14 +13351,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kEquippedItem,
-						fmt::format("P{}: Unequip '{}'",
-							a_p->playerID + 1, currentForm->GetName()),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Unequip '{}'", a_p->playerID + 1, currentForm->GetName())
 					);
 					if (a_p->em->voiceForm)
 					{
@@ -13792,13 +13367,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kEquippedItem,
-						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1)
 					);
 				}
 
@@ -13842,13 +13411,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Equip '{}'", a_p->playerID + 1, voiceForm->GetName()),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Equip '{}'", a_p->playerID + 1, voiceForm->GetName())
 				);
 			}
 			else
@@ -13857,13 +13420,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: No favorited powers/shouts", a_p->playerID + 1),
-					{
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: No favorited powers/shouts", a_p->playerID + 1)
 				);
 			}
 		}
@@ -13880,13 +13437,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Reset category to 'All Favorites'", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Reset category to 'All Favorites'", a_p->playerID + 1)
 				);
 				a_p->em->lhWeaponCategory = FavWeaponCyclingCategory::kAllFavorites;
 				// Set cycling TP.
@@ -13920,13 +13471,7 @@ namespace ALYSLC
 				fmt::format
 				(
 					"P{}: Left hand weapon category: '{}'", a_p->playerID + 1, newCategory
-				),
-				{ 
-					CrosshairMessageType::kNone, 
-					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
+				)
 			);
 		}
 
@@ -13942,13 +13487,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Reset category to 'All Favorites'", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					fmt::format("P{}: Reset category to 'All Favorites'", a_p->playerID + 1)
 				);
 				a_p->em->rhWeaponCategory = FavWeaponCyclingCategory::kAllFavorites;
 				// Set cycling TP.
@@ -13982,13 +13521,7 @@ namespace ALYSLC
 				fmt::format
 				(
 					"P{}: Right hand weapon category: '{}'", a_p->playerID + 1, newCategory
-				),
-				{ 
-					CrosshairMessageType::kNone,
-					CrosshairMessageType::kStealthState, 
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs
+				)
 			);
 		}
 
@@ -14007,14 +13540,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kEquippedItem,
-						fmt::format("P{}: Unequip '{}'",
-							a_p->playerID + 1, currentForm->GetName()),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Unequip '{}'", a_p->playerID + 1, currentForm->GetName())
 					);
 					a_p->em->UnequipFormAtIndex(EquipIndex::kLeftHand);
 				}
@@ -14023,13 +13549,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kEquippedItem,
-						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1)
 					);
 				}
 
@@ -14074,8 +13594,7 @@ namespace ALYSLC
 				{
 					a_p->em->EquipArmor(form, extraDataList);
 				}
-				else if (auto light = form->As<RE::TESObjectLIGH>(); 
-						 light && light->data.flags.all(RE::TES_LIGHT_FLAGS::kCanCarry))
+				else if (Util::IsTorch(form))
 				{
 					a_p->em->EquipForm
 					(
@@ -14113,13 +13632,7 @@ namespace ALYSLC
 						"P{}: Equip '{}'", 
 						a_p->playerID + 1, 
 						Util::GetDescriptiveName(form, extraDataList)
-					),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					)
 				);
 			}
 			else if (!a_p->em->HasCyclableWeaponInCategory(a_p->em->lhWeaponCategory, false))
@@ -14133,13 +13646,7 @@ namespace ALYSLC
 						"P{}: '{}' category is empty",
 						a_p->playerID + 1,
 						a_p->em->FavWeaponCyclingCategoryToString(a_p->em->lhWeaponCategory)
-					),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					)
 				);
 			}
 		}
@@ -14159,14 +13666,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kEquippedItem,
-						fmt::format("P{}: Unequip '{}'",
-							a_p->playerID + 1, currentForm->GetName()),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Unequip '{}'", a_p->playerID + 1, currentForm->GetName())
 					);
 					a_p->em->UnequipFormAtIndex(EquipIndex::kRightHand);
 				}
@@ -14175,13 +13675,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kEquippedItem,
-						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						fmt::format("P{}: Nothing to unequip", a_p->playerID + 1)
 					);
 				}
 
@@ -14243,13 +13737,7 @@ namespace ALYSLC
 							"P{}: Equip '{}'", 
 							a_p->playerID + 1, 
 							Util::GetDescriptiveName(form, extraDataList)
-						),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						)
 					);
 				}
 				else
@@ -14263,13 +13751,7 @@ namespace ALYSLC
 							"P{}: Cannot equip '{}' in the right hand", 
 							a_p->playerID + 1, 
 							form->GetName()
-						),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						)
 					);
 				}
 			}
@@ -14284,13 +13766,7 @@ namespace ALYSLC
 						"P{}: '{}' category is empty",
 						a_p->playerID + 1, 
 						a_p->em->FavWeaponCyclingCategoryToString(a_p->em->rhWeaponCategory)
-					),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					)
 				);
 			}
 		}
@@ -14318,15 +13794,24 @@ namespace ALYSLC
 			(
 				targetRefrPtr && Util::IsValidRefrForTargeting(targetRefrPtr.get())
 			);
+			// IMPORTANT:
+			// Temporary restriction on grabbing the crosshair refr 
+			// until a separate throw bind is added.
 			bool shouldGrab = 
 			{
-				targetRefrValidity &&
-				!a_p->tm->rmm->isAutoGrabbing &&
-				!a_p->tm->crosshairActive &&
-				!a_p->tm->rmm->lastGrabbedAProjectile &&
-				a_p->tm->rmm->CanGrabAnotherRefr() &&
-				a_p->tm->rmm->CanGrabRefr(targetRefrHandle)
+				(
+					targetRefrValidity &&
+					!a_p->tm->rmm->isAutoGrabbing &&
+					!a_p->tm->rmm->lastGrabbedAProjectile &&
+					a_p->tm->rmm->CanGrabAnotherRefr() &&
+					a_p->tm->rmm->CanGrabRefr(targetRefrHandle)
+				) &&
+				(
+					(!a_p->tm->crosshairActive) || 
+					(a_p->tm->crosshairRefrHandle == targetRefrHandle && !a_p->tm->rmm->isGrabbing)
+				)
 			};
+			bool checkedRigidBody = false;
 			if (shouldGrab)
 			{
 				shouldGrab = false;
@@ -14447,6 +13932,8 @@ namespace ALYSLC
 					{
 						DBG("{} has no valid 3D.", targetRefrPtr->GetName());
 					}
+
+					checkedRigidBody = true;
 				}
 				else
 				{
@@ -14483,17 +13970,7 @@ namespace ALYSLC
 				}
 
 				// Set grabbed object message.
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kActivationInfo,
-					text,
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
+				a_p->tm->SetCrosshairMessageRequest(CrosshairMessageType::kActivationInfo, text);
 
 				// Return here, since the release check is next.
 				return;
@@ -14511,6 +13988,7 @@ namespace ALYSLC
 			// release all grabbed objects.
 			bool shouldRelease = 
 			(
+				!checkedRigidBody &&
 				a_p->tm->rmm->isGrabbing && 
 				!a_p->tm->rmm->lastGrabbedAProjectile && 
 				!a_p->tm->rmm->isAutoGrabbing
@@ -14532,18 +14010,11 @@ namespace ALYSLC
 						"Dropping",
 						objectsToRelease,
 						objectsToRelease == 1 ? "object" : "objects"
-					),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					)
 				);
 			} 
-			else if (!shouldGrab && 
-					 !a_p->tm->rmm->lastGrabbedAProjectile &&
-					 !a_p->tm->rmm->isAutoGrabbing && 
+			else if (!a_p->tm->rmm->lastGrabbedAProjectile &&
+					 //!a_p->tm->rmm->isAutoGrabbing && 
 					 targetRefrValidity)
 			{
 				DBG("CANNOT GRAB {}.", targetRefrPtr->GetName());
@@ -14557,13 +14028,7 @@ namespace ALYSLC
 						a_p->playerID + 1, 
 						a_p->tm->crosshairActive ? "throw" : "grab",
 						targetRefrPtr->GetName()
-					),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					)
 				);
 			}
 		}
@@ -14595,6 +14060,7 @@ namespace ALYSLC
 					false,
 					false, 
 					false,
+					HelperFuncs::CanDualCast(a_p, EquipIndex::kQuickSlotSpell),
 					Util::ShouldCastWithP1(quickSlotSpell)
 				);
 			}
@@ -14603,11 +14069,95 @@ namespace ALYSLC
 			a_p->tm->ClearTarget(TargetActorType::kLinkedRefr);
 		}
 
+		void PowerAttackDual(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// Draw weapon if not out already and not trying to rotate arms.
+			if (!a_p->coopActor->IsWeaponDrawn() && !HelperFuncs::IsTryingToRotateArms(a_p))
+			{
+				// Unsheathe even on condition failure.
+				a_p->pam->ReadyWeapon(true, false);
+			}
+			else if (!a_p->pam->isAttacking &&
+					 !HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kPowerAttackDual) &&
+					 ConditionFuncs::AttackRH(a_p))
+			{
+				// Perform a regular RH attack if the player 
+				// has insufficient stamina to perform a power attack.
+				// Check if a killmove should be played first.
+				bool performingKillmove = HelperFuncs::CheckForKillmove
+				(
+					a_p, InputAction::kAttackRH
+				);
+				if (!performingKillmove)
+				{
+					ProgressFuncs::AttackRH(a_p);
+					CleanupFuncs::AttackRH(a_p);
+				}
+			}
+		}
+
+		void PowerAttackLH(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// Draw weapon if not out already and not trying to rotate arms.
+			if (!a_p->coopActor->IsWeaponDrawn() && !HelperFuncs::IsTryingToRotateArms(a_p))
+			{
+				// Unsheathe even on condition failure.
+				a_p->pam->ReadyWeapon(true, false);
+			}
+			else if (!a_p->pam->isAttacking &&
+					 !HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kPowerAttackLH) &&
+					 ConditionFuncs::AttackLH(a_p))
+			{
+				// Perform a regular LH attack if the player 
+				// has insufficient stamina to perform a power attack.
+				// Check if a killmove should be played first.
+				bool performingKillmove = HelperFuncs::CheckForKillmove
+				(
+					a_p, InputAction::kAttackLH
+				);
+				if (!performingKillmove)
+				{
+					ProgressFuncs::AttackLH(a_p);
+					CleanupFuncs::AttackLH(a_p);
+				}
+			}
+		}
+
+		void PowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// Draw weapon if not out already and not trying to rotate arms.
+			if (!a_p->coopActor->IsWeaponDrawn() && !HelperFuncs::IsTryingToRotateArms(a_p))
+			{
+				DBG("2");
+				// Unsheathe even on condition failure.
+				a_p->pam->ReadyWeapon(true, false);
+			}
+			else if (!a_p->pam->isAttacking &&
+					 !HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kPowerAttackRH) &&
+					 ConditionFuncs::AttackRH(a_p))
+			{
+				DBG("3");
+				// Perform a regular RH attack if the player 
+				// has insufficient stamina to perform a power attack.
+				// Check if a killmove should be played first.
+				bool performingKillmove = HelperFuncs::CheckForKillmove
+				(
+					a_p, InputAction::kAttackRH
+				);
+				if (!performingKillmove)
+				{
+					DBG("4");
+					ProgressFuncs::AttackRH(a_p);
+					CleanupFuncs::AttackRH(a_p);
+				}
+			}
+		}
+
 		void RotateCam(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Reset cam adjustment mode to None, and relinquish control of the camera.
 
-			HelperFuncs::SetCameraAdjustmentMode(a_p->playerID, InputAction::kRotateCam, false);
+			HelperFuncs::SetCameraAdjustmentMode(a_p, InputAction::kRotateCam, false);
 		}
 
 		void Shout(const std::shared_ptr<CoopPlayer>& a_p)
@@ -14625,12 +14175,13 @@ namespace ALYSLC
 				(
 					CrosshairMessageType::kGeneralNotification,
 					fmt::format("P{}: No shout or power equipped!", a_p->playerID + 1),
+					0.5f * Settings::fSecsBetweenDiffCrosshairMsgs,
 					{ 
 						CrosshairMessageType::kNone,
+						CrosshairMessageType::kActivationInfo,
 						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetingState
-					},
-					0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+						CrosshairMessageType::kCrosshairTarget
+					}
 				);
 				return;
 			}
@@ -14691,13 +14242,7 @@ namespace ALYSLC
 								100.0f * 
 								(a_p->pam->secsSinceLastShout / a_p->pam->secsCurrentShoutCooldown)
 							)
-						),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						)
 					);
 				}
 			}
@@ -14806,14 +14351,7 @@ namespace ALYSLC
 									a_p->secsMaxTransformationTime - 
 									Util::GetElapsedSeconds(a_p->transformationTP)
 								)
-							),
-							{ 
-								CrosshairMessageType::kNone, 
-								CrosshairMessageType::kActivationInfo, 
-								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetingState 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
+							)
 						);
 
 						// Nothing else to do.
@@ -14987,14 +14525,7 @@ namespace ALYSLC
 														)
 													), 
 													deltaTransformationTime
-												),
-												{ 
-													CrosshairMessageType::kNone, 
-													CrosshairMessageType::kActivationInfo, 
-													CrosshairMessageType::kStealthState,
-													CrosshairMessageType::kTargetingState 
-												},
-												Settings::fSecsBetweenDiffCrosshairMsgs
+												)
 											);
 										}
 									}
@@ -15043,14 +14574,7 @@ namespace ALYSLC
 								a_p->secsMaxTransformationTime - 
 								Util::GetElapsedSeconds(a_p->transformationTP)
 							)
-						),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kActivationInfo, 
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetingState 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						)
 					);
 
 					// Nothing else to do.
@@ -15121,15 +14645,10 @@ namespace ALYSLC
 				// Set self as grabbed refr to ragdoll the player, clear the grabbed refr, 
 				// and add as a released refr to listen for collisions afterward.
 				const auto handle = a_p->coopActor->GetHandle();
+				a_p->mm->floppedFromParaglide = a_p->mm->isParagliding;
 				a_p->tm->wantsToSMORF = a_p->tm->canSMORF;
-				a_p->tm->rmm->AddGrabbedRefr(a_p, handle);
-				a_p->tm->rmm->ClearGrabbedRefr(handle);
-				if (a_p->tm->rmm->GetNumGrabbedRefrs() == 0)
-				{
-					a_p->tm->SetIsGrabbing(false);
-				}
-
-				a_p->tm->rmm->AddReleasedRefr(a_p, handle, 0.0f);
+				// Grab and release to ragdoll and/or set trajectory.
+				a_p->tm->rmm->InstantlyAddReleasedRefr(a_p, handle, -1.0f);
 			}
 			else
 			{
@@ -15197,7 +14716,7 @@ namespace ALYSLC
 		{
 			// Reset adjustment mode to none and relinquish camera control.
 
-			HelperFuncs::SetCameraAdjustmentMode(a_p->playerID, InputAction::kZoomCam, false);
+			HelperFuncs::SetCameraAdjustmentMode(a_p, InputAction::kZoomCam, false);
 		}
 	};
 };

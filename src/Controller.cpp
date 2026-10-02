@@ -18,7 +18,7 @@ namespace ALYSLC
 		rsStatesList.fill(AnalogStickState());
 		inputMasksList.fill(0);
 		inputStatesList.fill(std::vector<InputState>(!InputAction::kInputTotal, InputState()));
-		firstPressTPsList.fill
+		lastPressTPsList.fill
 		(
 			std::vector<SteadyClock::time_point>(!InputAction::kInputTotal, SteadyClock::now())
 		);
@@ -165,13 +165,21 @@ namespace ALYSLC
 			return;
 		}
 
+		auto& data = (a_isLS) ? lsStatesList[a_controllerID] : rsStatesList[a_controllerID];
+		const auto prevPacketNum = data.lastPacketNum;
+
+		/*if (prevPacketNum == inputState.dwPacketNumber)
+		{
+			DBG("DID {}, {}: NOPE. Packet num {}.", 
+				a_controllerID, a_playerID, inputState.dwPacketNumber);
+		}*/
+
 		// Invalid ID, cannot continue.
 		if (a_playerID <= -1) 
 		{
 			return;
 		}
 
-		auto& data = (a_isLS) ? lsStatesList[a_controllerID] : rsStatesList[a_controllerID];
 		// Larger deadzone when controlling menus to prevent slight analog stick displacements
 		// from changing the currently-selected menu element.
 		float deadZone = 
@@ -244,38 +252,92 @@ namespace ALYSLC
 		float newNormYPos = yComp * newNormMag;
 		float oldNormXPos = data.xComp * data.normMag;
 		float oldNormYPos = data.yComp * data.normMag;
-
-		// Moving to/from center (no angular change in orientation).
-		if ((newNormXPos == 0.0f && newNormYPos == 0.0f) || 
-			(oldNormXPos == 0.0f && oldNormYPos == 0.0f))
+		// Do not update the speeds if the data packet number remains the same from the last frame.
+		// Otherwise, the speed will be set to 0.
+		if (prevPacketNum != inputState.dwPacketNumber)
 		{
-			data.stickAngularSpeed = 0.0f;
-		}
-		else
-		{
-			data.stickAngularSpeed = 
-			(
-				fabsf
+			data.prevStickAngularSpeed = data.stickAngularSpeed;
+			data.prevStickLinearSpeed = data.stickAngularSpeed;
+			// Moving to/from center (no angular change in orientation).
+			if ((newNormXPos == 0.0f && newNormYPos == 0.0f) || 
+				(oldNormXPos == 0.0f && oldNormYPos == 0.0f))
+			{
+				data.stickAngularSpeed = 0.0f;
+			}
+			else
+			{
+				data.stickAngularSpeed = 
 				(
-					Util::NormalizeAngTo2Pi
+					fabsf
 					(
-						atan2f(newNormYPos, newNormXPos) - atan2f(oldNormYPos, oldNormXPos)
-					) / *g_deltaTimeRealTime
-				)
+						Util::NormalizeAngTo2Pi
+						(
+							atan2f(newNormYPos, newNormXPos) - atan2f(oldNormYPos, oldNormXPos)
+						) / *g_deltaTimeRealTime
+					)
+				);
+			}
+
+			data.stickLinearSpeed = 
+			(
+				Util::GetXYDistance(newNormXPos, newNormYPos, oldNormXPos, oldNormYPos) / 
+				*g_deltaTimeRealTime
 			);
 		}
 
-		data.stickLinearSpeed = 
-		(
-			Util::GetXYDistance(newNormXPos, newNormYPos, oldNormXPos, oldNormYPos) / 
-			*g_deltaTimeRealTime
-		);
 		data.prevXComp = data.xComp;
 		data.prevYComp = data.yComp;
 		data.prevNormMag = data.normMag;
 		data.xComp = xComp;
 		data.yComp = yComp;
 		data.normMag = newNormMag;
+		
+		data.flicked = 
+		(
+			!data.flicked && data.maxNormMag > 0.0f && data.normMag < data.maxNormMag
+		);
+		
+		if (data.flicked)
+		{
+			data.wasFlicked = true;
+		}
+		else if ((data.normMag == 0.0f) || data.MovingAwayFromCenter())
+		{
+			data.wasFlicked = false;
+		}
+		
+		const float flickInterval = 
+		(
+			Settings::fSecsDefFlickInterval * std::clamp(60.0f * *g_deltaTimeRealTime, 1.0f, 2.0f)
+		);
+		const auto& stickInputState = glob.cdh->GetInputState
+		(
+			a_controllerID, a_isLS ? InputAction::kLS : InputAction::kRS
+		);
+		if (data.flicked)
+		{
+			data.flickedWithinInterval = stickInputState.heldTimeSecs < flickInterval;
+		}
+		else if (!data.wasFlicked)
+		{
+			data.flickedWithinInterval = false;
+		}
+
+		if (data.normMag == 0.0f || data.flicked)
+		{
+			data.maxNormMag = 0.0f;
+		}
+		else if (data.normMag > data.prevNormMag)
+		{
+			data.maxNormMag = data.normMag;
+		}
+
+		if (data.prevNormMag < 1.0f - 1E-2f && data.normMag >= 1.0f - 1E-2f)
+		{
+			data.fullDisplacementTP = SteadyClock::now();
+		}
+
+		data.lastPacketNum = inputState.dwPacketNumber;
 	}
 
 	void ControllerDataHolder::UpdateInputStatesAndMask
@@ -316,7 +378,7 @@ namespace ALYSLC
 		// Used to diff button state changes.
 		const auto prevMask = inputMasksList[a_controllerID];
 		auto& currentMask = inputMasksList[a_controllerID];
-		auto& firstPressTPs = firstPressTPsList[a_controllerID];
+		auto& lastPressTPs = lastPressTPsList[a_controllerID];
 		auto& lastReleaseTPs = lastReleaseTPsList[a_controllerID];
 
 		// DXScancode for the button to check.
@@ -357,6 +419,8 @@ namespace ALYSLC
 			), 
 			1
 		);
+		const auto& lsState = GetAnalogStickState(a_controllerID, true);
+		const auto& rsState = GetAnalogStickState(a_controllerID, false);
 		for (uint32_t i = !InputAction::kFirst; i < !InputAction::kInputTotal; ++i, ++dxsc) 
 		{
 			isAnalogStick = i == !InputAction::kLS || i == !InputAction::kRS;
@@ -369,6 +433,19 @@ namespace ALYSLC
 			);
 			ltPressed = dxsc == DXSC_LT && inputState.Gamepad.bLeftTrigger > triggerDeadzone;
 			rtPressed = dxsc == DXSC_RT && inputState.Gamepad.bRightTrigger > triggerDeadzone;
+			// IMPORTANT:
+			// Considered as moving if the current or previous frame's norm mag are non-zero.
+			// Prevents flagging the analog stick as stopped when it is moving through the origin
+			// and not coming to a rest.
+			/*lsMoved = 
+			(
+				(i == !InputAction::kLS) && (lsState.normMag != 0.0f || lsState.prevNormMag != 0.0f)
+			);
+			rsMoved = 
+			(
+				(i == !InputAction::kRS) && (rsState.normMag != 0.0f || rsState.prevNormMag != 0.0f)
+			);*/
+
 			lsMoved = 
 			(
 				i == !InputAction::kLS && GetAnalogStickState(a_controllerID, true).normMag > 0.0f
@@ -381,7 +458,7 @@ namespace ALYSLC
 			if (buttonPressed || ltPressed || rtPressed || lsMoved || rsMoved) 
 			{
 				auto& state = inputStates[i];
-				auto& firstPressTP = firstPressTPs[i];
+				auto& lastPressTP = lastPressTPs[i];
 				auto& lastReleaseTP = lastReleaseTPs[i];
 
 				// First press.
@@ -423,7 +500,7 @@ namespace ALYSLC
 					
 					// Update input mask and first press time point.
 					currentMask |= 1 << i;
-					firstPressTP = SteadyClock::now();
+					lastPressTP = SteadyClock::now();
 				}
 				else if (state.justPressed)
 				{
@@ -432,7 +509,7 @@ namespace ALYSLC
 				}
 
 				// Update held time.
-				state.heldTimeSecs = Util::GetElapsedSeconds(firstPressTP);
+				state.heldTimeSecs = Util::GetElapsedSeconds(lastPressTP);
 
 				// Set trigger press magnitudes if pressed.
 				// Normalize based on trigger deadzone threshold.
@@ -475,8 +552,8 @@ namespace ALYSLC
 				// Reset consecutive presses to 1 if time between presses exceeds limit.
 				if (state.consecPresses > 0) 
 				{
-					const auto& firstPressTP = firstPressTPs[i];
-					float secsSinceLastPress = Util::GetElapsedSeconds(firstPressTP);
+					const auto& lastPressTP = lastPressTPs[i];
+					float secsSinceLastPress = Util::GetElapsedSeconds(lastPressTP);
 					bool canResetConsecPresses = 
 					(
 						(

@@ -113,9 +113,8 @@ namespace ALYSLC
 			(
 				CrosshairMessageType&& a_type, 
 				const RE::BSFixedString a_text, 
-				std::set<CrosshairMessageType>&& a_delayedMessageTypes = {}, 
-				float a_secsMaxDisplayTime = 0.0f,
-				bool a_updateSetTP = true
+				float a_secsMaxDisplayTime,
+				std::set<CrosshairMessageType>&& a_delayedMessageTypes
 			) noexcept
 			{
 				type = a_type;
@@ -123,10 +122,7 @@ namespace ALYSLC
 				delayedMessageTypes = a_delayedMessageTypes;
 				secsMaxDisplayTime = a_secsMaxDisplayTime;
 				hash = Hash(a_text);
-				if (a_updateSetTP)
-				{
-					setTP = SteadyClock::now();
-				}
+				setTP = SteadyClock::now();
 			}
 
 			// This message's type.
@@ -1051,6 +1047,16 @@ namespace ALYSLC
 			// Handle the collision and apply damage as needed.
 			void HandleQueuedContactEvents(const std::shared_ptr<CoopPlayer>& a_p);
 
+			// Instantly add a 'live' managed, manipulable refr by grabbing it and releasing it.
+			// No magicka cost but can specify release angle factor.
+			// Applies damage on collision.
+			void InstantlyAddReleasedRefr
+			(
+				const std::shared_ptr<CoopPlayer>& a_p, 
+				const RE::ObjectRefHandle& a_refrHandle,
+				const float& a_releaseAngleFactor
+			);
+
 			// Is the given refr handled either as a grabbed refr or a released refr?
 			const bool IsManaged(const RE::ObjectRefHandle& a_handle, bool a_grabbed);
 
@@ -1574,7 +1580,7 @@ namespace ALYSLC
 			}
 
 			choseLockOnAimTarget = false;
-			choseProximityActivationTarget = false;
+			choseQuickActivationTarget = false;
 			validCrosshairRefrHit = false;
 			crosshairRefrHandle = RE::ObjectRefHandle();
 			selectedTargetActorHandle = RE::ActorHandle();
@@ -1587,6 +1593,28 @@ namespace ALYSLC
 			crosshairMessage->setTP = SteadyClock::now();
 			extCrosshairMessage->Clear();
 			crosshairMessage->Clear();
+		}
+
+		// Clear all cached highlightable proximity loot refr handles.
+		inline void ClearPromixityRefrHandles()
+		{
+			if (proximityLootHandles.empty())
+			{
+				return;
+			}
+
+			// Stop highlight shaders on all cached items as well.
+			for (const auto& handle : proximityLootHandles)
+			{
+				if (!Util::HandleIsValid(handle))
+				{
+					continue;
+				}
+
+				Util::StopAllActivationEffectShaders(handle.get().get(), playerID);
+			}
+
+			proximityLootHandles.clear();
 		}
 
 		// Clear out all targeted actor/refr handles.
@@ -1651,84 +1679,70 @@ namespace ALYSLC
 			ClearTarget(TargetActorType::kSelected);
 		}
 
-		// Update external crosshair message request with the given type, message text,
+		// Update the given crosshair message request with the given type, message text,
 		// list of other message types to delay, and max display time.
+		// Only update if another message is not displayed,
+		// the given message type is not delayed, or if the delay has passed.
+		inline void SetCrosshairMessage
+		(
+			const std::unique_ptr<CrosshairMessage>& a_crosshairMessage,
+			CrosshairMessageType&& a_type, 
+			const RE::BSFixedString a_text, 
+			float a_secsMaxDisplayTime,
+			std::set<CrosshairMessageType>&& a_delayedMessageTypes
+		)
+		{
+			std::unique_lock<std::mutex> lock(crosshairMessageMutex, std::try_to_lock);
+			// Only set if another thread is not already doing so.
+			if (lock)
+			{
+				const bool noDelay = lastCrosshairMessage->delayedMessageTypes.empty();
+				const bool isDelayedType = 
+				(
+					!noDelay && lastCrosshairMessage->delayedMessageTypes.contains(a_type)
+				);
+				const bool delayPassed = 
+				(
+					Util::GetElapsedSeconds(lastCrosshairMessage->setTP) > 
+					lastCrosshairMessage->secsMaxDisplayTime
+				);
+				if (noDelay || !isDelayedType || delayPassed)
+				{
+					a_crosshairMessage->Update
+					(
+						std::move(a_type), 
+						a_text, 
+						std::move(a_secsMaxDisplayTime),
+						std::move(a_delayedMessageTypes)
+					);
+				}
+			}
+		}
+
+		// Update external (not per-frame) crosshair message request with the given type,
+		// message text, list of other message types to delay, and max display time.
 		inline void SetCrosshairMessageRequest
 		(
 			CrosshairMessageType&& a_type, 
 			const RE::BSFixedString a_text, 
-			std::set<CrosshairMessageType>&& a_delayedMessageTypes = {}, 
-			float a_secsMaxDisplayTime = 0.0f,
-			bool a_updateSetTP = true
+			float a_secsMaxDisplayTime = Settings::fSecsBetweenDiffCrosshairMsgs,
+			std::set<CrosshairMessageType>&& a_delayedMessageTypes = 
+			{
+				CrosshairMessageType::kNone, 
+				CrosshairMessageType::kActivationInfo,
+				CrosshairMessageType::kCrosshairTarget,
+				CrosshairMessageType::kStealthState
+			}
 		)
 		{
-			SetCurrentCrosshairMessage
+			SetCrosshairMessage
 			(
-				true, 
+				extCrosshairMessage, 
 				std::move(a_type), 
 				a_text, 
-				std::move(a_delayedMessageTypes), 
 				a_secsMaxDisplayTime,
-				a_updateSetTP
+				std::move(a_delayedMessageTypes)
 			);
-		}
-
-		// Update the external/current crosshair message request with the given type, message text,
-		// list of other message types to delay, and max display time.
-		// Only update if another message is not displayed,
-		// the given message type is not delayed, or if the delay has passed.
-		inline void SetCurrentCrosshairMessage
-		(
-			bool&& a_extRequest, 
-			CrosshairMessageType&& a_type, 
-			const RE::BSFixedString a_text, 
-			std::set<CrosshairMessageType>&& a_delayedMessageTypes = {}, 
-			float a_secsMaxDisplayTime = 0.0f,
-			bool a_updateSetTP = true
-		)
-		{
-			{
-				std::unique_lock<std::mutex> lock(crosshairMessageMutex, std::try_to_lock);
-				// Only set if another thread is not already doing so.
-				if (lock)
-				{
-					const bool noDelay = lastCrosshairMessage->delayedMessageTypes.empty();
-					const bool isDelayedType = 
-					(
-						!noDelay && lastCrosshairMessage->delayedMessageTypes.contains(a_type)
-					);
-					const bool delayPassed = 
-					(
-						Util::GetElapsedSeconds(lastCrosshairMessage->setTP) > 
-						lastCrosshairMessage->secsMaxDisplayTime
-					);
-					if (noDelay || !isDelayedType || delayPassed)
-					{
-						if (a_extRequest) 
-						{
-							extCrosshairMessage->Update
-							(
-								std::move(a_type), 
-								a_text, 
-								std::move(a_delayedMessageTypes), 
-								std::move(a_secsMaxDisplayTime),
-								a_updateSetTP
-							);
-						}
-						else
-						{
-							crosshairMessage->Update
-							(
-								std::move(a_type), 
-								a_text, 
-								std::move(a_delayedMessageTypes), 
-								std::move(a_secsMaxDisplayTime),
-								a_updateSetTP
-							);
-						}
-					}
-				}
-			}
 		}
 
 		// Signal the reference manipulation manager to handle grabbed objects when set, 
@@ -1740,54 +1754,24 @@ namespace ALYSLC
 			rmm->isAutoGrabbing = false;
 		}
 
-		// Return true if a crosshair target selection message should be displayed,
-		// or false if a stealth state message should be shown instead.
-		inline bool ShouldDisplayTargetSelectionMessage()
-		{
-			// Display selection text if not sneaking 
-			// or if selecting a non-actor or corpse refr.
-			// Display stealth state text otherwise.
-			auto selectedRefrPtr = Util::GetRefrPtrFromHandle(activationRefrHandle);
-			auto selectedTargetActorPtr = Util::GetActorPtrFromHandle
-			(
-				aimMode == AimMode::kTwinStick ? 
-				aimCorrectionTargetHandle : 
-				selectedTargetActorHandle
-			);
-			bool displayTargetSelectionMessage = false;
-			if (aimMode == AimMode::kTwinStick)
-			{
-				displayTargetSelectionMessage =
-				(
-					(!coopActor->IsSneaking()) || 
-					(
-						(selectedRefrPtr && !selectedTargetActorPtr) &&
-						(
-							!selectedRefrPtr->As<RE::Actor>() || 
-							selectedRefrPtr->As<RE::Actor>()->IsDead()
-						)
-					)	
-				);
-			}
-			else
-			{
-				displayTargetSelectionMessage =
-				(
-					(!coopActor->IsSneaking()) || 
-					(
-						(selectedRefrPtr) && 
-						(!selectedTargetActorPtr || selectedTargetActorPtr->IsDead())
-					)	
-				);
-			}
-			
-			return displayTargetSelectionMessage;
-		}
-
 		//
 		// Member funcs
 		//
-		
+
+		// Change the color/style of the given shader's fill and edges
+		// depending on whether the shader should signify selecting a refr for interaction,
+		// selecting a refr as an aim target, success/failure upon activating the refr, 
+		// and using the refr instead of performing its default activation.
+		void AdjustHighlightShader
+		(
+			RE::TESEffectShader* a_shader,
+			bool a_forStealing,
+			bool a_forInteraction,
+			bool a_holdToInteract,
+			bool a_forAimTargetSelection,
+			bool a_shouldUse
+		);
+
 		// Return true if a player can activate the given refr.
 		bool CanActivateRefr(RE::TESObjectREFR* a_refr, bool a_checkLOS);
 
@@ -1797,12 +1781,6 @@ namespace ALYSLC
 
 		// Clear the cached actor/refr handle for the given target type.
 		void ClearTarget(const TargetActorType& a_targetType);
-
-		// Change the color of the given shader to match 
-		// their main UI Overlay color.
-		// If indicating a failed activation, either do not colorize the shader or colorize 
-		// to fully black.
-		void ColorizeActivationShader(RE::TESEffectShader* a_shader, bool a_canActivateRefr);
 
 		// Clear the current crosshair target, request to reset the crosshair's position, 
 		// reset crosshair data + offsets, and set as inactive.
@@ -1836,10 +1814,9 @@ namespace ALYSLC
 
 		// Draw a crosshair with four basic rectangular prongs.
 		void DrawRetroStyleCrosshair();
-
-		// Draw a crosshair that consists of concentric rings with 4 protruding arrows.
-		// Similar in appearance to the aim correction indicator.
-		void DrawRingShapedCrosshair();
+		
+		// Draw a crosshair shaped like a pulsating diamond.
+		void DrawDiamondCrosshair();
 
 		// Draw a crosshair similar in style to the Skyrim's default crosshair.
 		void DrawSkyrimStyleCrosshair(bool a_shouldInvert);
@@ -1917,18 +1894,11 @@ namespace ALYSLC
 			const bool a_useLeftStickAngle,
 			const bool a_useXYDistance,
 			const bool a_combatDependentSelection,
-			const bool a_angularAccuracyOverDistance,
 			const bool a_preferScreenspaceSelection,
 			const float& a_fovRads,
 			const float a_range
 		);
 		
-		// Get the crosshair selection text message to display.
-		// If sneaking, return a string that gives info on detection,
-		// in addition to the selected NPC, if any.
-		// Return the empty string if the crosshair is not on a selectable entity.
-		const RE::BSFixedString GetCrosshairSelectionMessage(bool a_stealthState);
-
 		// Get detection-level-modified gradient RGB value.
 		// NOTE: 
 		// The raw detection level ranges from -1000 to 1000,
@@ -1939,6 +1909,11 @@ namespace ALYSLC
 		// which represents the difference in level between the player and the given actor.
 		uint32_t GetLevelDifferenceRGB(const RE::ActorHandle& a_actorHandle);
 
+		// NOTE:
+		// This is nuts. I apparently like specifying functionality via boolean params. 
+		// Need to try a mix of different settings to find out what works best.
+		// You (I) have been warned.
+		// 
 		// Choose a target to lock on to in the direction of the player's left or right stick.
 		// Can choose either an living NPC, if requesting an aim target, 
 		// or all selectable objects or NPCs for activation instead.
@@ -1949,14 +1924,21 @@ namespace ALYSLC
 		// Can select when holding down a button or displacing the analog stick
 		// at a regular interval. 
 		// Otherwise, will look for a new target right away without a cooldown.
+		// Can select based on the recorded flick angle of an analog stick.
+		// Can also start searching from the current crosshair/activation indicator screen position.
+		// Can choose whether players should be considered for selection.
 		// Return the computed target's handle.
 		RE::ObjectRefHandle GetLockOnTarget
 		(
 			RE::ObjectRefHandle a_currentTargetHandle,
-			bool a_asAimTarget,
+			bool a_setAimTarget,
 			bool a_useLeftStickAngle,
 			bool a_fromCurrentTarget,
-			bool a_selectOnHold
+			bool a_selectOnHold,
+			bool a_selectFromAnalogStickFlick,
+			bool a_selectFromCurrentScreenPos,
+			bool a_includeOtherPlayers,
+			float a_fovRads
 		);
 
 		// Get a list of reachable, lootable refrs' handles in range of the player.
@@ -1996,8 +1978,13 @@ namespace ALYSLC
 		RE::ActorHandle GetRangedTargetActor();
 
 		// Cycle through nearby refrs and choose one for activation, returning its handle.
-		// If for quick selection and activation, filter out certain actors.
-		RE::ObjectRefHandle GetSelectableProximityRefrHandle(bool a_quickSelection);
+		// Filter out certain actors, such as hostile non-guard enemies when not pickpocketing, 
+		// as activating them serves no purpose.
+		// Can de-prioritize clutter by first considering non-clutter items of value.
+		RE::ObjectRefHandle GetSelectableProximityRefrHandle
+		(
+			bool a_deprioritizeClutter, bool a_fromCurrent
+		);
 
 		// Sounds like a lot of- hoopla! Sounds like a lot of- hoopla! 
 		// Sounds like a lot of- hoopla! Hoooooplaaaa! *Bonk*
@@ -2011,10 +1998,18 @@ namespace ALYSLC
 			const RE::NiPoint3& a_contactPos,
 			bool a_shouldRagdoll = true
 		);
+		
+		// Apply impulse/stagger/knock explosion to bumped actors.
+		void HandleBumpCollisions();
+
+		// Populate a list and highlight nearby lootable items 
+		// or open a menu containing all saved items in said list, courtesy of Loot Buddy.
+		void HandleProximityLootMenu(bool a_shouldOpen);
 
 		// If the QuickLoot mod is installed, handle opening/closing of the QuickLoot menu
 		// when the player moves their crosshair on/off a container.
 		void HandleQuickLootMenu();
+
 
 		// Handle positioning and collisions for the player's grabbed and released refrs.
 		void HandleReferenceManipulation();
@@ -2035,6 +2030,19 @@ namespace ALYSLC
 		// or another player, unless player selection is enabled.
 		// - Player has LOS or has not lost LOS for too long.
 		bool IsRefrValidForCrosshairSelection(RE::ObjectRefHandle a_refrHandle);
+
+		// Loot refr(s) that are mapped an entry displayed in the nearby items menu.
+		// The entry is specified by the given bound object, extra data list, and item count.
+		void LootNearbyItemsMenuRefr
+		(
+			RE::TESBoundObject* a_object, RE::ExtraDataList* a_extraList, const int32_t& a_count
+		);
+
+		// Check QuickLoot is installed and if the given refr has a container 
+		// and can have its contents displayed in a QuickLoot menu.
+		// Open the menu if so.
+		// Return true if a request was sent to open the menu for the given refr.
+		bool OpenQuickLootMenu(RE::ObjectRefHandle a_selectedRefrHandle);
 
 		// EXPERIMENTAL. Unused for now since there is a huge performance hit.
 		// Check if a selectable refr is highlighted by the crosshair
@@ -2064,30 +2072,44 @@ namespace ALYSLC
 
 		// Reset all time points to the current time.
 		void ResetTPs();
-		
-		// Find and set a lock on aim target (NPC), if any.
+
+		// Set the activation refr handle to the given handle and update the set TP.
+		void SetActivationRefrHandle(const RE::ObjectRefHandle& a_handle);
+
+		// Find and set a lock on aim/activation target (object/NPC), if any.
 		// Use the left/right stick's angle as the targeting angle.
 		// Originate the check from the player's position or from the current target's position.
 		// Select the target if a bind is held or on press. 
 		// Selecting on hold will select at an interval, instead of right away.
-		void SetLockOnAimTarget
+		// Can select based on the recorded flick angle of an analog stick.
+		// Can also start searching from the current crosshair/activation indicator screen position.
+		// Can choose whether players should be considered for selection.
+		void SetAimOrActivationTarget
 		(
-			bool a_useLeftStickAngle, bool a_fromCurrentTarget, bool a_selectOnHold
+			bool a_setAimTarget,
+			bool a_useLeftStickAngle, 
+			bool a_fromCurrentTarget,
+			bool a_selectOnHold,
+			bool a_selectFromAnalogStickFlick,
+			bool a_selectFromCurrentScreenPos,
+			bool a_includeOtherPlayers,
+			float a_fovRads
 		);
 
 		// Update the player's crosshair text entry periodically for the given message type.
 		// Used to maintain up-to-date info on the selected crosshair target
 		// or stealth state while the player is sneaking.
-		void SetPeriodicCrosshairMessage(const CrosshairMessageType& a_type);
-		
+		void SetPeriodicCrosshairMessage();
+
 		// Set the activation target refr handle directly to the crosshair/aim correction handle,
 		// or check for a selectable refr nearby.
 		// Play/stop any activation shaders if set/cleared, and update the quick activation flag
 		// and activation target changed TP.
 		void UpdateActivationTarget
 		(
-			bool a_setToAimTargetHandle, bool a_quickSelection, bool a_playActivationShader
+			bool a_setToAimTargetHandle, bool a_playActivationShader
 		);
+
 		// NOTE: 
 		// Only when aim correction is enabled for this player.
 		// Either select a new aim correction target, clear the current invalid one,
@@ -2125,6 +2147,11 @@ namespace ALYSLC
 		// Set the lock on crosshair target, if aiming while in 'Lock On' mode, 
 		// and update the lock on activation target, which should be cleared when out of range.
 		void UpdateLockOnTargets();
+		
+		// Update activation target each frame the targeting manager is active.
+		// Choose a proximity refr in the player's facing/moving direction.
+		// Can also force-check for a new target outside of the normal per-frame check.
+		void UpdateQuickActivationTarget(bool a_forceCheck);
 
 		// Award Sneak XP for companion players as necessary after updating their detection state.
 		void UpdateSneakState();
@@ -2143,9 +2170,9 @@ namespace ALYSLC
 		void UpdateTargetingOverlay();
 
 		// Set activation refr as interactable or not, 
-		// and set the player's crosshair text to reflect the result.
+		// and notify the player of the result through the crosshair text.
 		// Can skip or check LOS.
-		void ValidateActivationRefr(bool a_checkLOS);
+		void ValidateActivationRefr();
 		
 		//
 		// Members
@@ -2171,6 +2198,8 @@ namespace ALYSLC
 		RE::ActorHandle closestHostileActorHandle;
 		// Current actor selected by the crosshair.
 		RE::ActorHandle selectedTargetActorHandle;
+		// World position of the player's activation indicator on screen.
+		RE::NiPoint3 activationIndicatorBasePos;
 		// Local positional offsets from crosshair refr's center 
 		// to the crosshair raycast hit position.
 		// Set while the crosshair was first moved or is being moved.
@@ -2187,6 +2216,8 @@ namespace ALYSLC
 		RE::NiPoint3 crosshairWorldPos;
 		// Last world position at which activation was requested.
 		RE::NiPoint3 lastActivationReqPos;
+		// World position of the player's indicator on screen.
+		RE::NiPoint3 playerIndicatorBasePos;
 		// Last interactable reference either targeted by the crosshair or by proximity selection.
 		RE::ObjectRefHandle activationRefrHandle;
 		// The aim target linked refr used as the target for the player's ranged attack package.
@@ -2209,6 +2240,8 @@ namespace ALYSLC
 		std::mutex crosshairMessageMutex;
 		// Mutex for modifying selected/aim correction/aim target linked refrs.
 		std::mutex targetingMutex;
+		// Form IDs for actors damaged by the currently occuring power slide/headbutt charge.
+		std::set<RE::FormID> bumpDamagedActorFIDs;
 		// This player's crosshair text entry to display when the full crosshair message updates.
 		std::string crosshairTextEntry;
 		// Selected target refr's motion info.
@@ -2221,6 +2254,8 @@ namespace ALYSLC
 		std::unique_ptr<TwoWayInterpData> crosshairFadeInterpData;
 		std::unique_ptr<TwoWayInterpData> crosshairSizeRatioInterpData;
 		std::unique_ptr<TwoWayInterpData> playerIndicatorFadeInterpData;
+		// Crosshair message containing information on the currently selected activation target.
+		std::unique_ptr<CrosshairMessage> activationCrosshairMessage;
 		// Current crosshair message entry to set.
 		std::unique_ptr<CrosshairMessage> crosshairMessage;
 		// Externally-prompted message entry to set (set by another thread or manager).
@@ -2234,8 +2269,13 @@ namespace ALYSLC
 		std::unique_ptr<ManagedProjectileHandler> mph;
 		// Manages grabbed/released objects.
 		std::unique_ptr<RefrManipulationManager> rmm;
+		// Set containing the object refr handles of the refrs that should be added to Loot Buddy.
+		// These refrs are highlighted while the Activate button is held.
+		std::unordered_set<RE::ObjectRefHandle> proximityLootHandles;
 		// For activation: Nearby objects of the same type as the requested refr.
 		std::vector<RE::ObjectRefHandle> nearbyObjectsOfSameType;
+		// Should auto-select nearby items/NPCs for interaction when in range?
+		bool autoSelectionActive;
 		// Should this manager draw targeting overlay elements?
 		bool baseCanDrawOverlayElements;
 		// Can the player activate their chosen activation refr?
@@ -2244,12 +2284,9 @@ namespace ALYSLC
 		bool canSMORF;
 		// Is the crosshair refr raycast result the closest one to the camera?
 		bool choseClosestResult;
-		// Is the currently selected object for activation chosen via proximity snap?
-		bool choseProximityActivationTarget;
 		// Is the currently selected NPC aim target chosen via lock on?
 		bool choseLockOnAimTarget;
-		// Is the currently selected activation refr target chosen by simply tapping 
-		// the 'Activate' bind and NOT selected via the crosshair or lock on?
+		// Is the currently selected object for activation chosen via auto-selection?
 		bool choseQuickActivationTarget;
 		// True if the crosshair is NOT in the process of returning 
 		// and has not returned to its default position.
@@ -2260,6 +2297,8 @@ namespace ALYSLC
 		bool crosshairRefrFromRaycast;
 		// Is the crosshair target refr in sight of the player?
 		bool crosshairRefrInSight;
+		// Player must hold Activate to activate the chosen activation refr.
+		bool holdToActivate;
 		// M.A.R.F: Mutual Assured Ragdoll Flight.
 		// You grab me, I grab you, into the sky we go.
 		// It's not a bug, it's a feature.
@@ -2272,8 +2311,13 @@ namespace ALYSLC
 		bool performSecondaryActivationAction;
 		// Is the crosshair/lock on activation refr in range to open the QuickLoot menu?
 		bool selectedRefrInRangeForQuickLoot;
+		// Is the player trying to select an activation refr by flicking the left stick?
+		bool cycleSelectionWithLS;
 		// Restart the next lock on aim target selection chain from the player as the origin.
 		bool shouldFindLockOnTargetFromPlayer;
+		// !!TEMPORARY!!
+		// Should open the proximity loot menu after populating it with nearby items.
+		bool shouldOpenProximityLootMenu;
 		// Should the crosshair return to its default position, 
 		// whether requested externally or automatically?
 		bool shouldResetCrosshairPosition;
@@ -2289,6 +2333,8 @@ namespace ALYSLC
 		float crosshairLocalPosPitchDiff;
 		// Difference in yaw between the last hit local position and the crosshair refr's center.
 		float crosshairLocalPosYawDiff;
+		// Rotation angle for the crosshair.
+		float crosshairRotationAngle;
 		// Crosshair speed multiplier.
 		// Used to slow down the crosshair over selectable objects.
 		float crosshairSpeedMult;
@@ -2337,12 +2383,12 @@ namespace ALYSLC
 		// Massive EW. It is what it is.
 		// 
 		// The angle/distance factor is comprised of the normalized distance 
-		// between the source refr's pos and the target refr pos divided by the range,
-		// plus, if requested, the normalized angle difference between the targeting angle
-		// and the angle from the source refr to the target refr divided by the FOV window angle.
+		// between the source refr's pos and the target refr pos divided by the range.
 		// 
-		// If the angle factor should be included, add it on top of the distance factor.
-		// Will prioritize the angular accuracy over distance when selecting a target
+		// In specific cases, an angle factor should be included and is equal to 
+		// the difference between the targeting angle and the angle from the source to the target
+		// divided by half of the FOV window.
+		// Will then prioritize the angular accuracy over distance when selecting a target
 		// within the FOV window.
 		// 
 		// Targeting angle is the left or right analog stick's in-game yaw angle 
@@ -2368,11 +2414,12 @@ namespace ALYSLC
 		// Set the angle/distance factor outparam to the computed value.
 		// Set in range/in FOV outparam to true if the target refr 
 		// is within range of the source refr and within the given FOV window.
-		void IsRefrInRangeAndInFOV
+		void ObtainTargetSelectionFactor
 		(
 			RE::TESObjectREFR* a_sourceRefr,
 			RE::TESObjectREFR* a_targetRefr,
-			const bool a_includeAngleWeight,
+			const bool a_forAimTarget,
+			const bool a_useFacingToHeadingAngDiff,
 			const bool a_useXYDistance,
 			const bool a_targetIsHostile,
 			const bool a_preferScreenspaceSelection,

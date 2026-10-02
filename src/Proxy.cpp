@@ -1047,9 +1047,38 @@ namespace ALYSLC
 			return;
 		}
 
-		glob.mim->gifteePlayerHandle = 
+		glob.gifteePlayerHandle = 
 		(
 			a_playerActor ? a_playerActor->GetHandle() : RE::ActorHandle()
+		);
+	}
+
+	void CoopLib::SetGiftMenuPlayerActors
+	(
+		RE::StaticFunctionTag*, RE::Actor* a_gifterActor, RE::Actor* a_gifteeActor
+	)
+	{
+		// When opening the Gift Menu, set the given player actor as the recipient.
+		// Setting to None/nullptr clears the giftee player.
+
+		DBG
+		(
+			"{} is gifting to {}.", 
+			a_gifterActor ? a_gifterActor->GetName() : "NONE",
+			a_gifteeActor ? a_gifteeActor->GetName() : "NONE"
+		);
+		if (!glob.globalDataInit || !glob.coopSessionActive)
+		{
+			return;
+		}
+
+		glob.gifterPlayerHandle = 
+		(
+			a_gifterActor ? a_gifterActor->GetHandle() : RE::ActorHandle()
+		);
+		glob.gifteePlayerHandle = 
+		(
+			a_gifteeActor ? a_gifteeActor->GetHandle() : RE::ActorHandle()
 		);
 	}
 	
@@ -1335,7 +1364,7 @@ namespace ALYSLC
 	//=============================================================================================
 	//[Character Customization Functions]
 	//=============================================================================================
-	
+
 	void CoopLib::CharacterCustomization::CopyNPCAppearanceToPlayer
 	(
 		RE::StaticFunctionTag*,
@@ -1364,6 +1393,71 @@ namespace ALYSLC
 		glob.coopPlayers[a_playerID]->CopyNPCAppearanceToPlayer
 		(
 			a_baseToCopy, a_setOppositeGenderAnims
+		);
+	}
+
+	void CoopLib::CharacterCustomization::CopyBaseAppearanceToPlayer
+	(
+		RE::StaticFunctionTag*,
+		int32_t a_playerID,
+		RE::TESNPC* a_baseToCopy,
+		bool a_setOppositeGenderAnims
+	)
+	{
+		// Copy base NPC's appearance to the player. Set opposite gender animations if necessary.
+
+		DBG
+		(
+			"PID: {}, NPC base: {}, set opposite gender animations: {}.",
+			a_playerID,
+			a_baseToCopy ? a_baseToCopy->GetName() : "NONE", 
+			a_setOppositeGenderAnims
+		);
+		if (!glob.allPlayersInit || 
+			a_playerID <= -1 || 
+			a_playerID >= ALYSLC_MAX_PLAYER_COUNT ||
+			!a_baseToCopy)
+		{
+			return;
+		}
+
+		Util::CopyBaseAppearanceToActor
+		(
+			glob.coopPlayers[a_playerID]->coopActor.get(), a_baseToCopy, a_setOppositeGenderAnims
+		);
+	}
+	
+	void CoopLib::CharacterCustomization::CopyDefaultRacialAppearanceToPlayer
+	(
+		RE::StaticFunctionTag*,
+		int32_t a_playerID,
+		bool a_setFemale, 
+		bool a_setOppositeGenderAnims
+	)
+	{
+		// Import default racial headparts, update gender, animations, skin tone,
+		// and refresh the player actor's 3D model when done.
+		// Does not update appearance preset or change the player's race.
+		// NOTE:
+		// Any race swap must be fully completed first to update properly.
+
+		DBG
+		(
+			"PID: {}, set female: {}, set opposite gender anims: {}.",
+			a_playerID, a_setFemale, a_setOppositeGenderAnims
+		);
+		if (!glob.allPlayersInit ||
+			a_playerID <= -1 ||
+			a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
+		{
+			return;
+		}
+
+		Util::CopyDefaultRacialAppearanceToActor
+		(
+			glob.coopPlayers[a_playerID]->coopActor.get(),
+			a_setFemale, 
+			a_setOppositeGenderAnims
 		);
 	}
 	
@@ -1422,7 +1516,15 @@ namespace ALYSLC
 				);
 				
 				Util::ImportActorBaseAppearanceData(p1, actorPtr.get());
-				// Maintain the changes when the game saves.
+				// IMPORTANT:
+				// DO NOT set any change flag without there being an accompanying change
+				// or the game may crash when loading data from the player character's actor base 
+				// after exiting to the main menu and loading a save.
+				// For example, setting the 'kFactions' change flag after modifying the factions 
+				// for a companion player when summoning and then loading a save from the main menu.
+				// Don't be dumb, please.
+				// 
+				// Maintain the appearance changes when the game saves.
 				actorBase->AddChange(RE::TESNPC::ChangeFlags::kFace);
 				actorBase->AddChange(RE::TESNPC::ChangeFlags::kGender);
 				actorBase->AddChange(RE::TESNPC::ChangeFlags::kRace);
@@ -1454,13 +1556,18 @@ namespace ALYSLC
 		
 		// Update skin color and player model.
 		RE::ActorHandle actorHandle = a_fromPresetCharacter->GetHandle();
+		if (!Util::HandleIsValid(actorHandle))
+		{
+			return;
+		}
+
 		auto taskInterface = SKSE::GetTaskInterface();
 		if (!taskInterface)
 		{
 			return;
 		}
 
-		taskInterface->AddTask
+		/*taskInterface->AddTask
 		(
 			[actorHandle]()
 			{
@@ -1478,7 +1585,9 @@ namespace ALYSLC
 
 				GlobalCoopData::LoadOrSaveRaceMenuPreset(actorPtr.get(), true);
 			}
-		);
+		);*/
+
+		GlobalCoopData::LoadOrSaveRaceMenuPreset(actorHandle.get().get(), true);
 	}
 
 	void CoopLib::CharacterCustomization::LoadPlayerCharacterPresetWithName
@@ -1651,8 +1760,6 @@ namespace ALYSLC
 				// Import the default race-given headparts after.
 				Util::RemoveAllHeadParts(p1);
 				Util::ImportDefaultRacialHeadParts(a_newRace, a_setFemale, actorBase);
-				// Load default preset.
-				Util::LoadDefaultBasePreset();
 			}
 		);
 	}
@@ -1671,13 +1778,18 @@ namespace ALYSLC
 		}
 
 		RE::ActorHandle actorHandle = a_toPresetCharacter->GetHandle();
+		if (!Util::HandleIsValid(actorHandle))
+		{
+			return;
+		}
+
 		auto taskInterface = SKSE::GetTaskInterface();
 		if (!taskInterface)
 		{
 			return;
 		}
 
-		taskInterface->AddTask
+		/*taskInterface->AddTask
 		(
 			[actorHandle]()
 			{
@@ -1695,7 +1807,137 @@ namespace ALYSLC
 
 				GlobalCoopData::LoadOrSaveRaceMenuPreset(actorPtr.get(), false);
 			}
-		);
+		);*/
+
+		GlobalCoopData::LoadOrSaveRaceMenuPreset(actorHandle.get().get(), false);
+	}
+
+	void CoopLib::CharacterCustomization::SavePlayerCharacterNPCAppearancePreset
+	(
+		RE::StaticFunctionTag*, RE::Actor* a_playerActor, RE::TESNPC* a_npcPreset
+	)
+	{
+		DBG("");
+		// Save the given actor base (or P1's default actor base for P1)
+		// as the given player's chosen actor base in their serialized data.
+		if (!glob.globalDataInit || !a_playerActor)
+		{
+			return;
+		}
+
+		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+		if (iter == glob.serializablePlayerData.end())
+		{
+			ERR("ERR: Could not find {}'s serializable data. FID: 0x{:X}.",
+				a_playerActor->GetName(), a_playerActor->formID);
+			return;
+		}
+		
+		if (a_playerActor->IsPlayerRef())
+		{
+			// Save as default actor base for P1.
+			if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
+			{
+				iter->second->chosenNPCAppearancePreset = p1->GetActorBase();
+				DBG
+				(
+					"Player actor: {}, chosen NPC apperance preset: {} (0x{:X}, editor ID: {}).",
+					a_playerActor ? a_playerActor->GetName() : "NONE",
+					p1->GetActorBase() ? p1->GetActorBase()->GetName() : "NONE",
+					p1->GetActorBase() ? p1->GetActorBase()->formID : 0xDEAD,
+					Util::GetEditorID(p1->GetActorBase())
+				);
+			}
+		}
+		else
+		{
+			// Copy original actor base's head parts if no appearance actor base was given.
+			iter->second->chosenNPCAppearancePreset = 
+			(
+				a_npcPreset ?
+				a_npcPreset : 
+				a_playerActor->GetActorBase() ? 
+				a_playerActor->GetActorBase()->As<RE::TESNPC>() :
+				nullptr
+			);
+			DBG
+			(
+				"Player actor: {}, chosen appearance actor base: {} (0x{:X}, editor ID: {}).",
+				a_playerActor ? a_playerActor->GetName() : "NONE",
+				iter->second->chosenNPCAppearancePreset ?
+				iter->second->chosenNPCAppearancePreset->GetName() : 
+				"NONE",
+				iter->second->chosenNPCAppearancePreset ? 
+				iter->second->chosenNPCAppearancePreset->formID : 
+				0xDEAD,
+				Util::GetEditorID(iter->second->chosenNPCAppearancePreset)
+			);
+		}
+	}
+
+	void CoopLib::CharacterCustomization::SavePlayerCharacterGenderChoice
+	(
+		RE::StaticFunctionTag*,
+		RE::Actor* a_playerActor,
+		bool a_isFemale,
+		bool a_usesOppositeGenderAnims
+	)
+	{
+		// Save the given gender and opposite gender animations flag
+		// to the given player actor's serialized data.
+
+		DBG("");
+		if (!glob.globalDataInit || !a_playerActor)
+		{
+			return;
+		}
+
+		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+		if (iter == glob.serializablePlayerData.end())
+		{
+			ERR("ERR: Could not find {}'s serializable data. FID: 0x{:X}.",
+				a_playerActor->GetName(), a_playerActor->formID);
+			return;
+		}
+		
+		if (a_playerActor->IsPlayerRef())
+		{
+			// Save P1's current gender and opposite animation flag from their actor base.
+			if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
+			{
+				if (auto actorBase = p1->GetActorBase(); actorBase)
+				{
+					iter->second->isFemale = actorBase->IsFemale();
+					iter->second->usesOppositeGenderAnims = actorBase->UsesOppositeGenderAnims();
+					DBG
+					(
+						"Player actor: {}, chosen actor base: {} (0x{:X}, editor ID: {}).",
+						a_playerActor ? a_playerActor->GetName() : "NONE",
+						p1->GetActorBase() ? p1->GetActorBase()->GetName() : "NONE",
+						p1->GetActorBase() ? p1->GetActorBase()->formID : 0xDEAD,
+						Util::GetEditorID(p1->GetActorBase())
+					);
+					
+				}
+				else
+				{
+					iter->second->isFemale = a_isFemale;
+					iter->second->usesOppositeGenderAnims = a_usesOppositeGenderAnims;
+				}
+			}
+		}
+		else
+		{
+			iter->second->isFemale = a_isFemale;
+			iter->second->usesOppositeGenderAnims = a_usesOppositeGenderAnims;
+			DBG
+			(
+				"Player actor: {}, save as: is female: {}, uses opposite gender anims: {}.",
+				a_playerActor ? a_playerActor->GetName() : "NONE",
+				a_isFemale,
+				a_usesOppositeGenderAnims
+			);
+		}
 	}
 
 	void CoopLib::CharacterCustomization::SavePlayerCharacterRace
@@ -1747,6 +1989,38 @@ namespace ALYSLC
 				Util::GetEditorID(a_race)
 			);
 		}
+	}
+
+	void CoopLib::CharacterCustomization::SavePlayerCharacterVoiceType
+	(
+		RE::StaticFunctionTag*, RE::Actor* a_playerActor, RE::BGSVoiceType* a_voiceType
+	)
+	{
+		DBG("");
+		// Save the given voice type (not for P1)
+		// as the given player's chosen race in their serialized data.
+		if (!glob.globalDataInit || !a_playerActor || a_playerActor->IsPlayerRef() || !a_voiceType)
+		{
+			return;
+		}
+
+		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+		if (iter == glob.serializablePlayerData.end())
+		{
+			ERR("ERR: Could not find {}'s serializable data. FID: 0x{:X}.",
+				a_playerActor->GetName(), a_playerActor->formID);
+			return;
+		}
+
+		iter->second->chosenVoiceType = a_voiceType;
+		DBG
+		(
+			"Player actor: {}, chosen voice type: {} (0x{:X}, editor ID: {}).",
+			a_playerActor ? a_playerActor->GetName() : "NONE",
+			a_voiceType ? a_voiceType->GetName() : "NONE",
+			a_voiceType ? a_voiceType->formID : 0xDEAD,
+			Util::GetEditorID(a_voiceType)
+		);
 	}
 	
 	void CoopLib::CharacterCustomization::SetDefaultRacialAppearance
@@ -2447,6 +2721,7 @@ namespace ALYSLC
 		a_vm->RegisterFunction("SetCoopPlayerClass"s, "ALYSLC"s, SetCoopPlayerClass);
 		a_vm->RegisterFunction("SetCoopPlayerRace"s, "ALYSLC"s, SetCoopPlayerRace);
 		a_vm->RegisterFunction("SetFavoritedEmoteIdles"s, "ALYSLC"s, SetFavoritedEmoteIdles);
+		a_vm->RegisterFunction("SetGiftMenuPlayerActors"s, "ALYSLC"s, SetGiftMenuPlayerActors);
 		a_vm->RegisterFunction("SetGifteePlayerActor"s, "ALYSLC"s, SetGifteePlayerActor);
 		a_vm->RegisterFunction("SetIsSummoningFlag"s, "ALYSLC"s, SetIsSummoningFlag);
 		a_vm->RegisterFunction("SetPartyInvincibility"s, "ALYSLC"s, SetPartyInvincibility);
@@ -2469,6 +2744,18 @@ namespace ALYSLC
 		a_vm->RegisterFunction("LogError"s, "ALYSLC"s, LogError);
 
 		// Character customization functions.
+		a_vm->RegisterFunction
+		(
+			"CopyBaseAppearanceToPlayer"s,
+			"ALYSLC"s,
+			CharacterCustomization::CopyBaseAppearanceToPlayer
+		);
+		a_vm->RegisterFunction
+		(
+			"CopyDefaultRacialAppearanceToPlayer"s,
+			"ALYSLC"s, 
+			CharacterCustomization::CopyDefaultRacialAppearanceToPlayer
+		);
 		a_vm->RegisterFunction
 		(
 			"CopyNPCAppearanceToPlayer"s,
@@ -2507,6 +2794,18 @@ namespace ALYSLC
 		);
 		a_vm->RegisterFunction
 		(
+			"SavePlayerCharacterNPCAppearancePreset",
+			"ALYSLC"s,
+			CharacterCustomization::SavePlayerCharacterNPCAppearancePreset
+		);
+		a_vm->RegisterFunction
+		(
+			"SavePlayerCharacterGenderChoice",
+			"ALYSLC"s,
+			CharacterCustomization::SavePlayerCharacterGenderChoice
+		);
+		a_vm->RegisterFunction
+		(
 			"SavePlayerCharacterPreset",
 			"ALYSLC"s, 
 			CharacterCustomization::SavePlayerCharacterPreset
@@ -2516,6 +2815,12 @@ namespace ALYSLC
 			"SavePlayerCharacterRace",
 			"ALYSLC"s,
 			CharacterCustomization::SavePlayerCharacterRace
+		);
+		a_vm->RegisterFunction
+		(
+			"SavePlayerCharacterVoiceType",
+			"ALYSLC"s,
+			CharacterCustomization::SavePlayerCharacterVoiceType
 		);
 		a_vm->RegisterFunction
 		(

@@ -1337,10 +1337,10 @@ namespace ALYSLC
 		// If necessary, relinquish control of the camera before pausing.
 		if (glob.cam->IsRunning()) 
 		{
-			auto& controllingPID = glob.cam->controlCamPID;
-			if (controllingPID == playerID && glob.cam->camAdjMode != CamAdjustmentMode::kNone)
+			if (glob.cam->adjustingCamPID == playerID &&
+				glob.cam->camAdjMode != CamAdjustmentMode::kNone)
 			{
-				controllingPID = -1;
+				glob.cam->adjustingCamPID = -1;
 				glob.cam->camAdjMode = CamAdjustmentMode::kNone;
 			}
 		}
@@ -1761,7 +1761,6 @@ namespace ALYSLC
 		wantsToSneak = false;
 		wasSprinting = false;
 		reqMeleeSpellcastKillmove = false;
-		requestedToParaglide = false;
 		sendingP1MotionDrivenEvents = false;
 		spellcastingCancelled = false;
 		weapMagReadied = false;
@@ -2143,7 +2142,6 @@ namespace ALYSLC
 				coopActor.get(),
 				true, 
 				false, 
-				true, 
 				true,
 				false,
 				2.0f * PI,
@@ -2198,6 +2196,7 @@ namespace ALYSLC
 		const bool& a_justStarted,
 		bool&& a_startCast,
 		bool&& a_waitForCastingAnim, 
+		bool&& a_shouldDualCast,
 		const bool& a_shouldCastWithP1
 	)
 	{
@@ -2250,10 +2249,7 @@ namespace ALYSLC
 				auto targetPtr = Util::GetRefrPtrFromHandle(p->tm->aimTargetLinkedRefrHandle);
 				bool targetValidity = targetPtr && Util::IsValidRefrForTargeting(targetPtr.get());
 				// Will use instant caster.
-				auto magicCaster = coopActor->GetMagicCaster
-				(
-					RE::MagicSystem::CastingSource::kInstant
-				);
+				auto magicCaster = coopActor->magicCasters[RE::Actor::SlotTypes::kPowerOrShout];
 				// Ensure both caster and target are valid before casting.
 				if (!magicCaster || !targetValidity)
 				{
@@ -2287,10 +2283,11 @@ namespace ALYSLC
 				{
 					// Have P1 cast spells with image space modifiers, 
 					// so that they properly display on the screen.
-					magicCaster = glob.player1Actor->GetMagicCaster
+					magicCaster = glob.player1Actor->magicCasters[RE::Actor::SlotTypes::kUnknown];
+					/*glob.player1Actor->GetMagicCaster
 					(
 						RE::MagicSystem::CastingSource::kOther
-					);
+					);*/
 					if (!magicCaster)
 					{
 						return;
@@ -2386,7 +2383,13 @@ namespace ALYSLC
 						magicCaster->currentSpellCost = magickaCost;
 						magicCaster->CastSpellImmediate
 						(
-							spell, false, targetPtr.get(), 1.0f, false, 0.0f, coopActor.get()
+							spell,
+							false, 
+							targetPtr.get(), 
+							1.0f,
+							false, 
+							0.0f, 
+							coopActor.get()
 						);
 						float deltaMagicka = max(-currentMagicka, -magickaCost);
 						ModifyAV(RE::ActorValue::kMagicka, deltaMagicka);
@@ -2522,11 +2525,32 @@ namespace ALYSLC
 						magicCaster->SetCurrentSpellImpl(spell);
 						magicCaster->currentSpell = spell;
 						magicCaster->currentSpellCost = magickaCost;
+						// Magnitude override and effectiveness appear to do nothing, 
+						// at least for spell projectiles.
+						// Great.
+						// Temporary magnitude modifier hack - GO!
+
+						// Modify the magnitude if dual-casting.
+						// Copy to the placeholder spell to avoid affecting the original.
+						auto newSpell = p->em->CopyToPlaceholderSpell
+						(
+							spell, PlaceholderMagicIndex::kVoice
+						);
+						if (!newSpell)
+						{
+							return;
+						}
+
 						magicCaster->CastSpellImmediate
 						(
-							spell, false, targetPtr.get(), 1.0f, false, 0.0f, coopActor.get()
+							newSpell, false, targetPtr.get(), 1.0f, false, 0.0f, coopActor.get()
 						);
 
+						DBG
+						(
+							"{}: {}: Magicka cost: {}.",
+							coopActor->GetName(), spell->GetName(), magickaCost
+						);
 						// Expend magicka.
 						float deltaMagicka = -magickaCost;
 						ModifyAV(RE::ActorValue::kMagicka, deltaMagicka);
@@ -3185,12 +3209,13 @@ namespace ALYSLC
 					"P{}: <font color=\"#E66100\">Leveled up '{}' to [{}]</font>", 
 					playerID + 1, glob.AV_TO_SKILL_NAME_MAP.at(currentAV), avLvl + 1
 				),
+				Settings::fSecsBetweenDiffCrosshairMsgs * 2.0f,
 				{ 
 					CrosshairMessageType::kNone,
+					CrosshairMessageType::kActivationInfo,
 					CrosshairMessageType::kStealthState,
-					CrosshairMessageType::kTargetingState 
-				},
-				Settings::fSecsBetweenDiffCrosshairMsgs * 2.0f
+					CrosshairMessageType::kCrosshairTarget 
+				}
 			);
 
 			// Set to XP overshoot amount after level up.
@@ -4114,6 +4139,7 @@ namespace ALYSLC
 				);
 				// Stop the player from sprinting right after running out of stamina.
 				coopActor->NotifyAnimationGraph("sprintStop");
+				DBG("{}: Was sprinting cooldown is now {}.", coopActor->GetName(), secsTotalStaminaRegenCooldown);
 			}
 			else
 			{
@@ -4123,6 +4149,7 @@ namespace ALYSLC
 					(-newStamina) / (baseStaminaRegenRateMult / 100.0f),
 					maxStaminaCooldownSecs
 				);
+				DBG("{}: Was NOT sprinting cooldown is now {}.", coopActor->GetName(), secsTotalStaminaRegenCooldown);
 			}
 		}
 
@@ -5557,6 +5584,54 @@ namespace ALYSLC
 				passedPressCheck = singularInputState.isPressed;
 			}
 		}
+		
+		// If the first composing input is an analog stick, delay flagging the input as pressed
+		// for triggering actions until after the flick interval elapses.
+		//const auto lastInputIndex = inputComp.size() - 1;
+		//if ((lastInputIndex > 0 && inputComp[0] == InputAction::kRShoulder) && 
+		//	(
+		//		inputComp[lastInputIndex] == InputAction::kLS || 
+		//		inputComp[lastInputIndex] == InputAction::kRS
+		//	))
+		//{
+		//	// Only have to worry about displacement when the stick is moving away from center,
+		//	// which is not the entire default flick interval.
+		//	// Reduces the delay interval before processing the binds mapped to LS/RS movement.
+		//	const bool isLS = inputComp[lastInputIndex] == InputAction::kLS;
+		//	const float flickInterval = 
+		//	(
+		//		Settings::fSecsDefFlickInterval * 
+		//		std::clamp(60.0f * *g_deltaTimeRealTime, 1.0f, 2.0f)
+		//	);
+		//	const auto& stickInputState = glob.cdh->GetInputState
+		//	(
+		//		deviceID, inputComp[lastInputIndex]
+		//	);
+		//	const auto& stickData = glob.cdh->GetAnalogStickState(deviceID, isLS);
+		//	if (isLS)
+		//	{
+		//		passedPressCheck &= 
+		//		(
+		//			(glob.isInCoopCombat) ||
+		//			(!Util::HandleIsValid(p->tm->activationRefrHandle)) ||
+		//			(
+		//				stickInputState.isPressed &&
+		//				!stickData.wasFlicked
+		//			)
+		//		);
+		//	}
+		//	else
+		//	{
+		//		DBG("Is pressed: {}, held time: {}.", 
+		//			stickInputState.isPressed,
+		//			stickInputState.heldTimeSecs);
+		//		passedPressCheck &= 
+		//		(
+		//			stickInputState.isPressed &&
+		//			!stickData.wasFlicked
+		//		);
+		//	}
+		//}
 
 		// Check for consecutive taps next.
 		if (passedPressCheck && params.perfType == PerfType::kOnConsecTap)
@@ -5728,6 +5803,7 @@ namespace ALYSLC
 				!coopActor->IsOnMount() &&
 				!coopActor->IsSwimming() && 
 				!coopActor->IsFlying() &&
+				!p->mm->isParagliding &&
 				coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal) 
 			{
 				coopActor->NotifyAnimationGraph("IdleForceDefaultState");
@@ -5735,14 +5811,17 @@ namespace ALYSLC
 			
 			// Must send a button event first and toggle off AI driven to allow P1 
 			// to surrender to guards if they've accrued a bounty.
-			SendButtonEvent
-			(
-				InputAction::kSheathe, 
-				RE::INPUT_DEVICE::kGamepad, 
-				ButtonEventPressType::kInstantTrigger, 
-				0.0f, 
-				true
-			);
+			/*if (Util::MenusOnlyAlwaysOpen())
+			{
+				SendButtonEvent
+				(
+					InputAction::kSheathe, 
+					RE::INPUT_DEVICE::kGamepad, 
+					ButtonEventPressType::kInstantTrigger, 
+					0.0f, 
+					true
+				);
+			}*/
 
 			// Redundancy, I know.
 			// But sometimes individual calls fail.
@@ -5780,6 +5859,7 @@ namespace ALYSLC
 						!coopActor->IsOnMount() &&
 						!coopActor->IsSwimming() && 
 						!coopActor->IsFlying() && 
+						!p->mm->isParagliding &&
 						coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal)
 					{
 						coopActor->NotifyAnimationGraph("IdleForceDefaultState");
@@ -5853,10 +5933,10 @@ namespace ALYSLC
 			(
 				RE::ACTOR_BASE_DATA::Flag::kPCLevelMult
 			);
-			actorBase->AddChange
+			/*actorBase->AddChange
 			(
 				RE::TESNPC::ChangeFlags::kAttributes
-			);
+			);*/
 		}
 
 		// Level is set to a garbage value and displays as 1000 with GetLevel()
@@ -6254,7 +6334,6 @@ namespace ALYSLC
 		// Reset all player timepoints handled by this manager to the current time.
 
 		p->expendSprintStaminaTP		=
-		p->lastActivationCheckTP		=
 		p->lastActivationStartTP		=
 		p->lastAttackStartTP			=
 		p->lastBoundWeapon2HReqTP		=
@@ -6484,14 +6563,7 @@ namespace ALYSLC
 					(
 						"P1: <font color=\"#FF0000\">"
 						"Not enough health to revive another player!</font>"
-					),
-					{
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kActivationInfo,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetingState
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					)
 				);
 				p->tm->UpdateCrosshairMessage();
 			}
@@ -6546,14 +6618,7 @@ namespace ALYSLC
 			(
 				"P1: <font color=\"#1E88E5\">Reviving {}</font>", 
 				downedPlayerTarget->coopActor->GetName()
-			),
-			{ 
-				CrosshairMessageType::kNone,
-				CrosshairMessageType::kActivationInfo, 
-				CrosshairMessageType::kStealthState, 
-				CrosshairMessageType::kTargetingState 
-			},
-			Settings::fSecsBetweenDiffCrosshairMsgs
+			)
 		);
 		p->tm->UpdateCrosshairMessage();
 
@@ -6727,7 +6792,7 @@ namespace ALYSLC
 			{
 				targetActorHandle = p->tm->GetClosestTargetableActorInFOV
 				(
-					coopActor.get(), true, false, false, false, false, PI, -1.0f
+					coopActor.get(), true, false, false, false, PI, -1.0f
 				);
 			}
 
@@ -6746,7 +6811,7 @@ namespace ALYSLC
 				{
 					targetActorHandle = p->tm->GetClosestTargetableActorInFOV
 					(
-						coopActor.get(), true, true, false, false, false, PI, weapReach * 1.5f
+						coopActor.get(), true, true, false, false, PI, weapReach * 1.5f
 					);
 				}
 			}
@@ -8527,13 +8592,6 @@ namespace ALYSLC
 		);
 		isPowerAttacking = coopActor->IsPowerAttacking();
 
-		if (p->isPlayer1)
-		{
-			// Paragliding graph variable only updates for P1. 
-			coopActor->GetGraphVariableBool("bParaGliding", p->mm->isParagliding);
-			p->mm->isParagliding &= coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal;
-		}
-
 		if ((!wasAttacking) && (isAttacking || isBashing || isInCastingAnim)) 
 		{
 			// Set attack start TP if a new attack just started.
@@ -8648,139 +8706,139 @@ namespace ALYSLC
 				//	Action i's inputs are a subset of action j's inputs.
 				if (jCompInputs.size() >= iCompInputs.size() && !iCompInputs.empty())
 				{
-					if (jOrderMatters && iOrderMatters)
-					{
-						// Start as conflicting and then set to false 
-						// if action j's inputs list does not contain all of action i's inputs
-						// or action j's inputs list contains all of action i's inputs
-						// but action i's input list is not a contiguous subsequence
-						// of action j's input list.
-						conflicts = true;
-						int16_t lastMatchIndex = -1;
-						for (uint8_t iIndex = 0; iIndex < iCompInputs.size(); ++iIndex)
-						{
-							if (!conflicts)
-							{
-								break;
-							}
-
-							const auto& iInput = iCompInputs[iIndex];
-							uint8_t jIndex = lastMatchIndex == -1 ? 0 : lastMatchIndex + 1;
-							for (; jIndex < jCompInputs.size(); ++jIndex)
-							{
-								const auto& jInput = jCompInputs[jIndex];
-								if (jInput == iInput)
-								{
-									// Set first match or subsequent matches only if the index
-									// of the previous match is the previous element's index.
-									if (lastMatchIndex == -1 || lastMatchIndex == jIndex - 1)
-									{
-										lastMatchIndex = jIndex;
-										/*DBG
-										(
-											"Match: Input {}, new matching index: {} "
-											"(i: {}, j: {}).",
-											jInput,
-											jIndex,
-											static_cast<InputAction>
-											(
-												i + !InputAction::kFirstAction
-											),
-											static_cast<InputAction>
-											(
-												j + !InputAction::kFirstAction
-											)
-										);*/
-									}
-									else
-									{
-										// Otherwise, there is a gap between matching indices,
-										// meaning the subsequence is not contiguous,
-										// so there can be no conflict.
-										/*DBG
-										(
-											"NOT CONTIGUOUS: Input {}, last matching index: {} "
-											"(i: {}, j: {}).",
-											iInput,
-											jIndex,
-											static_cast<InputAction>
-											(
-												i + !InputAction::kFirstAction
-											),
-											static_cast<InputAction>
-											(
-												j + !InputAction::kFirstAction
-											)
-										);*/
-										conflicts = false;
-									}
-										
-									break;
-								}
-							}
-
-							// Not found further along in action j's inputs list, 
-							// so action i's inputs are either not a subset of action j's inputs 
-							// or action j's inputs contain all of action i's inputs
-							// but in a different order and thus cannot conflict.
-							// We can exit early.
-							if (jIndex == jCompInputs.size())
-							{
-								conflicts = false;
-								/*DBG
-								(
-									"NOT FOUND: Input {}, last matching index: {} "
-									"(i: {}, j: {}).",
-									iInput,
-									lastMatchIndex,
-									static_cast<InputAction>(i + !InputAction::kFirstAction),
-									static_cast<InputAction>(j + !InputAction::kFirstAction)
-								);*/
-							}
-						}
-
-						if (conflicts)
-						{
-							DBG
-							(
-								"CONFLICT: ORDER MATTERS (i: {}, j: {}): "
-								"Action i ({})'s input set ({}) is a subset "
-								"of action j ({})'s input set ({}), and action i ({})'s inputs "
-								"are arranged in the same order within action j ({})'s "
-								"input list. Last match index: {}.",
-								iOrderMatters,
-								jOrderMatters,
-								static_cast<InputAction>(i + !InputAction::kFirstAction),
-								iCompInputs.size(),
-								static_cast<InputAction>(j + !InputAction::kFirstAction),
-								jCompInputs.size(),
-								static_cast<InputAction>(i + !InputAction::kFirstAction),
-								static_cast<InputAction>(j + !InputAction::kFirstAction),
-								lastMatchIndex
-							);
-						}
-						else
-						{
-							/*DBG
-							(
-								"NO CONFLICT: ORDER MATTERS (i: {}, j: {}): "
-								"Action 1 ({})'s input set ({}) is not a subset "
-								"of action 2 ({})'s input set ({}), or action 1 ({})'s inputs "
-								"are not arranged in the same order within action 2 ({})'s "
-								"input list. Last match index: {}.",
-								iOrderMatters,
-								jOrderMatters,
-								static_cast<InputAction>(i + !InputAction::kFirstAction),
-								iCompInputs.size(),
-								static_cast<InputAction>(j + !InputAction::kFirstAction),
-								jCompInputs.size(),
-								static_cast<InputAction>(i + !InputAction::kFirstAction),
-								static_cast<InputAction>(j + !InputAction::kFirstAction),
-								lastMatchIndex
-							);*/
-						}
-					}
-					else
+					//if (jOrderMatters && iOrderMatters)
+					//{
+					//	// Start as conflicting and then set to false 
+					//	// if action j's inputs list does not contain all of action i's inputs
+					//	// or action j's inputs list contains all of action i's inputs
+					//	// but action i's input list is not a contiguous subsequence
+					//	// of action j's input list.
+					//	conflicts = true;
+					//	int16_t lastMatchIndex = -1;
+					//	for (uint8_t iIndex = 0; iIndex < iCompInputs.size(); ++iIndex)
+					//	{
+					//		if (!conflicts)
+					//		{
+					//			break;
+					//		}
+					//
+					//		const auto& iInput = iCompInputs[iIndex];
+					//		uint8_t jIndex = lastMatchIndex == -1 ? 0 : lastMatchIndex + 1;
+					//		for (; jIndex < jCompInputs.size(); ++jIndex)
+					//		{
+					//			const auto& jInput = jCompInputs[jIndex];
+					//			if (jInput == iInput)
+					//			{
+					//				// Set first match or subsequent matches only if the index
+					//				// of the previous match is the previous element's index.
+					//				if (lastMatchIndex == -1 || lastMatchIndex == jIndex - 1)
+					//				{
+					//					lastMatchIndex = jIndex;
+					//					/*DBG
+					//					(
+					//						"Match: Input {}, new matching index: {} "
+					//						"(i: {}, j: {}).",
+					//						jInput,
+					//						jIndex,
+					//						static_cast<InputAction>
+					//						(
+					//							i + !InputAction::kFirstAction
+					//						),
+					//						static_cast<InputAction>
+					//						(
+					//							j + !InputAction::kFirstAction
+					//						)
+					//					);*/
+					//				}
+					//				else
+					//				{
+					//					// Otherwise, there is a gap between matching indices,
+					//					// meaning the subsequence is not contiguous,
+					//					// so there can be no conflict.
+					//					/*DBG
+					//					(
+					//						"NOT CONTIGUOUS: Input {}, last matching index: {} "
+					//						"(i: {}, j: {}).",
+					//						iInput,
+					//						jIndex,
+					//						static_cast<InputAction>
+					//						(
+					//							i + !InputAction::kFirstAction
+					//						),
+					//						static_cast<InputAction>
+					//						(
+					//							j + !InputAction::kFirstAction
+					//						)
+					//					);*/
+					//					conflicts = false;
+					//				}
+					//					
+					//				break;
+					//			}
+					//		}
+					//
+					//		// Not found further along in action j's inputs list, 
+					//		// so action i's inputs are either not a subset of action j's inputs 
+					//		// or action j's inputs contain all of action i's inputs
+					//		// but in a different order and thus cannot conflict.
+					//		// We can exit early.
+					//		if (jIndex == jCompInputs.size())
+					//		{
+					//			conflicts = false;
+					//			/*DBG
+					//			(
+					//				"NOT FOUND: Input {}, last matching index: {} "
+					//				"(i: {}, j: {}).",
+					//				iInput,
+					//				lastMatchIndex,
+					//				static_cast<InputAction>(i + !InputAction::kFirstAction),
+					//				static_cast<InputAction>(j + !InputAction::kFirstAction)
+					//			);*/
+					//		}
+					//	}
+					//
+					//	if (conflicts)
+					//	{
+					//		DBG
+					//		(
+					//			"CONFLICT: ORDER MATTERS (i: {}, j: {}): "
+					//			"Action i ({})'s input set ({}) is a subset "
+					//			"of action j ({})'s input set ({}), and action i ({})'s inputs "
+					//			"are arranged in the same order within action j ({})'s "
+					//			"input list. Last match index: {}.",
+					//			iOrderMatters,
+					//			jOrderMatters,
+					//			static_cast<InputAction>(i + !InputAction::kFirstAction),
+					//			iCompInputs.size(),
+					//			static_cast<InputAction>(j + !InputAction::kFirstAction),
+					//			jCompInputs.size(),
+					//			static_cast<InputAction>(i + !InputAction::kFirstAction),
+					//			static_cast<InputAction>(j + !InputAction::kFirstAction),
+					//			lastMatchIndex
+					//		);
+					//	}
+					//	else
+					//	{
+					//		DBG
+					//		(
+					//			"NO CONFLICT: ORDER MATTERS (i: {}, j: {}): "
+					//			"Action 1 ({})'s input set ({}) is not a subset "
+					//			"of action 2 ({})'s input set ({}), or action 1 ({})'s inputs "
+					//			"are not arranged in the same order within action 2 ({})'s "
+					//			"input list. Last match index: {}.",
+					//			iOrderMatters,
+					//			jOrderMatters,
+					//			static_cast<InputAction>(i + !InputAction::kFirstAction),
+					//			iCompInputs.size(),
+					//			static_cast<InputAction>(j + !InputAction::kFirstAction),
+					//			jCompInputs.size(),
+					//			static_cast<InputAction>(i + !InputAction::kFirstAction),
+					//			static_cast<InputAction>(j + !InputAction::kFirstAction),
+					//			lastMatchIndex
+					//		);
+					//	}
+					//}
+					//else
 					{
 						std::set<InputAction> jCompInputsSet
 						{
@@ -8817,7 +8875,7 @@ namespace ALYSLC
 						}
 						else
 						{
-							/*DBG
+							DBG
 							(
 								"NO CONFLICT: ORDER DOES NOT MATTER (Matters: 1: {}, 2: {}): "
 								"Action 1 ({})'s input set ({}) is not a subset "
@@ -8830,7 +8888,7 @@ namespace ALYSLC
 								jCompInputs.size(),
 								static_cast<InputAction>(i + !InputAction::kFirstAction),
 								static_cast<InputAction>(j + !InputAction::kFirstAction)
-							);*/
+							);
 						}
 					}	
 				}
@@ -8907,10 +8965,14 @@ namespace ALYSLC
 			p->lastStaminaCooldownCheckTP = SteadyClock::now();
 			// Stamina above zero check to provide compat with Valhalla Combat,
 			// which restores some stamina on connecting attacks.
-			// Otherwise, if the cooldown has passed and the player is not sprinting,
+			// Otherwise, if the cooldown has passed and the player is not trying to sprint,
 			// also clear the cooldown interval.
+
 			if ((currentStamina > 0.0f) || 
-				(secsTotalStaminaRegenCooldown - secsSinceOutOfStamina < 0.0f && !isSprinting))
+				(
+					secsTotalStaminaRegenCooldown - secsSinceOutOfStamina < 0.0f && 
+					!AllButtonsPressedForAction(InputAction::kSprint)
+				))
 			{
 				secsTotalStaminaRegenCooldown = 0.0f;
 			}

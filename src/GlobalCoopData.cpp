@@ -65,6 +65,13 @@ namespace ALYSLC
 		Util::ResetTPCamOrientation();
 		if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1) 
 		{
+			// Record P1 essential status each time a save is loaded.
+			DBG
+			(
+				"P1 is essential when loading a save: {}.", p1->IsEssential()
+			);
+			glob.p1IsEssential = p1->IsEssential();
+
 			// NOTE: 
 			// The game fails to save P1's perks properly at times,
 			// either clearing all of them, or only saving the perks unlocked by P1 
@@ -113,16 +120,67 @@ namespace ALYSLC
 			);
 		}
 
-		if (ALYSLC::RaceMenuCompat::g_installed)
+		// Import saved appearance for all companion player characters.
+		// IMPORTANT:
+		// To avoid a save-braeking crash, we must move the player character
+		// back to their editor location before applying a RaceMenu preset. 
+		// Otherwise, a crash will result when loading any save where a player character
+		// had a preset applied while their 3D was still loaded,
+		// Unhandled exception "EXCEPTION_ACCESS_VIOLATION" at 0x7FFC71A57B70 skee64.dll+00C7B70:
+		// and rax, [rdi+0x20]
+		for (const auto playerActorPtr : glob.coopPlayerCharacters)
 		{
-			for (const auto playerActorPtr : glob.coopPlayerCharacters)
+			if (!playerActorPtr)
 			{
-				if (!playerActorPtr)
-				{
-					continue;
-				}
+				continue;
+			}
 
-				LoadOrSaveRaceMenuPreset(playerActorPtr.get(), true);
+			//ImportSavedAppearance(playerActorPtr.get());
+			
+			// Have to re-apply voice type since it isn't saved.
+			const auto iter = glob.serializablePlayerData.find(playerActorPtr->formID);
+			if (iter == glob.serializablePlayerData.end())
+			{
+				continue;
+			}
+
+			auto currentActorBase = playerActorPtr->GetActorBase();
+			if (currentActorBase)
+			{
+				if (iter->second->chosenVoiceType)
+				{
+					DBG
+					(
+						"Change {}'s voice type from {} to {}.",
+						playerActorPtr->GetName(),
+						currentActorBase->voiceType ? 
+						Util::GetEditorID(currentActorBase->voiceType) : 
+						"NONE",
+						Util::GetEditorID(iter->second->chosenVoiceType)
+					);
+					currentActorBase->voiceType = iter->second->chosenVoiceType;
+				}
+				else
+				{
+					DBG
+					(
+						"Maintaining {}'s actor base voice type {}.",
+						playerActorPtr->GetName(),
+						currentActorBase->voiceType ? 
+						Util::GetEditorID(currentActorBase->voiceType) : 
+						"NONE"
+					);
+				}
+			}
+			else
+			{
+				DBG("ERR: Could not get current actor base for {}.", playerActorPtr->GetName());
+			}
+
+			// Lastly, import saved RaceMenu preset, if available.
+			if (ALYSLC::RaceMenuCompat::g_installed)
+			{
+				GlobalCoopData::LoadOrSaveRaceMenuPreset(playerActorPtr.get(), true);
 			}
 		}
 	}
@@ -3120,6 +3178,170 @@ namespace ALYSLC
 		}
 	}
 
+	void GlobalCoopData::ImportSavedAppearance(RE::Actor* a_coopActor)
+	{
+		// Import saved appearance for companion players.
+		// Appearance data from saved actor base, saved race, gender, voice type, 
+		// and RaceMenu preset.
+
+		DBG("{}", a_coopActor->GetName());
+		if (!a_coopActor || a_coopActor->IsPlayerRef())
+		{
+			return;
+		}
+
+		auto& glob = GetSingleton();
+		// Add saved perks to the player if they do not have them added already.
+		const auto iter = glob.serializablePlayerData.find(a_coopActor->formID);
+		if (iter == glob.serializablePlayerData.end()) 
+		{
+			return;
+		}
+
+		const auto& data = iter->second;
+		const auto currentActorBase = a_coopActor->GetActorBase();
+
+		// IMPORTANT:
+		// May cause the player to become invisible randomly after entering a new cell.
+		// The game also freezes frequently after ragdolling, attacking, or drawing weapons
+		// while the player is invisible and their 3D world bound is broken.
+
+		auto savedRace = data->chosenRace;
+		if (!savedRace && a_coopActor->GetRace())
+		{
+			data->chosenRace = a_coopActor->GetRace();
+			DBG
+			(
+				"{}: Saving race as {} (0x{:X}, editor ID: {}).",
+				a_coopActor->GetName(),
+				data->chosenRace->GetName(),
+				data->chosenRace->formID,
+				Util::GetEditorID(data->chosenRace)
+			);
+		}
+
+		if (!data->chosenRace)
+		{
+			DBG("ERR: No saved race for {}.", a_coopActor->GetName());
+		}
+
+		// Set gender and NPC preset data next.
+		auto savedNPCPreset = data->chosenNPCAppearancePreset;
+		if (!savedNPCPreset && currentActorBase)
+		{
+			data->chosenNPCAppearancePreset = currentActorBase;
+			DBG
+			(
+				"{}: Saving NPC preset as {} (0x{:X}, editor ID: {}).",
+				a_coopActor->GetName(),
+				data->chosenNPCAppearancePreset->GetName(),
+				data->chosenNPCAppearancePreset->formID,
+				Util::GetEditorID(data->chosenNPCAppearancePreset)
+			);
+		}
+
+		auto asNPC = data->chosenNPCAppearancePreset->As<RE::TESNPC>();
+		if (!asNPC)
+		{
+			DBG("ERR: No saved preset NPC for {}.", a_coopActor->GetName());
+		}
+		
+		bool raceChange = data->chosenRace != a_coopActor->race;
+		bool genderChange = 
+		(
+			currentActorBase && data->isFemale != static_cast<bool>(currentActorBase->GetSex())
+		);
+		bool faceChange = data->chosenNPCAppearancePreset != currentActorBase;
+
+		Util::RemoveAllHeadParts(currentActorBase);
+		// Add new headparts from NPC to the player.
+		Util::ImportHeadPartsFromBase(asNPC, currentActorBase);
+		// Finally, update race and gender.
+		Util::SetActorRaceAndGender
+		(
+			a_coopActor, 
+			data->chosenRace, 
+			data->isFemale,
+			data->usesOppositeGenderAnims
+		);
+
+		// Then, we must also update voice type since it does not save after customization.
+		if (currentActorBase)
+		{
+			if (iter->second->chosenVoiceType &&
+				currentActorBase->voiceType != iter->second->chosenVoiceType)
+			{
+				DBG
+				(
+					"Change {}'s voice type from {} to {}.",
+					a_coopActor->GetName(),
+					currentActorBase->voiceType ? 
+					Util::GetEditorID(currentActorBase->voiceType) : 
+					"NONE",
+					Util::GetEditorID(iter->second->chosenVoiceType)
+				);
+				currentActorBase->voiceType = iter->second->chosenVoiceType;
+			}
+		}
+		else
+		{
+			DBG("ERR: Could not get current actor base for {}.", a_coopActor->GetName());
+		}
+		
+		// Lastly, import saved RaceMenu preset, if available.
+		if (ALYSLC::RaceMenuCompat::g_installed)
+		{
+			auto taskInterface = SKSE::GetTaskInterface();
+			if (taskInterface)
+			{
+				RE::ActorHandle actorHandle = a_coopActor->GetHandle();
+				taskInterface->AddTask
+				(
+					[actorHandle]()
+					{
+						auto actorPtr = Util::GetActorPtrFromHandle(actorHandle);
+						if (!actorPtr)
+						{
+							return;
+						}
+
+						auto actorBase = actorPtr->GetActorBase();
+						if (!actorBase)
+						{
+							return;
+						}
+
+						GlobalCoopData::LoadOrSaveRaceMenuPreset(actorPtr.get(), true);
+					}
+				);
+			}
+		}
+		
+		// REMOVE when done debugging.
+		DBG
+		(
+			"{} has record flag: 0b{:B}. Race/gender/face changes: {}, {}, {}",
+			a_coopActor->GetName(), 
+			a_coopActor->formFlags,
+			raceChange,
+			genderChange,
+			faceChange
+		);
+
+		// IMPORTANT:
+		// DO NOT set any change flag without there being an accompanying change
+		// or the game may crash when loading data from the player character's actor base 
+		// after exiting to the main menu and loading a save.
+		// For example, setting the 'kFactions' change flag after modifying the factions 
+		// for a companion player when summoning and then loading a save from the main menu.
+		// Don't be dumb, please.
+		// 
+		// Maintain the appearance changes when the game saves.
+		currentActorBase->AddChange(RE::TESNPC::ChangeFlags::kFace);
+		currentActorBase->AddChange(RE::TESNPC::ChangeFlags::kGender);
+		currentActorBase->AddChange(RE::TESNPC::ChangeFlags::kRace);
+	}
+
 	void GlobalCoopData::ImportUnlockedPerks(RE::Actor* a_coopActor)
 	{
 		// Import all serialized perks that the player has unlocked.
@@ -3915,7 +4137,8 @@ namespace ALYSLC
 			return;
 		}
 
-		INF("Succeeded in obtaining singletons and creating script.");
+		INF("Succeeded in obtaining singletons and creating script. Should {}.",
+			a_shouldLoad ? "LOAD" : "SAVE");
 		// Clear out overlays before applying the preset,
 		// since previously applied overlays sometimes stack 
 		// and interfere with the preset-defined ones.
@@ -4692,7 +4915,7 @@ namespace ALYSLC
 			// just fix factions if they're not in sync with follower state,
 			// which is only a problem with existing saves before 1.0.7.
 			Util::ResetFollowerStatus(playerActorPtr.get(), false);
-			Util::ToggleActorDormantState(playerActorPtr.get(), true);
+			//Util::ToggleActorDormantState(playerActorPtr.get(), true);
 		}
 	}
 
@@ -5250,6 +5473,7 @@ namespace ALYSLC
 		GlobalCoopData::ResetMenuPlayerIDs();
 		glob.menusOnlyAlwaysOpen.store(true);
 		glob.supportedMenuOpen.store(false);
+		glob.lastSupportedMenuOpeningTP = SteadyClock::now();
 		glob.lastSupportedMenusClosedTP = SteadyClock::now();
 		glob.lastTempMenusClosedTP = SteadyClock::now();
 		auto p1 = RE::PlayerCharacter::GetSingleton();
@@ -5787,6 +6011,7 @@ namespace ALYSLC
 			glob.isSummoningPlayers,
 			glob.allPlayersInit && GetCoopPlayerIndex(a_coopActor) != -1
 		);
+
 		bool isPlayer1 = a_coopActor->IsPlayerRef();
 		// Set essential flags and bleedout override if using the revive system
 		// or if setting flags for a companion player outside of co-op.
@@ -6499,6 +6724,9 @@ namespace ALYSLC
 			// Get P1, which may be a different character.
 			glob.player1Actor.reset();
 			glob.player1Actor = RE::ActorPtr(RE::PlayerCharacter::GetSingleton());
+			// Reset Gift Menu player handles.
+			glob.gifteePlayerHandle = 
+			glob.gifterPlayerHandle = RE::ActorHandle();
 			// Set living and active players to 0 when not in co-op.
 			glob.livingPlayers = glob.activePlayers = 0;
 			// Reset QuickLoot menu-opening data.
@@ -6543,12 +6771,15 @@ namespace ALYSLC
 		glob.reqQuickLootContainerHandle = RE::ObjectRefHandle();
 		// Time points.
 		glob.lastCoopCompanionSkillLevelsCheckTP =
+		glob.lastSupportedMenuOpeningTP =
 		glob.lastSupportedMenusClosedTP =
 		glob.lastTempMenusClosedTP =
 		glob.lastXPThresholdCheckTP = SteadyClock::now();
 		// Set global entities and lists.
 		glob.player1Actor = RE::ActorPtr(RE::PlayerCharacter::GetSingleton());
 		glob.activateHighlightShaders.fill(nullptr);
+		glob.crosshairHighlightShaders.fill(nullptr);
+		glob.useHighlightShaders.fill(nullptr);
 		glob.castingGlobVars.clear();
 		glob.charGenRace = nullptr;
 		glob.charGenEquippedForms.fill(nullptr);
@@ -6566,6 +6797,7 @@ namespace ALYSLC
 		glob.perksRemoved.clear();
 		glob.placeholderSpells.clear();
 		glob.placeholderSpellsSet.clear();
+		glob.proximityLootItemMap.clear();
 		glob.reqInputEvents.clear();
 		glob.savedP1ActiveEffectsListPtr = nullptr;
 		// Crosshair text offsets.
@@ -6635,6 +6867,18 @@ namespace ALYSLC
 					glob.coopPlayerCharactersFIDSet.insert(blacklistedActorPtr->formID);
 				}
 			}
+
+			// Loot buddies.
+			// NPC.
+			glob.lootBuddy = RE::ActorPtr
+			(
+				dataHandler->LookupForm<RE::Actor>(0x8B7, PLUGIN_NAME)
+			);
+			// Chest.
+			glob.lootBuddyChest = RE::TESObjectREFRPtr
+			(
+				dataHandler->LookupForm<RE::TESObjectREFR>(0x8C1, PLUGIN_NAME)
+			);
 
 			// One inventory chest per player.
 			glob.coopInventoryChests.emplace_back
@@ -7185,6 +7429,9 @@ namespace ALYSLC
 			);
 
 			// Shaders.
+			// Per-player.
+
+			// Activation.
 			glob.activateHighlightShaders[0] = 
 			(
 				dataHandler->LookupForm<RE::TESEffectShader>(0x8B0, PLUGIN_NAME)
@@ -7201,6 +7448,44 @@ namespace ALYSLC
 			(
 				dataHandler->LookupForm<RE::TESEffectShader>(0x8B3, PLUGIN_NAME)
 			);
+
+			// Crosshair
+			glob.crosshairHighlightShaders[0] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8B8, PLUGIN_NAME)
+			);
+			glob.crosshairHighlightShaders[1] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8B9, PLUGIN_NAME)
+			);
+			glob.crosshairHighlightShaders[2] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8BA, PLUGIN_NAME)
+			);
+			glob.crosshairHighlightShaders[3] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8BB, PLUGIN_NAME)
+			);
+
+			// Use item.
+			glob.useHighlightShaders[0] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8BC, PLUGIN_NAME)
+			);
+			glob.useHighlightShaders[1] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8BD, PLUGIN_NAME)
+			);
+			glob.useHighlightShaders[2] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8BE, PLUGIN_NAME)
+			);
+			glob.useHighlightShaders[3] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8BF, PLUGIN_NAME)
+			);
+
+			// Defaults.
 			glob.activateDefaultShader = 
 			(
 				dataHandler->LookupForm<RE::TESEffectShader>(0x84B, PLUGIN_NAME)
@@ -7213,6 +7498,8 @@ namespace ALYSLC
 			(
 				dataHandler->LookupForm<RE::TESEffectShader>(0x8B5, PLUGIN_NAME)
 			);
+
+			// Extra effects.
 			glob.dragonHolesShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x4CEC8);
 			glob.dragonSoulAbsorbShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x280C0);
 			glob.ghostFXShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x64D67);
@@ -7572,6 +7859,46 @@ namespace ALYSLC
 				{
 					p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kNone;
 				}
+				
+				/*
+				// Loot Buddy NPC requires high favor with P1 to open the Gift Menu.
+				const auto scriptFactory = 
+				(
+					RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+				);
+				const auto script = 
+				(
+					scriptFactory ? scriptFactory->Create() : nullptr
+				);
+				if (p1 && script)
+				{
+					DBG("JSDJFDSFJDFJSS");
+					script->SetCommand
+					(
+						fmt::format("setrelationshiprank {:X} 3", glob.lootBuddy->formID)
+					);
+					script->CompileAndRun(p1);
+					script->SetCommand
+					(
+						fmt::format("setrelationshiprank {:X} 3", p1->formID)
+					);
+					script->CompileAndRun(glob.lootBuddy.get());
+					delete script;
+				}
+
+				// Gift Menu does not open the first time the request is made for an actor 
+				// that has an empty inventory.
+				const auto gold = 
+				(
+					RE::BGSDefaultObjectManager::GetSingleton()->objects
+					[RE::DEFAULT_OBJECTS::kGold]->As<RE::TESBoundObject>()
+				);
+				glob.lootBuddy->AddObjectToContainer(gold, nullptr, 1, nullptr);
+				glob.lootBuddy->RemoveItem
+				(
+					gold, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
+				);
+				*/
 			}
 		);
 			
@@ -7596,13 +7923,18 @@ namespace ALYSLC
 		// Load debug overlay menu to show crosshairs/other UI elements.
 		DebugOverlayMenu::Load();
 
+		// IMPORTANT:
+		// We check for the essential flag on P1 well after a save loads 
+		// to allow death mods to set P1 as essential.
+		// If done on loading a save (kPostLoadGame), mods' scripts have not had the opportunity 
+		// to change this flag.
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		if (p1)
 		{
 			glob.p1IsEssential = p1 && p1->IsEssential();
 			DBG
 			(
-				"P1 is essential when setting global data: {}.", p1->IsEssential()
+				"P1 is essential when starting co-op: {}.", p1->IsEssential()
 			);
 		}
 
@@ -7638,8 +7970,10 @@ namespace ALYSLC
 				Util::ResetFollowerStatus(p->coopActor.get(), true);
 			}
 
-			// Make sure the player is not paralyzed either (from being downed).
-			p->coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+			// Set player actor flags.
+			// IMPORTANT:
+			// Never set P1 co-op flags before updating the P1 'is essential' flag above.
+			GlobalCoopData::SetCoopCharacterFlags(p->coopActor.get(), true);
 			// Signal all their managers to resume.
 			p->RequestStateChange(ManagerState::kRunning);
 		}
@@ -7991,6 +8325,8 @@ namespace ALYSLC
 		// Revert to singleplayer handling for all players.
 		PrepP1ForSingleplayer();
 		PrepCompanionPlayersForSingleplayer();
+
+		glob.canStartCoopGlob->value = true;
 	}
 
 	void GlobalCoopData::StopMenuInputManager()
@@ -8013,7 +8349,7 @@ namespace ALYSLC
 			ResetMenuPlayerIDs();
 			glob.quickLootControlPID = -1;
 			glob.quickLootReqPID = -1;
-			Util::SendCrosshairEvent(nullptr);
+			Util::SendCrosshairEvent(nullptr, -1);
 		}
 
 		// Re-enabled saving, since we may have disabled it previously.
@@ -9499,7 +9835,7 @@ namespace ALYSLC
 		}
 		else if (menuNameHash == Hash(RE::GiftMenu::MENU_NAME))
 		{
-			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(glob.mim->gifteePlayerHandle);
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(glob.gifterPlayerHandle);
 			if (pIndex == -1)
 			{
 				DBG("ERR: Giftee player not specified {}. {} is the gifter player.", 
@@ -11460,8 +11796,8 @@ namespace ALYSLC
 		int8_t pIndex = GetCoopPlayerIndex(a_coopActor->GetHandle());
 		const auto& p = glob.coopPlayers[pIndex];
 		const auto& coopP1 = glob.coopPlayers[0];
-		auto p1StorageChestRefrPtr = glob.coopInventoryChests[coopP1->playerID];
-		if (!p1StorageChestRefrPtr) 
+		auto p1StorageChestPtr = glob.coopInventoryChests[coopP1->playerID];
+		if (!p1StorageChestPtr) 
 		{
 			return;
 		}
@@ -11560,7 +11896,7 @@ namespace ALYSLC
 				// Init, if needed, is a private func, but retrieving the changes 
 				// will also init if needed, so get the inventory changes for each container we need.
 				auto p1InvChanges = p1->GetInventoryChanges();
-				auto p1ChestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
+				auto p1ChestInvChanges = p1StorageChestPtr->GetInventoryChanges(); 
 				auto companionChestInvChanges = p->em->inventoryChest->GetInventoryChanges();
 
 				// Use chest inventory as temporary storage for P1's inventory items. 
@@ -11569,7 +11905,7 @@ namespace ALYSLC
 				{
 					p1ChestInvChanges->RemoveAllItems
 					(
-						p1StorageChestRefrPtr.get(), nullptr, false, false, false
+						p1StorageChestPtr.get(), nullptr, false, false, false
 					);
 				}
 
@@ -11577,7 +11913,7 @@ namespace ALYSLC
 				auto p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();
 				auto p1ChestExChanges = 
 				(
-					p1StorageChestRefrPtr->extraList.GetByType<RE::ExtraContainerChanges>()
+					p1StorageChestPtr->extraList.GetByType<RE::ExtraContainerChanges>()
 				);
 				auto companionChestExChanges = 
 				(
@@ -11607,7 +11943,7 @@ namespace ALYSLC
 				// Set P1's chest as temp owner of P1's inventory changes.
 				if (p1ChestExChanges->changes)
 				{
-					p1ChestExChanges->changes->owner = p1StorageChestRefrPtr.get();
+					p1ChestExChanges->changes->owner = p1StorageChestPtr.get();
 				}
 
 				// Set P1 as the owner of the newly imported inventory changes.
@@ -11631,14 +11967,14 @@ namespace ALYSLC
 				// will also init if needed, so get the inventory changes 
 				// for each container we need.
 				auto p1InvChanges = p1->GetInventoryChanges();
-				auto p1ChestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
+				auto p1ChestInvChanges = p1StorageChestPtr->GetInventoryChanges(); 
 				auto companionChestInvChanges = p->em->inventoryChest->GetInventoryChanges();
 			
 				// Get the container changes to use in swapping inventory changes via assignment.
 				auto p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();
 				auto p1ChestExChanges = 
 				(
-					p1StorageChestRefrPtr->extraList.GetByType<RE::ExtraContainerChanges>()
+					p1StorageChestPtr->extraList.GetByType<RE::ExtraContainerChanges>()
 				);
 				auto companionChestExChanges = 
 				(
@@ -11701,11 +12037,11 @@ namespace ALYSLC
 				// Clear, remove, and re-init P1 chest inventory changes 
 				// after we've moved everything back.
 				p1ChestExChanges->changes = nullptr;
-				p1StorageChestRefrPtr->extraList.Remove
+				p1StorageChestPtr->extraList.Remove
 				(
 					RE::ExtraDataType::kContainerChanges, p1ChestExChanges
 				);
-				p1StorageChestRefrPtr->GetInventoryChanges(); 
+				p1StorageChestPtr->GetInventoryChanges(); 
 			
 				// Restore each refr as owner of their own inventory changes.
 				if (p1ExChanges->changes)
@@ -11720,7 +12056,7 @@ namespace ALYSLC
 
 				if (p1ChestExChanges->changes)
 				{
-					p1ChestExChanges->changes->owner = p1StorageChestRefrPtr.get();
+					p1ChestExChanges->changes->owner = p1StorageChestPtr.get();
 				}
 
 				DBG
@@ -11787,7 +12123,7 @@ namespace ALYSLC
 			DBG("{}: P1 now has {} gold, {} in chest. {} has {} gold, {} in chest.", 
 				a_shouldImport ? "IMPORT" : "EXPORT",
 				p1->GetGoldAmount(),
-				Util::GetInventoryItemCount(p1StorageChestRefrPtr.get(), goldObj),
+				Util::GetInventoryItemCount(p1StorageChestPtr.get(), goldObj),
 				p->coopActor->GetName(),
 				Util::GetInventoryItemCount(p->coopActor.get(), goldObj),
 				Util::GetInventoryItemCount(p->em->inventoryChest.get(), goldObj));
@@ -11805,7 +12141,7 @@ namespace ALYSLC
 				// Init, if needed, is a private func, but retrieving the changes 
 				// will also init if needed, so get the inventory changes for each container we need.
 				auto p1InvChanges = p1->GetInventoryChanges();
-				auto p1ChestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
+				auto p1ChestInvChanges = p1StorageChestPtr->GetInventoryChanges(); 
 				auto companionChestInvChanges = p->em->inventoryChest->GetInventoryChanges();
 
 				// Use chest inventory as temporary storage for P1's inventory items. 
@@ -11814,7 +12150,7 @@ namespace ALYSLC
 				{
 					p1ChestInvChanges->RemoveAllItems
 					(
-						p1StorageChestRefrPtr.get(), nullptr, false, false, false
+						p1StorageChestPtr.get(), nullptr, false, false, false
 					);
 				}
 
@@ -11822,7 +12158,7 @@ namespace ALYSLC
 				auto p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();
 				auto p1ChestExChanges = 
 				(
-					p1StorageChestRefrPtr->extraList.GetByType<RE::ExtraContainerChanges>()
+					p1StorageChestPtr->extraList.GetByType<RE::ExtraContainerChanges>()
 				);
 				auto companionChestExChanges = 
 				(
@@ -11851,7 +12187,7 @@ namespace ALYSLC
 				// Set P1's chest as temp owner of P1's inventory changes.
 				if (p1ChestExChanges->changes)
 				{
-					p1ChestExChanges->changes ->owner = p1StorageChestRefrPtr.get();
+					p1ChestExChanges->changes ->owner = p1StorageChestPtr.get();
 				}
 
 				// Set P1 as the owner of the newly imported inventory changes.
@@ -11865,14 +12201,14 @@ namespace ALYSLC
 				// Init, if needed, is a private func, but retrieving the changes 
 				// will also init if needed, so get the inventory changes for each container we need.
 				auto p1InvChanges = p1->GetInventoryChanges();
-				auto p1ChestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
+				auto p1ChestInvChanges = p1StorageChestPtr->GetInventoryChanges(); 
 				auto companionChestInvChanges = p->em->inventoryChest->GetInventoryChanges();
 			
 				// Get the container changes to use in swapping inventory changes via assignment.
 				auto p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();
 				auto p1ChestExChanges = 
 				(
-					p1StorageChestRefrPtr->extraList.GetByType<RE::ExtraContainerChanges>()
+					p1StorageChestPtr->extraList.GetByType<RE::ExtraContainerChanges>()
 				);
 				auto companionChestExChanges = 
 				(
@@ -11901,11 +12237,11 @@ namespace ALYSLC
 				// Clear, remove, and re-init P1 chest inventory changes 
 				// after we've moved everything back.
 				p1ChestExChanges->changes = nullptr;
-				p1StorageChestRefrPtr->extraList.Remove
+				p1StorageChestPtr->extraList.Remove
 				(
 					RE::ExtraDataType::kContainerChanges, p1ChestExChanges
 				);
-				p1StorageChestRefrPtr->GetInventoryChanges(); 
+				p1StorageChestPtr->GetInventoryChanges(); 
 			
 				// Restore each refr as owner of their own inventory changes.
 				if (p1ExChanges->changes)
@@ -11920,7 +12256,7 @@ namespace ALYSLC
 
 				if (p1ChestExChanges->changes)
 				{
-					p1ChestExChanges->changes ->owner = p1StorageChestRefrPtr.get();
+					p1ChestExChanges->changes ->owner = p1StorageChestPtr.get();
 				}
 			}
 		}
@@ -14771,7 +15107,6 @@ namespace ALYSLC
 						p->coopActor->GetName(), 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
 					);
-
 					p->tm->rmm->collidedRefrFIDPairs.emplace(fidPair);		
 					p->tm->rmm->queuedReleasedRefrContactEvents.emplace_back
 					(

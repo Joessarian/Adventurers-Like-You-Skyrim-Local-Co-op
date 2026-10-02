@@ -196,7 +196,7 @@ namespace ALYSLC
 			else if (p->isPlayer1)
 			{
 				// For P1, only re-equip hand forms, as the equip state for them may be glitched.
-				// ReEquipHandForms();
+				ReEquipHandForms();
 			}
 			else
 			{
@@ -509,7 +509,7 @@ namespace ALYSLC
 		// Make a copy of the extra data list before adding to the player's inventory.
 		// Using the original extra data list when equipping leads to frequent crashing
 		// and I haven't figured out the reason for it yet.
-		auto list = Util::CopyExtraDataList(a_extraDataList);
+		auto list = Util::CopyExtraDataList(a_extraDataList, false);
 		DBG("{}: Equip {} from sent list {:p} -> {:p}.", 
 			coopActor->GetName(), a_object->GetName(), fmt::ptr(a_extraDataList), fmt::ptr(list));
 		// Remove copied worn rank mask since we'll set it later instead
@@ -940,10 +940,15 @@ namespace ALYSLC
 		// but have ExtraWorn data, not ExtraWornLeft data, when equipped.
 		bool checkWornLH = 
 		(
-			a_equipsToLH && 
-			equipSlot && 
-			equipSlot != glob.bothHandsEquipSlot &&
-			equipSlot != glob.shieldEquipSlot
+			(a_equipsToLH) && 
+			(
+				(Util::IsTorch(a_object)) ||
+				(
+					equipSlot && 
+					equipSlot != glob.bothHandsEquipSlot && 
+					equipSlot != glob.shieldEquipSlot
+				)
+			)
 		);
 		// Get the equipped extra data list and inventory entry on the player.
 		RE::InventoryEntryData* playerInvEntryData = nullptr;
@@ -1951,15 +1956,8 @@ namespace ALYSLC
 			{
 				// Handle shield and torch first, 
 				// so that the switch statement below can handle weapons exclusively.
-				bool isShield = 
-				(
-					form->As<RE::TESObjectARMO>() && form->As<RE::TESObjectARMO>()->IsShield()
-				);
-				bool isTorch =
-				( 
-					form->As<RE::TESObjectLIGH>() && 
-					form->As<RE::TESObjectLIGH>()->data.flags.all(RE::TES_LIGHT_FLAGS::kCanCarry)
-				);
+				bool isShield = Util::IsShield(form);
+				bool isTorch = Util::IsTorch(form);
 				// Incompatible equip slot.
 				if ((a_rightHand) && (isShield || isTorch))
 				{
@@ -3433,7 +3431,6 @@ namespace ALYSLC
 						(exOwnership) &&
 						(
 							(!exOwnership->owner) || 
-							(!exOwnership->owner->As<RE::Actor>()) ||
 							(Util::IsPartyFriendlyActor(exOwnership->owner->As<RE::Actor>()))
 						)
 					);
@@ -3796,13 +3793,14 @@ namespace ALYSLC
 		
 		DBG
 		(
-			"{}: {}, index: {}, exData {:p}, count: {}, slot: {}.",
+			"{}: {}, index: {}, exData {:p}, count: {}, slot: {} (0x{:X}).",
 			coopActor->GetName(),
 			a_object->GetName(),
 			a_equipIndex,
 			fmt::ptr(a_exDataList),
 			a_count,
-			Util::GetEditorID(a_slot)
+			Util::GetEditorID(a_slot),
+			a_slot ? a_slot->formID : 0xDEAD
 		);
 
 		// Special case for fists.
@@ -4195,7 +4193,7 @@ namespace ALYSLC
 			}
 		}
 
-		bool checkLeftHand = a_slot == glob.leftHandEquipSlot;
+		bool checkLeftHand = a_slot == glob.leftHandEquipSlot || Util::IsTorch(a_object);
 		// Move consumables from the chest to the player before equipping.
 		bool isConsumable = Util::IsConsumable(a_object);
 		if (isConsumable)
@@ -4204,7 +4202,7 @@ namespace ALYSLC
 			// since the item is not equipped.
 			// Using a copy since a sporadic crash occurs if the original is moved over
 			// before the equip. Want to see if a copy prevents this from happening.
-			auto copiedList = Util::CopyExtraDataList(chestExDataList);
+			auto copiedList = Util::CopyExtraDataList(chestExDataList, false);
 			coopActor->AddObjectToContainer
 			(
 				a_object, copiedList, a_count, inventoryChest.get()
@@ -4763,7 +4761,7 @@ namespace ALYSLC
 					return;
 				}
 				
-				EquipForm(a_form, EquipIndex::kLeftHand, a_exData, 1, asLight->equipSlot);
+				EquipForm(a_form, EquipIndex::kLeftHand, a_exData, 1, glob.leftHandEquipSlot);
 
 				break;
 			}
@@ -4967,7 +4965,7 @@ namespace ALYSLC
 					return;
 				}
 
-				UnequipForm(a_form, EquipIndex::kLeftHand, 1, asLight->equipSlot);
+				UnequipForm(a_form, EquipIndex::kLeftHand, 1, glob.leftHandEquipSlot);
 
 				break;
 			}
@@ -5235,11 +5233,11 @@ namespace ALYSLC
 			auto currentLHForm = equippedForms[!EquipIndex::kLeftHand]; 
 			if (a_form != currentLHForm)
 			{
-				EquipForm(a_form, EquipIndex::kLeftHand, a_exData, 1, asLight->equipSlot);
+				EquipForm(a_form, EquipIndex::kLeftHand, a_exData, 1, glob.leftHandEquipSlot);
 			}
 			else
 			{
-				UnequipForm(a_form, EquipIndex::kLeftHand, 1, asLight->equipSlot);
+				UnequipForm(a_form, EquipIndex::kLeftHand, 1, glob.leftHandEquipSlot);
 			}
 			
 			break;
@@ -5549,16 +5547,8 @@ namespace ALYSLC
 		for (const auto form : formsList)
 		{
 			auto equipType = form->As<RE::BGSEquipType>();
-			bool isShield = 
-			(
-				form->As<RE::TESObjectARMO>() && 
-				form->As<RE::TESObjectARMO>()->IsShield()
-			);
-			bool isTorch = 
-			(
-				form->As<RE::TESObjectLIGH>() && 
-				form->As<RE::TESObjectLIGH>()->data.flags.all(RE::TES_LIGHT_FLAGS::kCanCarry)
-			);
+			bool isShield = Util::IsShield(form);
+			bool isTorch = Util::IsTorch(form);
 			// Incompatible equip slot.
 			if ((a_rightHand) && (isShield || isTorch))
 			{
@@ -5913,7 +5903,7 @@ namespace ALYSLC
 					p1->AddObjectToContainer
 					(
 						countInvEntryPair.second->object,
-						Util::CopyExtraDataList(exDataList),
+						Util::CopyExtraDataList(exDataList, false),
 						1,
 						nullptr
 					);
@@ -8085,7 +8075,17 @@ namespace ALYSLC
 			// DBG("{} (0x{:X}) at index {}.", boundObj->GetName(), boundObj->formID, i);
 			desiredFIDs.insert(form->formID);
 		}
-
+		
+		auto dataHandler = RE::TESDataHandler::GetSingleton();
+		auto paraglider = 
+		(
+			dataHandler ?
+			dataHandler->LookupForm<RE::TESObjectMISC>
+			(
+				0x802, "Paragliding.esp"
+			) : 
+			nullptr
+		); 
 		bool hasDesiredForms = !desiredFIDs.empty();
 		// Not very expensive per-frame as the player's inventory
 		// will only contain equipped items and any unequipped items will be removed here.
@@ -8107,6 +8107,11 @@ namespace ALYSLC
 				{
 					continue;
 				}
+
+				/*if (boundObj == paraglider)
+				{
+					continue;
+				}*/
 
 				// Allow bound objects in the player's inventory.
 				// Will unequip them elsewhere when their duration expires.
@@ -8699,19 +8704,8 @@ namespace ALYSLC
 					}
 
 					bool isWeapon = *boundObj->formType == RE::FormType::Weapon;
-					bool isShield = 
-					(
-						boundObj->As<RE::TESObjectARMO>() && 
-						boundObj->As<RE::TESObjectARMO>()->IsShield()
-					);
-					bool isTorch = 
-					(
-						boundObj->As<RE::TESObjectLIGH>() && 
-						boundObj->As<RE::TESObjectLIGH>()->data.flags.all
-						(
-							RE::TES_LIGHT_FLAGS::kCanCarry
-						)
-					);
+					bool isShield = Util::IsShield(boundObj);
+					bool isTorch = Util::IsTorch(boundObj);
 					// Weapons, shields, torches, ammo.
 					if ((a_favFormType == CyclableForms::kWeapon) &&
 						(isWeapon || isShield || isTorch))
@@ -9797,19 +9791,8 @@ namespace ALYSLC
 				favoritedForms.emplace_back(boundObj);
 
 				bool isWeapon = *boundObj->formType == RE::FormType::Weapon;
-				bool isShield = 
-				(
-					boundObj->As<RE::TESObjectARMO>() && 
-					boundObj->As<RE::TESObjectARMO>()->IsShield()
-				);
-				bool isTorch = 
-				(
-					boundObj->As<RE::TESObjectLIGH>() && 
-					boundObj->As<RE::TESObjectLIGH>()->data.flags.all
-					(
-						RE::TES_LIGHT_FLAGS::kCanCarry
-					)
-				);
+				bool isShield = Util::IsShield(boundObj);
+				bool isTorch = Util::IsTorch(boundObj);
 				// Weapons, shields, torches, ammo.
 				if (isWeapon || isShield || isTorch)
 				{

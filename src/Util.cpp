@@ -293,10 +293,16 @@ namespace ALYSLC
 			// Base object does not have to be given to activate.
 			if (!a_activator || 
 				!a_interactionTarget || 
-				!a_interactionTarget->loadedData || 
 				a_interactionTarget->IsDisabled() || 
 				a_interactionTarget->IsDeleted() ||
-				!a_interactionTarget->IsHandleValid()) 
+				!a_interactionTarget->IsHandleValid() || 
+				a_interactionTarget->IsPlayerRef()) 
+			{
+				return;
+			}
+
+			// Do not activate other players in co-op.
+			if (glob.coopSessionActive && GlobalCoopData::IsCoopCharacter(a_interactionTarget))
 			{
 				return;
 			}
@@ -339,7 +345,7 @@ namespace ALYSLC
 					else
 					{
 						// Activate with P1 to read.
-						Util::NativeFunctions::ActivateRefr
+						NativeFunctions::ActivateRefr
 						(
 							a_interactionTarget, 
 							p1,
@@ -379,7 +385,7 @@ namespace ALYSLC
 				// Harvest and remove from P1 to show in the TrueHUD recent loot widget.
 				if (ALYSLC::TrueHUDCompat::g_installed)
 				{
-					Util::NativeFunctions::ActivateRefr
+					NativeFunctions::ActivateRefr
 					(
 						a_interactionTarget, 
 						p1,
@@ -395,7 +401,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					Util::NativeFunctions::ActivateRefr
+					NativeFunctions::ActivateRefr
 					(
 						a_interactionTarget, 
 						a_activator,
@@ -412,7 +418,7 @@ namespace ALYSLC
 			else
 			{
 				// Activate to add to inventory/inventory chest.
-				bool succ = Util::NativeFunctions::ActivateRefr
+				bool succ = NativeFunctions::ActivateRefr
 				(
 					a_interactionTarget, 
 					a_activator,
@@ -601,7 +607,16 @@ namespace ALYSLC
 			}
 		}
 
-		bool ActivationIsOffLimits(RE::Actor * a_actor, RE::TESObjectREFR * a_refr)
+		bool ActivationCanTriggerBounty(RE::Actor* a_actor, RE::TESObjectREFR* a_refr)
+		{
+			return 
+			(
+				(a_refr && !a_actor->IsSneaking()) &&
+				(a_refr->IsLocked() || ActivationIsOffLimits(a_actor, a_refr))
+			);
+		}
+
+		bool ActivationIsOffLimits(RE::Actor* a_actor, RE::TESObjectREFR* a_refr)
 		{
 			// Return true if the given actor activating the given object refr would be considered 
 			// stealing or trigger an alarm.
@@ -629,12 +644,13 @@ namespace ALYSLC
 			auto baseObj = a_refr->GetBaseObject();
 			// Can always attempt to lockpick a locked item, search a corpse, or open a door,
 			// but steal/trespass alarm may sound.
-			/*DBG
+			DBG
 			(
 				"{}: {} (0x{:X}) is {}. IsAnOwner (tt, tf, ft, ff): {}, {}, {}, {}. "
 				"Actor owner: {}, form owner: {}, form faction: {}, "
 				"exData owner: {}, faction owner: {}. "
-				"Owning faction is enemy: {}, tracks crimes: {}. Would be stealing: {}, {}.",
+				"Owning faction is enemy: {}, tracks crimes: {}. Would be stealing: {}, {}. "
+				"FINAL VERDICT: {}",
 				a_actor->GetName(),
 				a_refr->GetName(),
 				baseObj ? 
@@ -651,16 +667,20 @@ namespace ALYSLC
 				isUseFactionNoRequiredOwner,
 				isDoNotUseFactionRequiredOwner,
 				isDoNotUseFactionNoRequiredOwner,
-				actorOwner ? Util::GetEditorID(actorOwner) : "NONE",
-				formOwner ? Util::GetEditorID(formOwner) : "NONE",
-				formFaction ? Util::GetEditorID(formFaction) : "NONE",
-				exDataOwner ? Util::GetEditorID(exDataOwner) : "NONE",
-				owningFaction ? Util::GetEditorID(owningFaction) : "NONE",
+				actorOwner ? GetEditorID(actorOwner) : "NONE",
+				formOwner ? GetEditorID(formOwner) : "NONE",
+				formFaction ? GetEditorID(formFaction) : "NONE",
+				exDataOwner ? GetEditorID(exDataOwner) : "NONE",
+				owningFaction ? GetEditorID(owningFaction) : "NONE",
 				owningFaction ? owningFaction->IsPlayerEnemy() : false,
 				owningFaction ? owningFaction->TracksCrimes() : false,
 				a_actor->WouldBeStealing(a_refr),
-				p1->WouldBeStealing(a_refr)
-			);*/
+				p1->WouldBeStealing(a_refr),
+				a_actor->WouldBeStealing(a_refr) &&
+				p1->WouldBeStealing(a_refr) &&
+				!GlobalCoopData::IsCoopPlayer(actorOwner) &&
+				!GlobalCoopData::IsCoopPlayer(formOwner)
+			);
 			if ((a_refr->IsLocked() || a_refr->IsDead()) || 
 				(baseObj && baseObj->As<RE::TESObjectDOOR>()) ||
 				(baseObj && baseObj->As<RE::TESFurniture>()))
@@ -900,7 +920,7 @@ namespace ALYSLC
 
 					if (extraListsCount == 0)
 					{
-						a_list = Util::NativeFunctions::ConstructExtraDataList	
+						a_list = NativeFunctions::ConstructExtraDataList	
 						(
 							RE::malloc<RE::ExtraDataList>(sizeof(RE::ExtraDataList))
 						);
@@ -1196,19 +1216,26 @@ namespace ALYSLC
 				return true;
 			}
 
+			// Lists contain the same number of intrinsic data types.
 			bool isEqual = true;
-			for (const auto& baseData : *a_list1)
+			for (auto& baseData : *a_list1)
 			{
-				const auto type = baseData.GetType();
-				if (!GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
+				const auto type1 = baseData.GetType();
+				if (!GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type1))
 				{
 					continue;
 				}
-						
-				for (const auto& baseData2 : *a_list2)
+				
+				DBG("List {:p} has type 0x{:X}", fmt::ptr(a_list1), type1);
+				// Check if the second list has this type; if it doesn't, we can break 
+				// since the lists cannot be equal without first having the same types.
+				bool hasSameType = false;
+				for (auto& baseData2 : *a_list2)
 				{
-					const auto type = baseData2.GetType();
-					if (!GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
+					const auto type2 = baseData2.GetType();
+					// Ordering may not match, so skip over types that do not match.
+					if (!GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type2) ||
+						type2 != type1)
 					{
 						continue;
 					}
@@ -1221,16 +1248,32 @@ namespace ALYSLC
 					//	break;
 					//}
 
+					hasSameType = true;
 					if (baseData2.IsNotEqual(std::addressof(baseData)))
 					{
-						DBG("No match on type 0x{:X}.", type);
+						DBG("No match on type 0x{:X}.", type2);
+						if (type2 == RE::ExtraDataType::kHealth)
+						{
+							DBG("Healths: {}, {}.",
+								static_cast<RE::ExtraHealth*>(std::addressof(baseData))->health,
+								static_cast<RE::ExtraHealth*>(std::addressof(baseData2))->health);
+						}
+
 						isEqual = false;
 						break;
 					}
 				}
+
+				if (!hasSameType)
+				{
+					DBG("List {:p} does not have type 0x{:X}.", fmt::ptr(a_list2), type1);
+					isEqual = false;
+					break;
+				}
 			}
 			
-			DBG("Lists {:p} and {:p} are equal.", fmt::ptr(a_list1), fmt::ptr(a_list2));
+			DBG("Lists {:p} and {:p} are {}.", 
+				fmt::ptr(a_list1), fmt::ptr(a_list2), isEqual ? "equal" : "not equal");
 			return isEqual;
 		}
 
@@ -1338,14 +1381,11 @@ namespace ALYSLC
 				(
 					actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, a_shouldSet
 				);
-				if (a_adjustBleedout)
-				{
-					SetActorBaseDataFlag
-					(
-						actorBase, RE::ACTOR_BASE_DATA::Flag::kBleedoutOverride, a_shouldSet
-					);
-					actorBase->actorData.bleedoutOverride = a_shouldSet ? -INT16_MAX : 0.0f;
-				}
+				SetActorBaseDataFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kBleedoutOverride, a_shouldSet
+				);
+				actorBase->actorData.bleedoutOverride = a_shouldSet ? -INT16_MAX : 0.0f;
 			}
 
 			if (a_shouldSet)
@@ -1891,9 +1931,115 @@ namespace ALYSLC
 			);
 		}
 
-		RE::ExtraDataList* CopyExtraDataList(RE::ExtraDataList* a_toCopy)
+		void CopyBaseAppearanceToActor
+		(
+			RE::Actor* a_toActor, RE::TESNPC* a_baseToCopy, bool a_setOppositeGenderAnims
+		)
+		{
+			// Update gender and body-related data by copying the given actor base's appearance 
+			// to the given actor.
+
+			// Make sure all the data we require is valid first.
+			if (!a_baseToCopy || 
+				!a_baseToCopy->race || 
+				!a_baseToCopy->race->faceRelatedData ||
+				!a_toActor || 
+				!a_toActor->race || 
+				!a_toActor->race->faceRelatedData ||
+				!a_toActor->GetActorBase() || 
+				!a_toActor->GetActorBase()->race)
+			{
+				return;
+			}
+
+			DBG
+			(
+				"Copying {}'s appearance to {}, "
+				"set opposite gender animations: {}, "
+				"current race, race to set: {}, {}, equal: {}.",
+				a_baseToCopy ? a_baseToCopy->GetName() : "NONE", 
+				a_toActor->GetName(), 
+				a_setOppositeGenderAnims,
+				a_toActor->race ? a_toActor->race->GetName() : "NONE",
+				a_baseToCopy && a_baseToCopy->race ? a_baseToCopy->race->GetName() : "NONE",
+				a_toActor->race == a_baseToCopy->race
+			);
+
+			auto actorBase = a_toActor->GetActorBase();
+			DBG
+			(
+				"Base is female: {}, current is female: {}, "
+				"current uses opposite gender anims: {}, "
+				"req opposite gender anims: {}, "
+				"should change gender: {}, should set opposite gender anims: {}.",
+				a_baseToCopy->IsFemale(),
+				actorBase->IsFemale(),
+				actorBase->UsesOppositeGenderAnims(),
+				a_setOppositeGenderAnims,
+				(!a_baseToCopy->IsFemale() && actorBase->IsFemale()) || 
+				(a_baseToCopy->IsFemale() && !actorBase->IsFemale()),
+				(actorBase->UsesOppositeGenderAnims() && !a_setOppositeGenderAnims) || 
+				(!actorBase->UsesOppositeGenderAnims() && a_setOppositeGenderAnims)
+			);
+			// Update race and gender before importing headparts from the new actor base.
+			SetActorRaceAndGender
+			(
+				a_toActor,
+				a_baseToCopy->race,
+				a_baseToCopy->GetSex() == RE::SEX::kFemale, 
+				a_setOppositeGenderAnims
+			);
+			// Remove all the player's current headparts.
+			RemoveAllHeadParts(a_toActor);
+			// Add new headparts from NPC to the player.
+			ImportHeadPartsFromBase(a_baseToCopy, actorBase);
+			DBG
+			(
+				"Imported {}'s appearance to {}", a_baseToCopy->GetName(), a_toActor->GetName()
+			);
+		}
+
+		void CopyDefaultRacialAppearanceToActor
+		(
+			RE::Actor* a_toActor, bool a_setFemale, bool a_setOppositeGenderAnims
+		)
+		{
+			// Import default racial headparts, update gender, animations, skin tone,
+			// and refresh the player actor's 3D model when done.
+			// Does not update appearance preset or change the player's race.
+
+			if (!a_toActor || 
+				!a_toActor->race || 
+				!a_toActor->race->faceRelatedData ||
+				!a_toActor->GetActorBase() || 
+				!a_toActor->GetActorBase()->race)
+			{
+				return;
+			}
+
+			DBG
+			(
+				"{}: set female: {}, set opposite gender animations: {}, current race: {}",
+				a_toActor->GetName(), 
+				a_setFemale, 
+				a_setOppositeGenderAnims, 
+				a_toActor->race->GetName()
+			);
+			auto actorBase = a_toActor->GetActorBase();
+			// Remove all headparts from the player.
+			// The game will then supply the defaults.
+			RemoveAllHeadParts(a_toActor);
+			// Switch gender before applying new head parts.
+			SetActorGender(a_toActor, a_setFemale, a_setOppositeGenderAnims);
+			// Import the default race-given headparts after.
+			ImportDefaultRacialHeadParts(a_toActor->race, a_setFemale, actorBase);
+		}
+
+		RE::ExtraDataList* CopyExtraDataList(RE::ExtraDataList* a_toCopy, bool a_onlyIntrinsicTypes)
 		{
 			// Allocate, construct, and return a deep copy of the given extra data list.
+			// Can choose to copy all supported data types or just intrinsic types 
+			// (use when copying a refr's exData list).
 
 			// Nothing to copy if non-existent or empty.
 			if (!a_toCopy || std::distance(a_toCopy->begin(), a_toCopy->end()) == 0)
@@ -1907,7 +2053,7 @@ namespace ALYSLC
 				return nullptr;
 			}
 
-			RE::ExtraDataList* list = Util::NativeFunctions::ConstructExtraDataList
+			RE::ExtraDataList* list = NativeFunctions::ConstructExtraDataList
 			(
 				RE::malloc<RE::ExtraDataList>(sizeof(RE::ExtraDataList))
 			);
@@ -1919,6 +2065,12 @@ namespace ALYSLC
 
 			for (auto iter = a_toCopy->begin(); iter != a_toCopy->end(); ++iter)
 			{
+				if (a_onlyIntrinsicTypes && 
+					!GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains((*iter).GetType()))
+				{
+					continue;
+				}
+
 				DBG("Attempting to add type 0x{:X}.", (*iter).GetType());
 				// SKEEEP A BAUNCH of ones that likely won't appear on equipable items.
 				switch((*iter).GetType())
@@ -2640,7 +2792,8 @@ namespace ALYSLC
 				}
 			}
 
-			DBG("After additions: {:p}.", fmt::ptr(list));
+			const auto size = list ? std::distance(list->begin(), list->end()) : 0;
+			DBG("After additions: {:p}. ExData count: {}.", fmt::ptr(list), size);
 			return list;
 		}
 
@@ -2697,7 +2850,7 @@ namespace ALYSLC
 
 			for (const auto handle : procLists->highActorHandles)
 			{
-				auto actorPtr = Util::GetActorPtrFromHandle(handle);
+				auto actorPtr = GetActorPtrFromHandle(handle);
 				if (!actorPtr)
 				{
 					continue;
@@ -3360,10 +3513,10 @@ namespace ALYSLC
 			(
 				glob.cam->playerCam && glob.cam->playerCam->cameraRoot ? 
 				glob.cam->playerCam->cameraRoot->local.rotate * RE::NiPoint3(0.0f, 0.0f, 1.0f) :
-				Util::RotationToDirectionVect
+				RotationToDirectionVect
 				(
-					-Util::NormalizeAngToPi(glob.cam->GetCurrentPitch() - PI / 2.0f),
-					Util::ConvertAngle(glob.cam->GetCurrentYaw())
+					-NormalizeAngToPi(glob.cam->GetCurrentPitch() - PI / 2.0f),
+					ConvertAngle(glob.cam->GetCurrentYaw())
 				)
 			);
 			// Camera 'right' axis.
@@ -3371,12 +3524,12 @@ namespace ALYSLC
 			(
 				glob.cam->playerCam && glob.cam->playerCam->cameraRoot ? 
 				glob.cam->playerCam->cameraRoot->local.rotate * RE::NiPoint3(1.0f, 0.0f, 0.0f) :
-				Util::RotationToDirectionVect
+				RotationToDirectionVect
 				(
 					0.0f,
-					Util::ConvertAngle
+					ConvertAngle
 					(
-						Util::NormalizeAng0To2Pi(glob.cam->GetCurrentYaw() + PI / 2.0f)
+						NormalizeAng0To2Pi(glob.cam->GetCurrentYaw() + PI / 2.0f)
 					)
 				)
 			);
@@ -4084,10 +4237,15 @@ namespace ALYSLC
 			// but have ExtraWorn data, not ExtraWornLeft data, when equipped.
 			bool checkWornLH = 
 			(
-				a_equipsToLH && 
-				equipSlot && 
-				equipSlot != glob.bothHandsEquipSlot &&
-				equipSlot != glob.shieldEquipSlot
+				(a_equipsToLH) && 
+				(
+					(Util::IsTorch(a_form)) ||
+					(
+						equipSlot && 
+						equipSlot != glob.bothHandsEquipSlot && 
+						equipSlot != glob.shieldEquipSlot
+					)
+				)
 			);
 			for (auto entry : *invChanges->entryList)
 			{
@@ -5249,7 +5407,7 @@ namespace ALYSLC
 					{
 						if (!boundObj || 
 							countInvEntryDataPair.first <= 0 || 
-							!Util::IsLootableObject(*boundObj))
+							!IsLootableObject(*boundObj))
 						{
 							continue;
 						}
@@ -5270,7 +5428,7 @@ namespace ALYSLC
 					{
 						if (!boundObj ||
 							countHandlePair.first <= 0 || 
-							!Util::IsLootableObject(*boundObj))
+							!IsLootableObject(*boundObj))
 						{
 							continue;
 						}
@@ -5292,7 +5450,7 @@ namespace ALYSLC
 				{
 					if (!boundObj || 
 						countInvEntryDataPair.first <= 0 || 
-						!Util::IsLootableObject(*boundObj))
+						!IsLootableObject(*boundObj))
 					{
 						continue;
 					}
@@ -5701,6 +5859,57 @@ namespace ALYSLC
 			}
 
 			return hasLOS;
+		}
+
+		bool HasPerkToDualCast(RE::Actor* a_actor, RE::SpellItem* a_spell)
+		{
+			// Does the given actor have the required perk to dual cast the given spell?
+
+			if (!a_actor || !a_spell)
+			{
+				return false;
+			}
+
+			bool canDualCast = false;
+			auto spellSchool = 
+			(
+				a_spell->avEffectSetting ? 
+				a_spell->avEffectSetting->data.associatedSkill : 
+				RE::ActorValue::kNone
+			);
+			// Must have the corresponding perk.
+			switch (spellSchool)
+			{
+			case RE::ActorValue::kAlteration:
+			{
+				canDualCast = a_actor->HasPerk(glob.dualCastingAlterationPerk);
+				break;
+			}
+			case RE::ActorValue::kConjuration:
+			{
+				canDualCast = a_actor->HasPerk(glob.dualCastingConjurationPerk);
+				break;
+			}
+			case RE::ActorValue::kDestruction:
+			{
+				canDualCast = a_actor->HasPerk(glob.dualCastingDestructionPerk);
+				break;
+			}
+			case RE::ActorValue::kIllusion:
+			{
+				canDualCast = a_actor->HasPerk(glob.dualCastingIllusionPerk);
+				break;
+			}
+			case RE::ActorValue::kRestoration:
+			{
+				canDualCast = a_actor->HasPerk(glob.dualCastingRestorationPerk);
+				break;
+			}
+			default:
+				break;
+			}
+
+			return canDualCast;
 		}
 		
 		bool HasRaycastLOS
@@ -6796,9 +7005,9 @@ namespace ALYSLC
 				return;
 			}
 
-			Util::RemoveAllHeadParts(toActorBase);
+			RemoveAllHeadParts(toActorBase);
 			// Add new headparts from NPC to the player.
-			Util::ImportHeadPartsFromBase(fromActorBase, toActorBase);
+			ImportHeadPartsFromBase(fromActorBase, toActorBase);
 			// Finally, update race and gender.
 			SetActorRaceAndGender
 			(
@@ -6943,17 +7152,14 @@ namespace ALYSLC
 					(
 						(a_actor->IsCombatTarget(p->coopActor.get())) ||
 						(
-							(Util::HandleIsValid(a_actor->currentCombatTarget)) &&
+							(HandleIsValid(a_actor->currentCombatTarget)) &&
 							(
-								Util::IsPartyFriendlyActor
-								(
-									a_actor->currentCombatTarget.get().get()
-								)
+								IsPartyFriendlyActor(a_actor->currentCombatTarget.get().get())
 							)
 						) ||
 						(
 							a_actor->IsInCombat() && 
-							Util::GetDetectionPercent(p->coopActor.get(), a_actor) == 100.0f
+							GetDetectionPercent(p->coopActor.get(), a_actor) == 100.0f
 						)
 					)	
 				);
@@ -7144,8 +7350,8 @@ namespace ALYSLC
 				(
 					(a_targetActor->IsHostileToActor(a_sourceActor)) || 
 					(
-						Util::HandleIsValid(a_targetActor->currentCombatTarget) &&
-						Util::IsPartyFriendlyActor
+						HandleIsValid(a_targetActor->currentCombatTarget) &&
+						IsPartyFriendlyActor
 						(
 							a_targetActor->currentCombatTarget.get().get()
 						)
@@ -7732,7 +7938,7 @@ namespace ALYSLC
 							a_toRefr->AddObjectToContainer
 							(
 								a_object, 
-								Util::CopyExtraDataList(exDataList),
+								CopyExtraDataList(exDataList, false),
 								count,
 								nullptr
 							);
@@ -8067,7 +8273,7 @@ namespace ALYSLC
 				!a_actorToPush->currentProcess || 
 				a_actorToPush->GetKnockState() == RE::KNOCK_STATE_ENUM::kQueued ||
 				a_actorToPush->IsDisabled() ||
-				!Util::GetRefr3D(a_actorToPush))
+				!GetRefr3D(a_actorToPush))
 			{
 				return;
 			}
@@ -8656,7 +8862,7 @@ namespace ALYSLC
 				glob.p1FollowerCount->value = max(0.0f, glob.p1FollowerCount->value - 1.0f);
 				for (const auto refAlias : followerRefAliases)
 				{
-					Util::Papyrus::Clear(refAlias);
+					Papyrus::Clear(refAlias);
 				}
 			}
 			else
@@ -8703,7 +8909,7 @@ namespace ALYSLC
 						if (aliasRef == a_actor)
 						{
 							DBG("Clear NFF follower package refalias {}.", alias->aliasName);
-							Util::Papyrus::Clear(refAlias);
+							Papyrus::Clear(refAlias);
 						}
 					}
 				}
@@ -9006,7 +9212,7 @@ namespace ALYSLC
 						(
 							a_aggressor->IsOnMount() || 
 							a_aggressor->IsAnimationDriven() || 
-							Util::HandleIsValid(a_aggressor->GetOccupiedFurniture())
+							HandleIsValid(a_aggressor->GetOccupiedFurniture())
 						)
 					) ||
 					(
@@ -9014,7 +9220,7 @@ namespace ALYSLC
 						(
 							a_target->IsOnMount() || 
 							a_target->IsAnimationDriven() || 
-							Util::HandleIsValid(a_target->GetOccupiedFurniture())
+							HandleIsValid(a_target->GetOccupiedFurniture())
 						)
 					)
 				);
@@ -9348,7 +9554,6 @@ namespace ALYSLC
 		void ToggleActorDormantState(RE::Actor* a_actor, bool a_set)
 		{
 			// Have the given actor enter an invulnerable state and sit down if their 3D is loaded.
-
 			if (!a_actor || !glob.globalDataInit)
 			{
 				return;
@@ -9368,14 +9573,7 @@ namespace ALYSLC
 			if (a_set)
 			{
 				DBG("Should enter dormant state.");
-				/*actorBase->actorData.actorBaseFlags.set
-				(
-					RE::ACTOR_BASE_DATA::Flag::kInvulnerable,
-					RE::ACTOR_BASE_DATA::Flag::kDoesntBleed
-				);*/
-
 				StartEffectShader(a_actor, glob.ghostFXShader);
-				StartHitArt(a_actor, glob.memoryGlowHitArt, nullptr);
 				
 				a_actor->DrawWeaponMagicHands(false);
 				a_actor->currentProcess->SetRunOncePackage(nullptr, a_actor);
@@ -9388,7 +9586,7 @@ namespace ALYSLC
 					PlayIdle("ResetRoot", a_actor);
 				}
 				
-				int32_t characterID = Util::GetEditorID(actorBase).back() - '0';
+				int32_t characterID = GetEditorID(actorBase).back() - '0';
 				if (characterID <= 0 || 2 * characterID + 1 >= glob.coopPackageFormlists.size())
 				{
 					ERR
@@ -9485,15 +9683,15 @@ namespace ALYSLC
 
 				a_actor->EvaluatePackage(true, true);
 
-				Util::NativeFunctions::SetActorBaseFlag
+				NativeFunctions::SetActorBaseFlag
 				(
 					actorBase, RE::ACTOR_BASE_DATA::Flag::kInvulnerable, true, false
 				);
-				Util::NativeFunctions::SetActorBaseFlag
+				NativeFunctions::SetActorBaseFlag
 				(
 					actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, true, false
 				);
-				Util::NativeFunctions::SetActorBaseFlag
+				NativeFunctions::SetActorBaseFlag
 				(
 					actorBase, RE::ACTOR_BASE_DATA::Flag::kDoesntBleed, true, false
 				);
@@ -9501,12 +9699,6 @@ namespace ALYSLC
 			else
 			{
 				DBG("Should exit dormant state.");
-				/*actorBase->actorData.actorBaseFlags.reset
-				(
-					RE::ACTOR_BASE_DATA::Flag::kInvulnerable,
-					RE::ACTOR_BASE_DATA::Flag::kDoesntBleed
-				);*/
-				
 				// Get up.
 				a_actor->currentProcess->SetRunOncePackage(nullptr, a_actor);
 				if (!a_actor->IsWeaponDrawn())
@@ -9524,15 +9716,15 @@ namespace ALYSLC
 					a_actor->currentProcess->high->currentProcessIdle = nullptr;
 				}
 
-				Util::NativeFunctions::SetActorBaseFlag
+				NativeFunctions::SetActorBaseFlag
 				(
 					actorBase, RE::ACTOR_BASE_DATA::Flag::kInvulnerable, false, false
 				);
-				Util::NativeFunctions::SetActorBaseFlag
+				NativeFunctions::SetActorBaseFlag
 				(
 					actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, false, false
 				);
-				Util::NativeFunctions::SetActorBaseFlag
+				NativeFunctions::SetActorBaseFlag
 				(
 					actorBase, RE::ACTOR_BASE_DATA::Flag::kDoesntBleed, false, false
 				);
@@ -10215,7 +10407,7 @@ namespace ALYSLC
 			if (const auto processLists = RE::ProcessLists::GetSingleton(); processLists)
 			{
 				processLists->magicEffectsLock.Lock();
-				for (const auto tempEffectPtr : processLists->magicEffects)
+				for (auto& tempEffectPtr : processLists->magicEffects)
 				{
 					if (!tempEffectPtr || !tempEffectPtr->As<RE::ShaderReferenceEffect>())
 					{
@@ -10229,16 +10421,22 @@ namespace ALYSLC
 						shaderEffect->target.get().get() == a_refr &&
 						shaderEffect->effectData == a_shader)
 					{
+						DBG("Found shader {} on {} with age {}s, lifetime {}s. Resuming.",
+							GetEditorID(a_shader),
+							a_refr->GetName(),
+							shaderEffect->age,
+							shaderEffect->lifetime);
 						// Update its lifetime if not playing indefinitely.
-						if (shaderEffect->lifetime != -1.0f)
+						/*if (shaderEffect->lifetime != -1.0f)
 						{
 							shaderEffect->lifetime = a_timeSecs;
 						}
-							
+						
 						shaderEffect->finished = false;
 						shaderEffect->Resume();
 						found = true;
-						break;
+						break;*/
+						tempEffectPtr.reset();
 					}
 				}
 				processLists->magicEffectsLock.Unlock();
@@ -10247,6 +10445,10 @@ namespace ALYSLC
 			// Apply a new instance of the effect if it isn't already playing.
 			if (!found)
 			{
+				DBG("Playing new instance of shader {} on {} for {}s.",
+					GetEditorID(a_shader),
+					a_refr->GetName(),
+					a_timeSecs);
 				a_refr->ApplyEffectShader(a_shader, a_timeSecs);
 			}
 		}
@@ -10279,7 +10481,7 @@ namespace ALYSLC
 			}
 
 			processLists->magicEffectsLock.Lock();
-			for (const auto tempEffectPtr : processLists->magicEffects)
+			for (auto& tempEffectPtr : processLists->magicEffects)
 			{
 				if (!tempEffectPtr || !tempEffectPtr->As<RE::ModelReferenceEffect>())
 				{
@@ -10295,10 +10497,10 @@ namespace ALYSLC
 					hitArtEffect->target.get().get() == a_refr &&
 					hitArtEffect->artObject == a_artObj)
 				{
-					hitArtEffect->finished = true;
-					hitArtEffect->Suspend();
-					hitArtEffect->Detach();
-					break;
+					/*hitArtEffect->lifetime = 0.0f;
+					hitArtEffect->finished = true;*/
+					tempEffectPtr.reset();
+					//break;
 				}
 			}
 			processLists->magicEffectsLock.Unlock();
@@ -10328,7 +10530,7 @@ namespace ALYSLC
 			}
 
 			processLists->magicEffectsLock.Lock();
-			for (const auto tempEffectPtr : processLists->magicEffects)
+			for (auto& tempEffectPtr : processLists->magicEffects)
 			{
 				if (!tempEffectPtr || !tempEffectPtr->As<RE::ShaderReferenceEffect>())
 				{
@@ -10352,10 +10554,13 @@ namespace ALYSLC
 					shaderEffect->effectData == glob.activateUseShader ||
 					shaderEffect->effectData == glob.activateDefaultShader)
 				{
+					DBG("Stop {} shader on {}.", 
+						GetEditorID(shaderEffect->effectData), a_refr->GetName());
 					shouldStop = true;
 				}
 				else
 				{
+					// Ew. 12 iterations.
 					for (auto i = 0; i < glob.activateHighlightShaders.size(); ++i)
 					{
 						const auto shader = glob.activateHighlightShaders[i];
@@ -10368,6 +10573,46 @@ namespace ALYSLC
 						if ((shader == shaderEffect->effectData) &&
 							(a_playerID == -1 || i == a_playerID))
 						{
+							DBG("Stop {} shader on {}.", 
+								GetEditorID(shaderEffect->effectData), a_refr->GetName());
+							shouldStop = true;
+							break;
+						}
+					}
+
+					for (auto i = 0; i < glob.crosshairHighlightShaders.size(); ++i)
+					{
+						const auto shader = glob.crosshairHighlightShaders[i];
+						if (!shader)
+						{
+							continue;
+						}
+
+
+						if ((shader == shaderEffect->effectData) &&
+							(a_playerID == -1 || i == a_playerID))
+						{
+							DBG("Stop {} shader on {}.", 
+								GetEditorID(shaderEffect->effectData), a_refr->GetName());
+							shouldStop = true;
+							break;
+						}
+					}
+
+					for (auto i = 0; i < glob.useHighlightShaders.size(); ++i)
+					{
+						const auto shader = glob.useHighlightShaders[i];
+						if (!shader)
+						{
+							continue;
+						}
+
+
+						if ((shader == shaderEffect->effectData) &&
+							(a_playerID == -1 || i == a_playerID))
+						{
+							DBG("Stop {} shader on {}.", 
+								GetEditorID(shaderEffect->effectData), a_refr->GetName());
 							shouldStop = true;
 							break;
 						}
@@ -10380,7 +10625,9 @@ namespace ALYSLC
 				}
 
 				// Is an activation shader on this refr, so stop it.
-				shaderEffect->finished = true;
+				/*shaderEffect->lifetime = 0.0f;
+				shaderEffect->finished = true;*/
+				tempEffectPtr.reset();
 			}
 			processLists->magicEffectsLock.Unlock();
 		}
@@ -10404,7 +10651,7 @@ namespace ALYSLC
 			}
 
 			processLists->magicEffectsLock.Lock();
-			for (const auto tempEffectPtr : processLists->magicEffects)
+			for (auto& tempEffectPtr : processLists->magicEffects)
 			{
 				if (!tempEffectPtr || !tempEffectPtr->As<RE::ShaderReferenceEffect>())
 				{
@@ -10418,7 +10665,9 @@ namespace ALYSLC
 					HandleIsValid(shaderEffect->target) && 
 					shaderEffect->target.get().get() == a_refr)
 				{
-					shaderEffect->finished = true;
+					/*shaderEffect->lifetime = 0.0f;
+					shaderEffect->finished = true;*/
+					tempEffectPtr.reset();
 				}
 			}
 			processLists->magicEffectsLock.Unlock();
@@ -10440,7 +10689,7 @@ namespace ALYSLC
 			}
 			
 			processLists->magicEffectsLock.Lock();
-			for (const auto tempEffectPtr : processLists->magicEffects)
+			for (auto& tempEffectPtr : processLists->magicEffects)
 			{
 				if (!tempEffectPtr || !tempEffectPtr->As<RE::ModelReferenceEffect>())
 				{
@@ -10454,7 +10703,9 @@ namespace ALYSLC
 					HandleIsValid(hitArtEffect->target) && 
 					hitArtEffect->target.get().get() == a_refr)
 				{
-					hitArtEffect->finished = true;
+					/*hitArtEffect->lifetime = 0.0f;
+					hitArtEffect->finished = true;*/
+					tempEffectPtr.reset();
 				}
 			}
 			processLists->magicEffectsLock.Unlock();
@@ -10481,18 +10732,18 @@ namespace ALYSLC
 
 				for (const auto& actorHandle : procLists->highActorHandles)
 				{
-					const auto& actorPtr = Util::GetActorPtrFromHandle(actorHandle);
+					const auto& actorPtr = GetActorPtrFromHandle(actorHandle);
 					if (!actorPtr)
 					{
 						continue;
 					}
 
 					// Hostile enemies targeting a player or ally.
-					const auto combatTargetPtr = Util::GetActorPtrFromHandle
+					const auto combatTargetPtr = GetActorPtrFromHandle
 					(
 						actorPtr->currentCombatTarget
 					);
-					if (combatTargetPtr && Util::IsPartyFriendlyActor(combatTargetPtr.get()))
+					if (combatTargetPtr && IsPartyFriendlyActor(combatTargetPtr.get()))
 					{
 						// Remove damaging effects, such as DOTs,
 						// which will trigger combat again the next frame unless removed.
@@ -10514,7 +10765,7 @@ namespace ALYSLC
 					}
 
 					// Skip over hostile enemies not targeting a player or ally.
-					bool isFriendly = Util::IsPartyFriendlyActor(actorPtr.get());
+					bool isFriendly = IsPartyFriendlyActor(actorPtr.get());
 					if (!isFriendly)
 					{
 						continue;
@@ -10563,7 +10814,7 @@ namespace ALYSLC
 			// Or stop all instances if there was no specified delayed stop time.
 			bool shouldStop = a_delayedStopSecs == -1.0f;
 			processLists->magicEffectsLock.Lock();
-			for (const auto tempEffectPtr : processLists->magicEffects)
+			for (auto& tempEffectPtr : processLists->magicEffects)
 			{
 				if (!tempEffectPtr || !tempEffectPtr->As<RE::ShaderReferenceEffect>())
 				{
@@ -10578,7 +10829,9 @@ namespace ALYSLC
 				{
 					if (shouldStop)
 					{
-						shaderEffect->finished = true;
+						/*shaderEffect->lifetime = 0.0f;
+						shaderEffect->finished = true;*/
+						tempEffectPtr.reset();
 					}
 					else
 					{
@@ -10614,7 +10867,7 @@ namespace ALYSLC
 			// Or stop all instances if there was no specified delayed stop time.
 			bool shouldStop = a_delayedStopSecs == -1.0f;
 			processLists->magicEffectsLock.Lock();
-			for (const auto tempEffectPtr : processLists->magicEffects)
+			for (auto& tempEffectPtr : processLists->magicEffects)
 			{
 				if (!tempEffectPtr || !tempEffectPtr->As<RE::ModelReferenceEffect>())
 				{
@@ -10629,7 +10882,9 @@ namespace ALYSLC
 				{
 					if (shouldStop)
 					{
-						hitArtEffect->finished = true;
+						/*hitArtEffect->lifetime = 0.0f;
+						hitArtEffect->finished = true;*/
+						tempEffectPtr.reset();
 					}
 					else
 					{
@@ -10669,9 +10924,9 @@ namespace ALYSLC
 			// If nothing is hit, the player is likely under the map and freefalling.
 			const float lowerBound = 
 			(
-				Util::GetVertCollPoints
+				GetVertCollPoints
 				(
-					Util::GetRefrPosition(a_target) + 
+					GetRefrPosition(a_target) + 
 					RE::NiPoint3(0.0f, 0.0f, a_target->GetHeight())
 				).second
 			);
@@ -10694,13 +10949,13 @@ namespace ALYSLC
 				if (p1->parentCell)
 				{
 					DBG("Teleport to P1's parent cell {} (0x{:X}).",
-						Util::GetEditorID(p1->parentCell), p1->parentCell->formID);
+						GetEditorID(p1->parentCell), p1->parentCell->formID);
 					p1->CenterOnCell(p1->parentCell);
 				}
 				else if (auto currentCell = tes->GetCell(a_target->data.location); currentCell)
 				{
 					DBG("Teleport to P1's current cell {} (0x{:X}).",
-						Util::GetEditorID(currentCell), currentCell->formID);
+						GetEditorID(currentCell), currentCell->formID);
 					p1->CenterOnCell(currentCell);
 				}
 				else if (tes->worldSpace && tes->worldSpace->persistentCell)
@@ -10708,7 +10963,7 @@ namespace ALYSLC
 					DBG
 					(
 						"Teleport to the current worldspace's persistent cell {} (0x{:X}).",
-						Util::GetEditorID(tes->worldSpace->persistentCell), 
+						GetEditorID(tes->worldSpace->persistentCell), 
 						tes->worldSpace->persistentCell->formID
 					);
 					p1->CenterOnCell(tes->worldSpace->persistentCell);
@@ -10735,7 +10990,7 @@ namespace ALYSLC
 					p1->data.location.x,
 					p1->data.location.y,
 					p1->data.location.z,
-					Util::GetEditorID(p1->parentCell),
+					GetEditorID(p1->parentCell),
 					p1->parentCell ? p1->parentCell->formID : 0xDEAD
 				);
 			}

@@ -443,8 +443,10 @@ namespace ALYSLC
 		glm::vec2 a_center, 
 		uint32_t a_rgba, 
 		uint32_t a_segments, 
+		bool a_fill,
 		float a_radius, 
 		float a_lineThickness, 
+		float a_startingAngle,
 		float a_durationSecs
 	)
 	{
@@ -454,26 +456,73 @@ namespace ALYSLC
 		// Right and down.
 		glm::vec2 xAxis = glm::vec2(1.0f, 0.0f);
 		glm::vec2 yAxis = glm::vec2(0.0f, 1.0f);
-		// Connect this vertex to the next one when drawing lines.
-		glm::vec2 lastVertex = a_center + xAxis * a_radius;
-		for (uint32_t sideIndex = 0; sideIndex < a_segments; sideIndex++)
+		
+
+		if (a_fill)
 		{
-			glm::vec2 vertex = 
+			// Compile list of vertices and then queue up filled circle.
+			std::vector<glm::vec2> offsets{ };
+			offsets.push_back
+			(
+				(
+					xAxis * cosf(a_startingAngle) + 
+					yAxis * sinf(a_startingAngle)
+				) * a_radius
+			);
+			for (uint32_t sideIndex = 0; sideIndex < a_segments; sideIndex++)
+			{
+				offsets.push_back
+				(
+					(
+						xAxis * cosf(angleDelta * (sideIndex + 1) + a_startingAngle) + 
+						yAxis * sinf(angleDelta * (sideIndex + 1) + a_startingAngle)
+					) * a_radius
+				);
+			}
+
+			drawRequests.push_back
+			(
+				std::make_unique<DebugAPIShape>
+				(
+					a_center,
+					offsets,
+					a_rgba, 
+					true,
+					a_lineThickness,
+					a_durationSecs
+				)
+			);
+		}
+		else
+		{
+			// Connect this vertex to the next one when drawing lines.
+			glm::vec2 lastVertex =
 			(
 				a_center + 
 				(
-					xAxis * cosf(angleDelta * (sideIndex + 1)) + 
-					yAxis * sinf(angleDelta * (sideIndex + 1))
+					xAxis * cosf(a_startingAngle) + 
+					yAxis * sinf(a_startingAngle)
 				) * a_radius
 			);
-			drawRequests.push_back
-			(
-				std::make_unique<DebugAPILine>
+			for (uint32_t sideIndex = 0; sideIndex < a_segments; sideIndex++)
+			{
+				glm::vec2 vertex = 
 				(
-					lastVertex, vertex, a_rgba, a_lineThickness, a_durationSecs
-				)
-			);
-			lastVertex = vertex;
+					a_center + 
+					(
+						xAxis * cosf(angleDelta * (sideIndex + 1) + a_startingAngle) + 
+						yAxis * sinf(angleDelta * (sideIndex + 1) + a_startingAngle)
+					) * a_radius
+				);
+				drawRequests.push_back
+				(
+					std::make_unique<DebugAPILine>
+					(
+						lastVertex, vertex, a_rgba, a_lineThickness, a_durationSecs
+					)
+				);
+				lastVertex = vertex;
+			}
 		}
 	}
 
@@ -483,6 +532,7 @@ namespace ALYSLC
 		glm::vec3 a_worldNormal,
 		uint32_t a_rgba,
 		uint32_t a_segments, 
+		bool a_fill,
 		float a_radius, 
 		float a_lineThickness, 
 		bool a_connectCenterToVertices,
@@ -503,6 +553,8 @@ namespace ALYSLC
 		// Screenspace center position.
 		glm::vec2 center2D = WorldToScreenPoint(a_center);
 		ClampPointToScreen(center2D);
+		// Positions of the vertices relative to center.
+		std::vector<glm::vec2> offsets{ };
 		// Worldspace up direction.
 		const glm::vec3 worldUp = glm::vec3(0.0f, 0.0f, 1.0f);
 		// Yaw angle to the right of the camera's facing direction.
@@ -536,7 +588,7 @@ namespace ALYSLC
 			worldOffset = ToVec3(worldOffsetNiP);
 			// Base world offset to rotate about the normal and obtain each vertex position.
 			const RE::NiPoint3 baseWorldOffsetNiP = ToNiPoint3(worldOffset);
-
+			
 			// Get the corresponding screenspace offset.
 			glm::vec2 offset =
 			(
@@ -588,30 +640,37 @@ namespace ALYSLC
 					vertex = center2D + glm::normalize(offset) * radius;
 				}
 
-				if (a_connectCenterToVertices)
+				if (a_fill)
 				{
-					ClampLineToScreen(center2D, vertex);
-					QueueLine2D
-					(
-						center2D, 
-						vertex, 
-						a_rgba, 
-						a_lineThickness, 
-						a_durationSecs
-					);
+					offsets.push_back(vertex - center2D);
 				}
 				else
 				{
-					ClampLineToScreen(center2D, prevVertex);
-					// Draw the segment connecting the vertices.
-					QueueLine2D
-					(
-						prevVertex, 
-						vertex, 
-						a_rgba, 
-						a_lineThickness, 
-						a_durationSecs
-					);
+					if (a_connectCenterToVertices)
+					{
+						ClampLineToScreen(center2D, vertex);
+						QueueLine2D
+						(
+							center2D, 
+							vertex, 
+							a_rgba, 
+							a_lineThickness, 
+							a_durationSecs
+						);
+					}
+					else
+					{
+						ClampLineToScreen(center2D, prevVertex);
+						// Draw the segment connecting the vertices.
+						QueueLine2D
+						(
+							prevVertex, 
+							vertex, 
+							a_rgba, 
+							a_lineThickness, 
+							a_durationSecs
+						);
+					}
 				}
 
 				// Restore the original offset to rotate during the next iteration.
@@ -647,30 +706,38 @@ namespace ALYSLC
 
 				// Tack on the new scaled offset to get the next vertex point to connect to.
 				vertex = WorldToScreenPoint(a_center + worldOffset * a_radius);
-				if (a_connectCenterToVertices)
+
+				if (a_fill)
 				{
-					ClampLineToScreen(center2D, vertex);
-					QueueLine2D
-					(
-						center2D, 
-						vertex, 
-						a_rgba, 
-						a_lineThickness, 
-						a_durationSecs
-					);
+					offsets.push_back(vertex - center2D);
 				}
 				else
 				{
-					ClampLineToScreen(center2D, prevVertex);
-					// Draw the segment connecting the vertices.
-					QueueLine2D
-					(
-						prevVertex, 
-						vertex, 
-						a_rgba, 
-						a_lineThickness, 
-						a_durationSecs
-					);
+					if (a_connectCenterToVertices)
+					{
+						ClampLineToScreen(center2D, vertex);
+						QueueLine2D
+						(
+							center2D, 
+							vertex, 
+							a_rgba, 
+							a_lineThickness, 
+							a_durationSecs
+						);
+					}
+					else
+					{
+						ClampLineToScreen(center2D, prevVertex);
+						// Draw the segment connecting the vertices.
+						QueueLine2D
+						(
+							prevVertex, 
+							vertex, 
+							a_rgba, 
+							a_lineThickness, 
+							a_durationSecs
+						);
+					}
 				}
 
 				// Restore the original offset to rotate during the next iteration.
@@ -678,6 +745,23 @@ namespace ALYSLC
 				// Save the vertex position we just connected to.
 				prevVertex = vertex;
 			}
+		}
+
+		// Draw the filled shape after collecting offsets.
+		if (a_fill)
+		{
+			drawRequests.push_back
+			(
+				std::make_unique<DebugAPIShape>
+				(
+					a_center,
+					offsets,
+					a_rgba, 
+					true,
+					a_lineThickness,
+					a_durationSecs
+				)
+			);
 		}
 	}
 
@@ -1538,6 +1622,8 @@ namespace ALYSLC
 
 		RE::IMenu::AdvanceMovie(a_interval, a_currentTime);
 		DebugAPI::Update();
+		// No AdvanceMovie() (UI thread) hook for custom menus, like QuickLoot, 
+		// so we'll perform our processing here.
 		HandleQuickLootMenu();
 	}
 
@@ -1615,10 +1701,13 @@ namespace ALYSLC
 			menuRoot.SetMember("_x", ALYSLC::QuickLootCompat::g_originalX);
 			menuRoot.SetMember("_y", ALYSLC::QuickLootCompat::g_originalY);
 		}
-		else if (glob.coopSessionActive && glob.menuPID > -1)
+		else if (glob.coopSessionActive && 
+				 glob.menuPID > -1 && 
+				 glob.reqQuickLootContainerHandle != glob.lootBuddyChest->GetHandle())
 		{
 			// Otherwise, if there is an active co-op session 
 			// with a player controlling the QuickLootMenu, adjust scale/position.
+			// Do not want to move the menu around when the Loot Buddy's inventory is showing.
 			const auto& p = glob.coopPlayers[glob.menuPID];
 			
 			RE::GFxValue xVal{ };

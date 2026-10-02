@@ -507,36 +507,74 @@ namespace ALYSLC
 	// to the game's coordinate system and then offset with the camera's yaw (Z rotation).
 	enum class AnalogStickParams : std::uint16_t
 	{
-		kLSXComp,					// X (left/right) component of LS motion [-1.0f, 1.0f] 
-									// relative to the camera's yaw 
-									// (cam yaw points along the +Y axis).
-		kLSYComp,					// Y (up/down) component of LS motion [-1.0f, 1.0f]	
-									// relative to the camera's yaw 
-									// (cam yaw points along the +Y axis).	
-		kRSXComp,					// X (left/right) component of RS motion [-1.0f, 1.0f] 
-									// relative to the camera's yaw 
-									// (cam yaw points along the +Y axis).
-		kRSYComp,					// Y (up/down) component of RS motion [-1.0f, 1.0f]	
-									// relative to the camera's yaw 
-									// (cam yaw points along the +Y axis).
-		kLSCamRelAng,				// LS angle relative to the camera's yaw 
-									// (0 along Y axis, increasing clockwise).
-		kRSCamRelAng,				// RS angle relative to the camera's yaw 
-									// (0 along Y axis, increasing clockwise).
-		kDeltaLSGameAngMag,			// Absolute value of the change in LS absolute angle 
-									// from the last frame to the current one.
-		kDeltaRSGameAngMag,			// Absolute value of the change in RS absolute angle 
-									// from the last frame to the current one.
-		kLSGameAng,					// LS angle in the game's coordinate system 
-									// (0 along +Y axis, increasing clockwise).
-		kRSGameAng,					// RS angle in the game's coordinate system 
-									// (0 along +Y axis, increasing clockwise).
-		kLSCamRelAngMovingFromCenter,	// Last recorded LS angle in the game's coordinate system 
-									// when displacing the stick away from its centered position
-									// (0 along +Y axis, increasing clockwise).
-		kRSCamRelAngMovingFromCenter,	// RS angle in the game's coordinate system 
-									// when displacing the stick away from its centered position
-									// (0 along +Y axis, increasing clockwise).
+		kLSXComp,						// X (left/right) component of LS motion [-1.0f, 1.0f] 
+										// relative to the camera's yaw 
+										// (cam yaw points along the +Y axis).
+
+		kLSYComp,						// Y (up/down) component of LS motion [-1.0f, 1.0f]	
+										// relative to the camera's yaw 
+										// (cam yaw points along the +Y axis).	
+
+		kRSXComp,						// X (left/right) component of RS motion [-1.0f, 1.0f] 
+										// relative to the camera's yaw 
+										// (cam yaw points along the +Y axis).
+
+		kRSYComp,						// Y (up/down) component of RS motion [-1.0f, 1.0f]	
+										// relative to the camera's yaw 
+										// (cam yaw points along the +Y axis).
+
+		kLSWorldAng,					// LS angle relative to the camera's yaw 
+										// (0 along Y axis, increasing clockwise).
+
+		kRSWorldAng,					// RS angle relative to the camera's yaw 
+										// (0 along Y axis, increasing clockwise).
+
+		kDeltaLSGameAngMag,				// Absolute value of the change in LS absolute angle 
+										// from the last frame to the current one.
+
+		kDeltaRSGameAngMag,				// Absolute value of the change in RS absolute angle 
+										// from the last frame to the current one.
+
+		kLSAbsoluteAng,					// LS angle in the game's coordinate system 
+										// (no camera angle factored in).
+										// (0 along +Y axis, increasing clockwise).
+
+		kRSAbsoluteAng,					// RS angle in the game's coordinate system 
+										// (no camera angle factored in).
+										// (0 along +Y axis, increasing clockwise).
+
+		kLSScreenAngMovingFromCenter,	// Last recorded LS angle in the game's coordinate system 
+										// when displacing the stick away from its centered position
+										// Scaleform convention.
+										// (3PI / 2 along +Y axis, decreasing counterclockwise).
+
+		kRSScreenAngMovingFromCenter,	// RS angle in the game's coordinate system 
+										// when displacing the stick away from its centered position
+										// Scaleform convention.
+										// (3PI / 2 along +Y axis, decreasing counterclockwise).
+
+		kLSWorldAngMovingFromCenter,	// Last recorded LS angle in the game's coordinate system 
+										// when displacing the stick away from its centered position
+										// Camera angle added on to the game angle.
+
+		kRSWorldAngMovingFromCenter,	// RS angle in the game's coordinate system 
+										// when displacing the stick away from its centered position
+										// Camera angle added on to the game angle.
+										// (3PI / 2 along +Y axis, decreasing counterclockwise).
+
+		kLSScreenFlickAng,				// LS angle recorded when first moved to max displacement.
+										// Scaleform convention.
+										// (3PI / 2 along +Y axis, decreasing counterclockwise).
+
+		kRSScreenFlickAng,				// RS angle recorded when first moved to max displacement.
+										// Scaleform convention.
+										// (3PI / 2 along +Y axis, decreasing counterclockwise).
+
+		kLSWorldFlickAng,				// LS angle recorded when first moved to max displacement.
+										// Camera angle added on to the game angle.
+
+		kRSWorldFlickAng,				// RS angle recorded when first moved to max displacement.
+										// Camera angle added on to the game angle.
 
 		kTotal
 	};
@@ -755,11 +793,13 @@ namespace ALYSLC
 	//[Player Action Management]
 	//==========================
 
-	// Additional hit flags for RE::TESHitEvent::Flag (32 bit integer with only 4 bits used).
+	// Additional hit flags for RE::TESHitEvent::Flag.
+	// Used in tandem with the projectile source to determine if a special collision occurred.
 	enum class AdditionalHitEventFlags : std::uint8_t
 	{
-		// 1 << 0 through 1 << 3 are defined by the game,
-		// so we have 1 << 4 through 1 << 7 to use.
+		// NOTE:
+		// 1 << 4 through 1 << 7 are defined as something else by the game,
+		// and seem to be set by spell hits.
 		kBonk = 1 << 4,		// Hit by thrown object or flop.
 		kSlap = 1 << 5,		// Hit by rotating arms.
 		kSplat = 1 << 6		// Hit by a surface after ragdolling.
@@ -964,9 +1004,16 @@ namespace ALYSLC
 												// gained outside of leveling up.
 
 		kPlayerEmoteIdleEvents = 'PEIE',		// List of playable idle emotes.
+
+		kPlayerCharacterIsFemale = 'PCIF',		// The player asigned female as their gender.
+		kPlayerOppositeGenderAnims = 'POGA',	// The player assigned opposite gender animations.
+
 		kPlayerRaceMenuPresetName = 'PRMP',		// Name of the RaceMenu preset applied 
 												// for this save.
-		kPlayerCharacterChosenRace = 'PCCR',	// The race the player assigned to their character.
+		kPlayerNPCAppearancePreset = 'PNAP',	// The actor base to copy appearance data from.
+		kPlayerCharacterChosenRace = 'PCCR',	// The race assigned by the player.
+		kPlayerCharacterVoiceType = 'PCVT',		// The voice type assigned by the player.
+
 		kSerializationVersion = 0				// Version info.
 	};
 
@@ -981,6 +1028,17 @@ namespace ALYSLC
 		kAdept,
 		kExpert,
 		kMaster,
+
+		kTotal
+	};
+
+	// Player character gender options.
+	enum class GenderOption : std::uint8_t
+	{
+		kFemaleWithFemaleAnims,
+		kMaleWithMaleAnims,
+		kFemaleWithMaleAnims,
+		kMaleWithFemaleAnims,
 
 		kTotal
 	};
@@ -1075,15 +1133,14 @@ namespace ALYSLC
 		kNone,
 		kActivationInfo,		// Info about what object is being targeted for activation.
 		kCamera,				// Changes to camera state or adjustment mode.
+		kCrosshairTarget,		// Periodic Info about a crosshair-selected actor or object.
 		kEquippedItem,			// Info about a newly-equipped item.
 		kGeneralNotification,	// Catch-all for anything else.
 		kHotkeySelection,		// Info on selected hotkey slot and item.
 		kReviveAlert,			// Life/Revive percent for downed players.
 		kShoutCooldown,			// Shout cooldown remaining 
 								// when attempting to shout while on cooldown.
-		kSelectionInfo,			// Information on the refr selected by the crosshair.
 		kStealthState,			// Periodic detection percent overall and for selected target.
-		kTargetingState,		// Periodic Info about a selected actor or object.
 
 		kTotal
 	};
@@ -1092,7 +1149,7 @@ namespace ALYSLC
 	enum class CrosshairStyle : std::uint8_t
 	{
 		kRetro,					// Four rectangular prongs.
-		kRing,					// Concentric rings with diagonal prongs when over an object.
+		kDiamond,				// Diamond-shaped. Bling bling.
 		kSkyrimStyle,			// Similar to Skyrim's crosshair.
 		kSkyrimStyleInverted,	// Similar to above, but with prongs porinting inward.
 

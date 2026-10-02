@@ -112,8 +112,9 @@ namespace ALYSLC
 		// Other floats.
 		camFOV = 75.0f;
 		// Player IDs.
-		controlCamPID = -1;
-		focalPlayerPID = -1;
+		adjustingCamPID = 
+		focalPID =
+		softFocalPID = -1;
 
 		// XInput mask for the button that toggles the co-op camera.
 		// Set by default to the 'Toggle POV' bind's XInput mask.
@@ -155,119 +156,12 @@ namespace ALYSLC
 			);
 		}
 
-		bool isInSupportedCamState = 
-		(
-			playerCam->currentState->id == RE::CameraState::kThirdPerson ||
-			playerCam->currentState->id == RE::CameraState::kMount ||
-			playerCam->currentState->id == RE::CameraState::kDragon ||
-			playerCam->currentState->id == RE::CameraState::kFurniture ||
-			playerCam->currentState->id == RE::CameraState::kBleedout
-		);
-		// Auto-switch back to the third person camera state 
-		// if currently not in a supported state.
-		if (!isTogglingPOV && playerCam && playerCam->currentState && !isInSupportedCamState)
-		{
-			ToThirdPersonState(playerCam->currentState->id == RE::CameraState::kFirstPerson);
-		}
+		// Update camere state first.
+		UpdateCamState();
+		// Then focal PIDs.
+		UpdateFocalPIDs();
 
-		// Check if the camera should transition to the death/dialogue camera states,
-		// which are event-driven and not user-selectable.
-		auto p1 = RE::PlayerCharacter::GetSingleton();
-		bool switchToDeathState = 
-		{
-			(camState != CamState::kDeath) &&
-			(
-				p1 &&
-				playerCam &&
-				glob.globalDataInit && 
-				glob.allPlayersInit &&
-				glob.partyWiped	
-			) &&
-			(
-				(glob.p1IsEssential && p1->IsBleedingOut()) || 
-				(!glob.p1IsEssential && p1->IsDead())
-			)
-		};
-		if (switchToDeathState)
-		{
-			camState = CamState::kDeath;
-		}
-
-		auto ui = RE::UI::GetSingleton();
-		auto menuTopicManager = RE::MenuTopicManager::GetSingleton();
-		// Must have the dialogue menu open with a player in control and a recorded speaker.
-		bool switchToDialogueState = 
-		{
-			(
-				camState != CamState::kDialogue &&
-				glob.coopSessionActive && 
-				glob.menuPID >= 0 &&
-				menuTopicManager &&
-				ui &&
-				ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME)
-			) && 
-			(
-				Util::HandleIsValid(menuTopicManager->speaker) ||
-				Util::HandleIsValid(menuTopicManager->lastSpeaker)
-			)
-		};
-		// Switch back to auto-trail if currently in the dialogue state
-		// and no player is controlling menus, the dialogue menu has closed, 
-		// or the speaker is no longer valid.
-		bool switchBackToAutoTrail = 
-		(
-			(camState == CamState::kDialogue) &&
-			(
-				(glob.menuPID < 0) ||
-				(ui && !ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME)) ||
-				(!Util::HandleIsValid(camDialogueTargetHandle))
-			)
-		);
-		if (switchToDialogueState)
-		{
-			camState = CamState::kDialogue;
-		}
-		else if (switchBackToAutoTrail)
-		{
-			camState = CamState::kAutoTrail;
-		}
-
-		// Update state flags.
-		isAutoTrailing = camState == CamState::kAutoTrail;
-		isLockedOn = camState == CamState::kLockOn;
-		isManuallyPositioned = camState == CamState::kManualPositioning;
-		inDeathCamState = camState == CamState::kDeath;
-		inDialogueCamState = camState == CamState::kDialogue;
-		// Update collisions flag.
-		camCollisions = 
-		(
-			(
-				Settings::bCamExteriorCollisions && exteriorCell
-			) ||
-			(
-				Settings::bCamInteriorCollisions && !exteriorCell	
-			)
-		);
-
-		// Reset focal player PID if the setting is now disabled 
-		// or if the focal player is downed.
-		bool shouldAutoResetFocalPlayer = 
-		(
-			(focalPlayerPID != -1) && 
-			(!Settings::bFocalPlayerMode || glob.coopPlayers[focalPlayerPID]->isDowned)
-		);
-		if (shouldAutoResetFocalPlayer) 
-		{
-			focalPlayerPID = -1;
-		}
-
-		// On state change, reset TPs, transition to new state.
-		if (camState != prevCamState)
-		{
-			ResetTPs();
-			PerformStateTransition();
-		}
-
+		// Then adjust orientation.
 		if (isAutoTrailing || isLockedOn || isManuallyPositioned || inDialogueCamState)
 		{
 			if (!isTogglingPOV)
@@ -685,6 +579,24 @@ namespace ALYSLC
 
 	bool CameraManager::AllPlayersOnScreenAtCamOrientation
 	(
+		bool&& a_usePlayerPos, const std::vector<RE::BSFixedString>&& a_nodeNamesToCheck
+	)
+	{
+		// Check if all players are within the camera's frustum 
+		// at the current position and rotation.
+		// Check the player's refr position or check a list of player nodes.
+
+		return AllPlayersOnScreenAtCamOrientation
+		(
+			camTargetPos, 
+			{ camPitch, camYaw },
+			std::move(a_usePlayerPos),
+			std::move(a_nodeNamesToCheck)
+		);
+	}
+
+	bool CameraManager::AllPlayersOnScreenAtCamOrientation
+	(
 		const RE::NiPoint3& a_camPos, 
 		const RE::NiPoint2& a_rotation,
 		bool&& a_usePlayerPos, 
@@ -697,6 +609,10 @@ namespace ALYSLC
 
 		const auto strings = RE::FixedStrings::GetSingleton();
 		bool allPlayersInFrontOfPoint = true;
+		bool fromCurrentOrientation = 
+		(
+			a_camPos == camTargetPos && a_rotation.x == camPitch && a_rotation.y == camYaw
+		);
 		auto getRefrInFrontOfPoint = 
 		[&](RE::TESObjectREFR* a_refr)
 		{
@@ -722,13 +638,23 @@ namespace ALYSLC
 			);
 			if (a_usePlayerPos)
 			{
-				return PointOnScreenAtCamOrientationScreenspaceMargin
-				(
-					a_refr->data.location,
-					a_camPos,
-					a_rotation, 
-					0.05f
-				);
+				if (fromCurrentOrientation)
+				{
+					return PointOnScreenAtCamOrientationScreenspaceMargin
+					(
+						a_refr->data.location, 0.05f
+					);
+				}
+				else
+				{
+					return PointOnScreenAtCamOrientationScreenspaceMargin
+					(
+						a_refr->data.location,
+						a_camPos,
+						a_rotation, 
+						0.05f
+					);
+				}
 			}
 			else
 			{
@@ -763,12 +689,20 @@ namespace ALYSLC
 						); 
 						if (nodePtr)
 						{
-							onePlayerNodeOnScreen |= PointOnScreenAtCamOrientationScreenspaceMargin
+							onePlayerNodeOnScreen |= 
 							(
-								nodePtr->world.translate, 
-								a_camPos, 
-								a_rotation, 
-								0.05f
+								fromCurrentOrientation ? 
+								PointOnScreenAtCamOrientationScreenspaceMargin
+								(
+									nodePtr->world.translate, 0.05f
+								) :
+								PointOnScreenAtCamOrientationScreenspaceMargin
+								(
+									nodePtr->world.translate, 
+									a_camPos, 
+									a_rotation, 
+									0.05f
+								)
 							);
 
 							// No need to check other nodes if one is visible.
@@ -797,12 +731,20 @@ namespace ALYSLC
 						);
 						if (nodePtr)
 						{
-							onePlayerNodeOnScreen |= PointOnScreenAtCamOrientationScreenspaceMargin
+							onePlayerNodeOnScreen |= 
 							(
-								nodePtr->world.translate, 
-								a_camPos, 
-								a_rotation,
-								0.05f
+								fromCurrentOrientation ? 
+								PointOnScreenAtCamOrientationScreenspaceMargin
+								(
+									nodePtr->world.translate, 0.05f
+								) :
+								PointOnScreenAtCamOrientationScreenspaceMargin
+								(
+									nodePtr->world.translate, 
+									a_camPos, 
+									a_rotation,
+									0.05f
+								)
 							);
 
 							// No need to check other nodes if one is visible.
@@ -925,7 +867,119 @@ namespace ALYSLC
 		// Additional offset to apply above/below the vertical bounds.
 		float minZOffset = std::clamp(avgPlayerHeight, 50.0f, 100.0f);
 
+		camCentroidPoint =
 		camOriginPoint = RE::NiPoint3();
+		// Origin set as the point along the camera's direction ray that is orthogonal 
+		// to the position of player that is closest/furthest behind the camera.
+		// Done to keep more players on screen by having the camera placed 
+		// as far away along the back walls of a cell as possible.
+		// 
+		// Project XY position of player closest/farthest behind the camera
+		// onto the camera's XY direction ray.
+		// Z coordinate matches the player's Z coordinate.
+		
+		for (const auto& p : glob.coopPlayers)
+		{
+			if (!p->isActive)
+			{
+				continue;
+			}
+			
+			auto mountPtr = p->GetCurrentMount();
+			camCentroidPoint += 
+			(
+				mountPtr ?
+				mountPtr->data.location :
+				p->coopActor->data.location
+			);
+		}
+
+		camCentroidPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
+
+		RE::NiPoint2 centroidXY = ToNiPoint2(camCentroidPoint);
+		const auto camXYDir = ToNiPoint2
+		(
+			Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(camTargetPosYaw))
+		);
+
+		float minDot = FLT_MAX;
+		float minDistToTargetPos = FLT_MAX;
+		for (const auto& p : glob.coopPlayers)
+		{
+			if (!p->isActive)
+			{
+				continue;
+			}
+
+			auto mountPtr = p->GetCurrentMount();
+			const auto& pos = 
+			(
+				mountPtr ? mountPtr->data.location : p->coopActor->data.location
+			);
+			const auto posOffsetFromCentroidXY = RE::NiPoint2
+			(
+				pos.x - centroidXY.x, pos.y - centroidXY.y
+			);
+			const float aDotB = posOffsetFromCentroidXY.Dot(camXYDir);
+			if (aDotB < minDot)
+			{
+				const RE::NiPoint2 camOriginPointXY = centroidXY + camXYDir * aDotB;
+				camOriginPoint.x = camOriginPointXY.x;
+				camOriginPoint.y = camOriginPointXY.y;
+				/*DBG
+				(
+					"{} is closer. {} < {}. Player XY Pos, Centroid XY Pos, Cam Origin XY Pos: "
+					"({}, {}), ({}, {}), ({}, {})",
+					p->coopActor->GetName(),
+					aDotB, 
+					minDot,
+					pos.x, pos.y,
+					centroidXY.x, centroidXY.y,
+					camOriginPoint.x, camOriginPoint.y
+				);*/
+				minDot = aDotB;
+			}
+
+			if (p->playerID == softFocalPID)
+			{
+				camOriginPoint.z = pos.z + avgPlayerHeight;
+				/*DBG
+				(
+					"{} is the soft focal player. Player Z Pos, Centroid Z Pos, Cam Origin Z Pos: "
+					"({}), ({}), ({})",
+					p->coopActor->GetName(),
+					pos.z,
+					camCentroidPoint.z,
+					camOriginPoint.z
+				);*/
+			}
+			else if (softFocalPID == -1)
+			{
+				const float dist = Util::GetActorFocusPoint(p->coopActor.get()).GetDistance
+				(
+					camTargetPos
+				);
+				if (dist < minDistToTargetPos)
+				{
+					camOriginPoint.z = pos.z + avgPlayerHeight;
+					/*DBG
+					(
+						"{} is closer. {} < {}. Player Z Pos, Centroid Z Pos, Cam Origin Z Pos: "
+						"({}), ({}), ({})",
+						p->coopActor->GetName(),
+						dist, 
+						minDistToTargetPos,
+						pos.z,
+						camCentroidPoint.z,
+						camOriginPoint.z
+					);*/
+					minDistToTargetPos = dist;
+				}
+			}
+		}
+		
+		//camOriginPoint.z = centroid.z + avgPlayerHeight;
+		/*
 		for (const auto& p : glob.coopPlayers)
 		{
 			if (!p->isActive)
@@ -945,6 +999,7 @@ namespace ALYSLC
 		// Base origin point before processing.
 		camOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
 		camOriginPoint.z += avgPlayerHeight;
+		*/
 		
 		if (camCollisions)
 		{
@@ -1023,7 +1078,7 @@ namespace ALYSLC
 
 			}
 
-			if (focalPlayerPID == -1)
+			if (focalPID == -1)
 			{
 				// Only bound above and below + set min/max anchor point positions
 				// when there is a clear path to the next origin position.
@@ -1051,19 +1106,35 @@ namespace ALYSLC
 				camMinAnchorPointZCoord = bounds.second;
 			}
 
-			/*DBG
-			(
-				"Hit to base: {}, to coll pos: {}, bounds: ({}, {}), "
-				"collision origin point z: {}, original Z = {}.",
-				hitToBasePos,
-				hitToCollisionPos, 
-				bounds.first,
-				bounds.second,
-				camCollisionOriginPoint.z,
-				camOriginPoint.z
-			);*/
+			//DBG
+			//(
+			//	"Hit to base: {}, to coll pos: {}, bounds: ({}, {}), "
+			//	"collision origin point z: {}, original Z = {}.",
+			//	hitToBasePos,
+			//	hitToCollisionPos, 
+			//	bounds.first,
+			//	bounds.second,
+			//	camCollisionOriginPoint.z,
+			//	camOriginPoint.z
+			//);
 			camOriginPoint = camCollisionOriginPoint;
 		}
+
+		// Keep the origin point in place if collisions are active
+		// and not all players are on screen at the current origin position.
+		// Done to allow the camera to auto-zoom out as much as possible (if enabled) 
+		// and attempt to keep all players in view.
+		/*if (camCollisions)		
+		{
+			bool allPlayersOnScreen = AllPlayersOnScreenAtCamOrientation
+			(
+				camTargetPos, { camPitch, camYaw }, true
+			);
+			if (!allPlayersOnScreen)
+			{
+				camOriginPoint = oldOriginPoint;
+			}
+		}*/
 
 		if (Settings::bOriginPointSmoothing)
 		{
@@ -1096,13 +1167,11 @@ namespace ALYSLC
 		if (isManuallyPositioned)
 		{
 			camBaseTargetPos = lastSetCamTargetPos;
-			if (camAdjMode == CamAdjustmentMode::kZoom && 
-				controlCamPID > -1 && 
-				controlCamPID < ALYSLC_MAX_PLAYER_COUNT)
+			if (IsAdjustingZoom())
 			{
 				const auto& rsData = glob.cdh->GetAnalogStickState
 				(
-					glob.coopPlayers[controlCamPID]->deviceID, false
+					glob.coopPlayers[adjustingCamPID]->deviceID, false
 				);
 				const auto& rsX = rsData.xComp;
 				const auto& rsY = rsData.yComp;
@@ -1243,7 +1312,8 @@ namespace ALYSLC
 					speakerPos = 
 					(
 						dialogueTargetPtr->As<RE::Actor>() ? 
-						Util::GetTorsoPosition(dialogueTargetPtr->As<RE::Actor>()) : 
+						Util::GetHeadPosition(dialogueTargetPtr->As<RE::Actor>()) : 
+						//Util::GetTorsoPosition(dialogueTargetPtr->As<RE::Actor>()) : 
 						Util::GetRefrPosition(dialogueTargetPtr.get())
 					);
 					listenerToSpeakerDir = Util::RotationToDirectionVect
@@ -1259,7 +1329,9 @@ namespace ALYSLC
 				}
 				else
 				{
-					speakerPos = Util::GetTorsoPosition(dialogueP->coopActor.get());
+					speakerPos = Util::GetHeadPosition(dialogueP->coopActor.get());
+					//dialogueP->mm->playerTorsoPosition;
+					//Util::GetTorsoPosition(dialogueP->coopActor.get());
 					listenerToSpeakerDir = Util::RotationToDirectionVect
 					(
 						0.0f, Util::ConvertAngle
@@ -1277,9 +1349,17 @@ namespace ALYSLC
 				float radius = Settings::fTargetAttackSourceDistToSlowRotation;
 				// Slow down when within a multiple of the player actor's bounds.
 				auto player3DPtr = Util::GetRefr3D(dialogueP->coopActor.get()); 
-				if (player3DPtr) 
+				if (player3DPtr &&
+					!isnan(player3DPtr->worldBound.radius) &&
+					!isinf(player3DPtr->worldBound.radius) &&
+					!isnan(player3DPtr->worldBound.center.Length()) &&
+					!isinf(player3DPtr->worldBound.center.Length()))
 				{
 					radius = player3DPtr->worldBound.radius * 4.0f;
+				}
+				else
+				{
+					DBG("ERR: {}'s worldbound is corrupted.", dialogueP->coopActor->GetName());
 				}
 
 				float dirYawDiff = 0.0f;
@@ -1287,7 +1367,7 @@ namespace ALYSLC
 				{
 					dirYawDiff = 
 					(
-						dialogueP->analogStickParams[!AnalogStickParams::kLSCamRelAng] - 
+						dialogueP->analogStickParams[!AnalogStickParams::kLSWorldAng] - 
 						Util::GetYawBetweenPositions
 						(
 							dialogueP->coopActor->data.location, speakerPos
@@ -1298,7 +1378,7 @@ namespace ALYSLC
 				{
 					dirYawDiff = 
 					(
-						dialogueP->analogStickParams[!AnalogStickParams::kLSCamRelAng] - 
+						dialogueP->analogStickParams[!AnalogStickParams::kLSWorldAng] - 
 						Util::GetYawBetweenPositions
 						(
 							dialogueTargetPtr->data.location, speakerPos
@@ -1321,7 +1401,7 @@ namespace ALYSLC
 				(
 					0.0f, Util::ConvertAngle
 					(
-						dialogueP->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+						dialogueP->analogStickParams[!AnalogStickParams::kLSWorldAng]
 					)
 				);
 				camTargetXYOffset = ToNiPoint2
@@ -1329,6 +1409,16 @@ namespace ALYSLC
 					playerHeadingDir - 
 					(playerHeadingDir.Dot(listenerToSpeakerDir) * listenerToSpeakerDir)
 				);
+				// Offset further away in the direction of the player's movement 
+				// to give better visibility of the speaher.
+				// Done when first positioning the camera or when not moving directly 
+				// towards/away from the NPC because the shoulder switch would happen constantly 
+				// while moving otherwise.
+				if (!dialogueP->lsMoved)
+				{
+					camTargetXYOffset.Unitize();
+				}
+
 				camTargetXYOffset *= 
 				(
 					adjustedAfterReachingDialoguePos ? 
@@ -1451,7 +1541,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				if (focalPlayerPID == -1) 
+				if (focalPID == -1) 
 				{
 					// Base target position is offset from the base focus position,
 					// and is not guaranteed to be a reachable spot.
@@ -1481,7 +1571,7 @@ namespace ALYSLC
 					// Base target position is the focal player's focus point,
 					// which is almmost guaranteed to be valid,
 					// since it is offset from the player's position.
-					const auto& focalP = glob.coopPlayers[focalPlayerPID];
+					const auto& focalP = glob.coopPlayers[focalPID];
 					camRefrFocusPoint = focalP->mm->coopActor->data.location;
 					if (!focalP->coopActor->IsOnMount())
 					{
@@ -1517,7 +1607,7 @@ namespace ALYSLC
 							camTargetPos, 
 							focalP->tm->crosshairWorldPos
 						) :
-						focalP->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+						focalP->analogStickParams[!AnalogStickParams::kLSWorldAng]
 					);
 					const auto camDir = Util::RotationToDirectionVect
 					(
@@ -1561,7 +1651,12 @@ namespace ALYSLC
 					// Not set yet.
 					const bool setInitial = !outsideDeadzone && camTargetXYOffset.Length() == 0.0f;
 					const bool moving = focalP->lsMoved;
-					const bool notAiming = !focalP->pam->IsPerforming(InputAction::kMoveCrosshair);
+					const bool notAiming = 
+					(
+						!focalP->pam->IsPerforming(InputAction::kMoveCrosshair) &&
+						focalP->pam->GetSecondsSinceLastStop(InputAction::kMoveCrosshair) > 
+						2.0f * Settings::fSecsDefFlickInterval
+					);
 					if ((setInitial) || (outsideDeadzone && moving && notAiming))
 					{
 						// Offset to the right shoulder if not offset yet.
@@ -1643,7 +1738,7 @@ namespace ALYSLC
 			// Focus point from which the target position is based.
 			const RE::NiPoint3& focusPoint = 
 			(
-				focalPlayerPID == -1 ? camFocusPoint : camRefrFocusPoint
+				focalPID == -1 ? camFocusPoint : camRefrFocusPoint
 			);
 			if (camCollisions && !movingToDialogueStartPos)
 			{
@@ -1763,7 +1858,7 @@ namespace ALYSLC
 				{
 					closestHitPos = baseTargetPos;
 				}
-				else if (focalPlayerPID != -1)
+				else if (focalPID != -1)
 				{
 					// Set directly to offset hit position if there is a focal player.
 					// Not necessary to raycast for visibility from the other active players.
@@ -1776,20 +1871,26 @@ namespace ALYSLC
 				}
 				else
 				{
+					// For debugging.
+					closestIndex = 1337;
 					// Now cast from each player's focus point
 					// to check for a closer hit position.
-					closestIndex = 1337;
-					// We have an obstruction to the base target position,
-					// so adjust the hit position away from the obstruction now.
-					adjHitResultPos =
-					(
-						result.hitPos +
-						(result.rayNormal + endToStartDir) *
-						min(result.rayLength, camTargetPosHullSize)
-					);
-					// Set the initial closest distance to the previous target position.
-					closestDist = glm::distance(adjHitResultPos, lastSetTargetPos); 
-					closestHitPos = adjHitResultPos;
+					const bool useSoftFocalPlayerRaycastPos = softFocalPID != -1;
+					if (!useSoftFocalPlayerRaycastPos)
+					{
+						// We have an obstruction to the base target position,
+						// so adjust the hit position away from the obstruction now.
+						adjHitResultPos =
+						(
+							result.hitPos +
+							(result.rayNormal + endToStartDir) *
+							min(result.rayLength, camTargetPosHullSize)
+						);
+						// Set the initial closest distance to the previous target position.
+						closestDist = glm::distance(adjHitResultPos, lastSetTargetPos); 
+						closestHitPos = adjHitResultPos;
+					}
+
 					// Now cast from each player's focus point
 					// to check for a closer hit position.
 					for (const auto& p : glob.coopPlayers)
@@ -1841,7 +1942,7 @@ namespace ALYSLC
 							closestHitPos = baseTargetPos;
 							break;
 						}
-						else
+						else if (!useSoftFocalPlayerRaycastPos || p->playerID == softFocalPID)
 						{
 							closestIndex = p->playerID;
 							adjHitResultPos =
@@ -1868,7 +1969,10 @@ namespace ALYSLC
 						(
 							inDialogueCamState ? 
 							Util::GetRefrPosition(camDialogueTargetHandle.get().get()) : 
-							Util::GetActorFocusPoint(camLockOnTargetHandle.get()->As<RE::Actor>())
+							Util::GetActorFocusPoint
+							(
+								camLockOnTargetHandle.get()->As<RE::Actor>()
+							)
 						);
 						result = Raycast::CastRay
 						(
@@ -1910,7 +2014,8 @@ namespace ALYSLC
 							closestIndex = -69420;
 							closestHitPos = baseTargetPos;
 						}
-						else if (Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kZoom)
+						else if (!useSoftFocalPlayerRaycastPos &&
+								 Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kZoom)
 						{
 							// Also allow the lock-on target to determine LOS 
 							// on the base target position if the lock-on assistance level 
@@ -2296,7 +2401,7 @@ namespace ALYSLC
 	{
 		// Draw the lock-on marker on the camera's lock-on target.
 
-		if (focalPlayerPID != -1)
+		if (focalPID != -1)
 		{
 			return;
 		}
@@ -2514,6 +2619,7 @@ namespace ALYSLC
 			center,
 			elementColors[0],
 			numSegments,
+			false,
 			thickness + gapDelta,
 			thickness,
 			0.0f
@@ -2523,6 +2629,7 @@ namespace ALYSLC
 			center,
 			elementColors[1],
 			numSegments,
+			false,
 			gapDelta,
 			thickness,
 			0.0f
@@ -2540,6 +2647,7 @@ namespace ALYSLC
 				center, 
 				elementColors[0], 
 				numSegments,
+				false,
 				2.0f * thickness + gapDelta + radius,
 				2.0f * thickness,
 				0.0f
@@ -2549,6 +2657,7 @@ namespace ALYSLC
 				center, 
 				elementColors[1], 
 				numSegments,
+				false,
 				gapDelta + radius,
 				2.0f * thickness,
 				0.0f
@@ -2570,7 +2679,7 @@ namespace ALYSLC
 		for (const auto& p : glob.coopPlayers)
 		{
 			// Ignore inactive and non-focal players if a focal player is set.
-			if (!p->isActive || focalPlayerPID != -1 && p->playerID != focalPlayerPID)
+			if (!p->isActive || focalPID != -1 && p->playerID != focalPID)
 			{
 				continue;
 			}
@@ -2812,9 +2921,9 @@ namespace ALYSLC
 		// Should turn the camera towards the focal player's crosshair target.
 		bool turnTowardsTarget = 
 		(
-			focalPlayerPID != -1 && 
-			Util::HandleIsValid(glob.coopPlayers[focalPlayerPID]->tm->selectedTargetActorHandle) &&
-			!glob.coopPlayers[focalPlayerPID]->tm->selectedTargetActorHandle.get()->IsDead()
+			focalPID != -1 && 
+			Util::HandleIsValid(glob.coopPlayers[focalPID]->tm->selectedTargetActorHandle) &&
+			!glob.coopPlayers[focalPID]->tm->selectedTargetActorHandle.get()->IsDead()
 		);
 		// Number of players considered when determining the movement auto-rotate angle.
 		// Will divide into the total movement pitch accumulated.
@@ -2827,7 +2936,7 @@ namespace ALYSLC
 			}
 			
 			// Only consider the focal player for calculating the movement auto-rotate angle.
-			if (focalPlayerPID != -1 && p->playerID != focalPlayerPID)
+			if (focalPID != -1 && p->playerID != focalPID)
 			{
 				continue;
 			}
@@ -2851,8 +2960,8 @@ namespace ALYSLC
 			);
 			// Only add auto-rotate angle for this player if they have a char controller
 			// and are mounted or not using furniture and they are moving,
-			// not moving their crosshair, and are not the focal player 
-			// or the focal player is not facing the crosshair.
+			// not moving their crosshair, not selecting a refr via flick,
+			// and are not the focal player or the focal player is not facing the crosshair.
 			bool addToTotal =
 			(
 				(charController) &&
@@ -2860,8 +2969,13 @@ namespace ALYSLC
 				(isMounted || notUsingFurniture) && 
 				(!p->coopActor->IsAnimationDriven()) &&
 				(!p->pam->IsPerforming(InputAction::kMoveCrosshair)) &&
+				(!p->tm->cycleSelectionWithLS) &&
 				(
-					(p->playerID == focalPlayerPID && turnTowardsTarget) ||
+					p->pam->GetSecondsSinceLastStop(InputAction::kMoveCrosshair) > 
+					2.0f * Settings::fSecsDefFlickInterval 
+				) &&
+				(
+					(p->playerID == focalPID && turnTowardsTarget) ||
 					(
 						movementActor->actorState1.movingBack ||
 						movementActor->actorState1.movingForward ||
@@ -2880,7 +2994,7 @@ namespace ALYSLC
 			{
 				if (turnTowardsTarget)
 				{
-					const auto& focalP = glob.coopPlayers[focalPlayerPID];
+					const auto& focalP = glob.coopPlayers[focalPID];
 					autoRotateAngle = Util::GetPitchBetweenPositions
 					(
 						Util::GetActorFocusPoint(focalP->coopActor.get()),
@@ -2978,7 +3092,7 @@ namespace ALYSLC
 					(
 						Util::NormalizeAng0To2Pi
 						(
-							p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+							p->analogStickParams[!AnalogStickParams::kLSWorldAng]
 						) - camYaw
 					);
 				}
@@ -2992,7 +3106,7 @@ namespace ALYSLC
 				);
 				// Dependent on how committed the player is to moving 
 				// in their heading direction.
-				autoRotateAngle *= (p->playerID == focalPlayerPID ? 1.0f : lsData.normMag);
+				autoRotateAngle *= (p->playerID == focalPID ? 1.0f : lsData.normMag);
 			}
 
 			// Set the average auto rotate pitch directly when facing the focal crosshair target.
@@ -3254,13 +3368,10 @@ namespace ALYSLC
 
 	bool CameraManager::PointOnScreenAtCamOrientationScreenspaceMargin
 	(
-		const RE::NiPoint3& a_point, 
-		const RE::NiPoint3& a_camPos,
-		const RE::NiPoint2& a_rotation, 
-		const float& a_marginRatio
+		const RE::NiPoint3& a_point, const float& a_marginRatio
 	)
 	{
-		// Is the given point in the camera's frustum at the given camera position and rotation,
+		// Is the given point in the camera's frustum at the current camera position and rotation,
 		// also accounting for a pixel ratio at the edges of the screen, if given ([0, 1]).
 
 		bool onScreen = false;
@@ -3269,9 +3380,6 @@ namespace ALYSLC
 		{
 			return false;
 		}
-
-		// Temporarily move the camera to the given position and set the given rotation.
-		SetCamOrientation(a_camPos, a_rotation.x, a_rotation.y, true);
 
 		float x = 0.0f;
 		float y = 0.0f;
@@ -3294,14 +3402,29 @@ namespace ALYSLC
 		return onScreen;
 	}
 
-	bool CameraManager::PointOnScreenAtCamOrientationWorldspaceMargin
+	bool CameraManager::PointOnScreenAtCamOrientationScreenspaceMargin
 	(
-		const RE::NiPoint3& a_point,
-		const RE::NiPoint3& a_camPos, 
-		const RE::NiPoint2& a_rotation, 
-		const float& a_marginWorldDist)
+		const RE::NiPoint3& a_point, 
+		const RE::NiPoint3& a_camPos,
+		const RE::NiPoint2& a_rotation,
+		const float& a_marginRatio
+	)
 	{
 		// Is the given point in the camera's frustum at the given camera position and rotation,
+		// also accounting for a pixel ratio at the edges of the screen, if given ([0, 1]).
+		
+		// Temporarily move the camera to the given position and set the given rotation.
+		// Will use current orientation otherwise.
+		SetCamOrientation(a_camPos, a_rotation.x, a_rotation.y, true);
+		return PointOnScreenAtCamOrientationScreenspaceMargin(a_point, a_marginRatio);
+	}
+
+	bool CameraManager::PointOnScreenAtCamOrientationWorldspaceMargin
+	(
+		const RE::NiPoint3& a_point, const float& a_marginWorldDist
+	)
+	{
+		// Is the given point in the camera's frustum at the current camera position and rotation,
 		// also accounting for a worldspace distance margin around the given point.
 
 		bool onScreen = false;
@@ -3311,9 +3434,6 @@ namespace ALYSLC
 		{
 			return false;
 		}
-
-		// Temporarily move the camera to the given position and set the given rotation.
-		SetCamOrientation(a_camPos, a_rotation.x, a_rotation.y, true);
 
 		float x = 0.0f;
 		float y = 0.0f;
@@ -3358,20 +3478,38 @@ namespace ALYSLC
 		return onScreen;
 	}
 
+	bool CameraManager::PointOnScreenAtCamOrientationWorldspaceMargin
+	(
+		const RE::NiPoint3& a_point,
+		const RE::NiPoint3& a_camPos, 
+		const RE::NiPoint2& a_rotation,
+		const float& a_marginWorldDist
+	)
+	{
+		// Is the given point in the camera's frustum at the given camera position and rotation,
+		// also accounting for a worldspace distance margin around the given point.
+
+		// Temporarily move the camera to the given position and set the given rotation.
+		// Will use current orientation otherwise.
+		SetCamOrientation(a_camPos, a_rotation.x, a_rotation.y, true);
+		return PointOnScreenAtCamOrientationWorldspaceMargin(a_point, a_marginWorldDist);
+	}
+
 	void CameraManager::ResetCamData()
 	{
 		// Reset all camera data.
 		
 		// Reset player IDs.
-		controlCamPID = -1;
-		if ((focalPlayerPID != -1) && 
+		adjustingCamPID = -1;
+		softFocalPID = -1;
+		if ((focalPID != -1) && 
 			(
 				!glob.coopSessionActive ||
-				!glob.coopPlayers[focalPlayerPID]->isActive || 
-				!glob.coopPlayers[focalPlayerPID]->selfValid
+				!glob.coopPlayers[focalPID]->isActive || 
+				!glob.coopPlayers[focalPID]->selfValid
 			))
 		{
-			focalPlayerPID = -1;
+			focalPID = -1;
 		}
 		
 		// Starts with no adjustment mode active and in the autotrail state.
@@ -3460,7 +3598,7 @@ namespace ALYSLC
 
 		// Positions.
 		// Set focus point to the origin point.
-		camOriginPoint = RE::NiPoint3();
+		camCentroidPoint = RE::NiPoint3();
 		// Set average player height to offset the base origin point.
 		avgPlayerHeight = 0.0f;
 		for (const auto& p : glob.coopPlayers)
@@ -3471,16 +3609,17 @@ namespace ALYSLC
 			}
 			
 			avgPlayerHeight += p->coopActor->GetHeight();
-			camOriginPoint += p->coopActor->data.location;
+			camCentroidPoint += p->coopActor->data.location;
 		}
 		
 		avgPlayerHeight /= glob.livingPlayers;
 		DBG("Average player height: {}.", avgPlayerHeight);
-		camOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
-		camOriginPoint.z += avgPlayerHeight;
+		camCentroidPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
+		camCentroidPoint.z += avgPlayerHeight;
 
 		camFocusPoint =
-		camLockOnFocusPoint = camOriginPoint;
+		camLockOnFocusPoint = 
+		camOriginPoint = camCentroidPoint;
 
 		camOriginPointDirection = RE::NiPoint3();
 		auto bounds = Util::GetVertCollPoints(camOriginPoint, 0.0f);
@@ -4025,7 +4164,7 @@ namespace ALYSLC
 		}
 
 		// Player is in combat (no focal player).
-		const bool partyCamInCombat = glob.isInCoopCombat && focalPlayerPID == -1;
+		const bool partyCamInCombat = glob.isInCoopCombat && focalPID == -1;
 		// Player is moving their crosshair.
 		bool playerMovingCrosshair = false;
 		// No auto-rotate while there is a focal player.
@@ -4044,8 +4183,8 @@ namespace ALYSLC
 			// By default, suspend if the focal player is not sprinting and not facing a target.
 			noAutoRotationWithFocalPlayer |= 
 			(
-				focalPlayerPID != -1 && 
-				p->playerID == focalPlayerPID && 
+				focalPID != -1 && 
+				p->playerID == focalPID && 
 				!p->pam->isSprinting && 
 				!p->mm->faceCrosshairPos
 			);
@@ -4061,7 +4200,14 @@ namespace ALYSLC
 			// To avoid affecting player aim, 
 			// suspend auto-rotation when in combat, when a player is moving their crosshair,
 			// or the focal player is not sprinting and facing the crosshair.
-			playerMovingCrosshair |= p->pam->IsPerforming(InputAction::kMoveCrosshair);
+			playerMovingCrosshair |= 
+			(
+				(p->pam->IsPerforming(InputAction::kMoveCrosshair)) ||
+				(
+					p->pam->GetSecondsSinceLastStop(InputAction::kMoveCrosshair) <= 
+					2.0f * Settings::fSecsDefFlickInterval 
+				)
+			);
 			if (Settings::uAutoRotateCriteria == !CamAutoRotateCriteria::kAllRestrictions)
 			{
 				shouldSuspend |= partyCamInCombat || playerMovingCrosshair;
@@ -4101,7 +4247,7 @@ namespace ALYSLC
 				}
 			}
 
-			shouldSuspend |= focalPlayerPID == -1 && isPerformingCombatAction;
+			shouldSuspend |= focalPID == -1 && isPerformingCombatAction;
 			if (shouldSuspend)
 			{
 				movementAngleMultInterpData->UpdateInterpolatedValue(false);
@@ -4173,15 +4319,11 @@ namespace ALYSLC
 		auto camLockOnTargetPtr = Util::GetRefrPtrFromHandle(camLockOnTargetHandle);
 		bool canAdjustHeight = 
 		{
+			(IsAdjustingZoom()) &&
 			(
 				!isLockedOn || 
 				!camLockOnTargetPtr || 
 				Settings::uLockOnAssistance != !CamLockOnAssistanceLevel::kFull
-			) &&
-			(
-				camAdjMode == CamAdjustmentMode::kZoom && 
-				controlCamPID > -1 && 
-				controlCamPID < ALYSLC_MAX_PLAYER_COUNT
 			)
 		};
 		// Save previous base height offset to restore later if the anchor points are bound.
@@ -4189,7 +4331,7 @@ namespace ALYSLC
 		if (canAdjustHeight)
 		{
 			// Can use the LS, so we have to check the camera adjustment bind.
-			const auto& p = glob.coopPlayers[controlCamPID];
+			const auto& p = glob.coopPlayers[adjustingCamPID];
 			const auto& paramsList = p->pam->paParamsList;
 			const auto& stickData = glob.cdh->GetAnalogStickState
 			(
@@ -4236,7 +4378,7 @@ namespace ALYSLC
 		float newHeight = camBaseHeightOffset;
 		float currentFocusZPos = 
 		(
-			focalPlayerPID == -1 ? 
+			focalPID == -1 ? 
 			camOriginPoint.z + newHeight :
 			camRefrFocusPoint.z + newHeight
 		);
@@ -4329,13 +4471,16 @@ namespace ALYSLC
 				speakerPos = 
 				(
 					dialogueTargetPtr->As<RE::Actor>() ? 
-					Util::GetTorsoPosition(dialogueTargetPtr->As<RE::Actor>()) : 
+					Util::GetHeadPosition(dialogueTargetPtr->As<RE::Actor>()) : 
+					//Util::GetTorsoPosition(dialogueTargetPtr->As<RE::Actor>()) : 
 					Util::GetRefrPosition(dialogueTargetPtr.get())
 				);
 			}
 			else
 			{
-				speakerPos = Util::GetTorsoPosition(dialogueP->coopActor.get());
+				speakerPos = Util::GetHeadPosition(dialogueP->coopActor.get());
+				dialogueP->mm->playerTorsoPosition;
+				//Util::GetTorsoPosition(dialogueP->coopActor.get());
 			}
 
 			float xyDistToTarget = Util::GetXYDistance(camTargetPos, speakerPos);
@@ -4343,9 +4488,17 @@ namespace ALYSLC
 			float radius = Settings::fTargetAttackSourceDistToSlowRotation;
 			// Slow down when within a multiple of the player actor's bounds.
 			auto player3DPtr = Util::GetRefr3D(dialogueP->coopActor.get()); 
-			if (player3DPtr) 
+			if (player3DPtr &&
+				!isnan(player3DPtr->worldBound.radius) &&
+				!isinf(player3DPtr->worldBound.radius) &&
+				!isnan(player3DPtr->worldBound.center.Length()) &&
+				!isinf(player3DPtr->worldBound.center.Length()))
 			{
 				radius = player3DPtr->worldBound.radius * 4.0f;
+			}
+			else
+			{
+				DBG("ERR: {}'s worldbound is corrupted.", dialogueP->coopActor->GetName());
 			}
 
 			const float startingTargetPitch = Util::GetPitchBetweenPositions
@@ -4427,12 +4580,12 @@ namespace ALYSLC
 		float rsX = 0.0f;
 		float rsY = 0.0f;
 		float rsMag = 0.0f;
-		if (controlCamPID > -1 && controlCamPID < ALYSLC_MAX_PLAYER_COUNT)
+		if (IsAdjustingRotation())
 		{
 			// Right stick displacement components and magnitude.
 			const auto& rsData = glob.cdh->GetAnalogStickState
 			(
-				glob.coopPlayers[controlCamPID]->deviceID, false
+				glob.coopPlayers[adjustingCamPID]->deviceID, false
 			);
 			rsX = rsData.xComp;
 			rsY = rsData.yComp;
@@ -4491,13 +4644,15 @@ namespace ALYSLC
 			{
 				movementPitchInterpData->IncrementTimeSinceUpdate(*g_deltaTimeRealTime);
 				// Will pitch towards the focal player's crosshair target NPC.
-				const auto& focalP = glob.coopPlayers[focalPlayerPID];
+				const auto& focalP = glob.coopPlayers[focalPID];
 				const bool pitchTowardsTarget =
 				(
-					focalPlayerPID != -1 && 
+					focalPID != -1 && 
 					Util::HandleIsValid(focalP->tm->selectedTargetActorHandle) &&
 					!focalP->tm->selectedTargetActorHandle.get()->IsDead() &&
-					!focalP->pam->IsPerforming(InputAction::kMoveCrosshair)
+					!focalP->pam->IsPerforming(InputAction::kMoveCrosshair) &&
+					focalP->pam->GetSecondsSinceLastStop(InputAction::kMoveCrosshair) > 
+					2.0f * Settings::fSecsDefFlickInterval
 				);
 				if (pitchTowardsTarget)
 				{
@@ -4742,7 +4897,7 @@ namespace ALYSLC
 				}
 			}
 
-			if (focalPlayerPID == -1) 
+			if (focalPID == -1) 
 			{
 				camCurrentPitchToFocus = Util::NormalizeAngToPi
 				(
@@ -4814,7 +4969,7 @@ namespace ALYSLC
 				// when computing the next pitch/yaw to set.
 				const float interpPower = 9.0f;
 				float interpRatio = prevRotInterpRatio;
-				if (focalPlayerPID != -1 || isColliding) 
+				if (focalPID != -1 || isColliding) 
 				{
 					// Quickly reach the target position pitch/yaw
 					// when there is a focal player.
@@ -4888,7 +5043,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				if (focalPlayerPID == -1)
+				if (focalPID == -1)
 				{
 					// Set directly to pitch/yaw to focus point values 
 					// if collisions are not enabled, since we don't have to worry about 
@@ -5126,6 +5281,117 @@ namespace ALYSLC
 		}
 	}
 
+	void CameraManager::UpdateCamState()
+	{
+		// Check if the Skyrim camera perspective should switch to third person,
+		// update the co-op camera state flags, and perform state transitions as needed.
+
+		if (!playerCam)
+		{
+			return;
+		}
+
+		bool isInSupportedCamState = 
+		(
+			playerCam->currentState->id == RE::CameraState::kThirdPerson ||
+			playerCam->currentState->id == RE::CameraState::kMount ||
+			playerCam->currentState->id == RE::CameraState::kDragon ||
+			playerCam->currentState->id == RE::CameraState::kFurniture ||
+			playerCam->currentState->id == RE::CameraState::kBleedout
+		);
+		// Auto-switch back to the third person camera state 
+		// if currently not in a supported state.
+		if (!isTogglingPOV && playerCam->currentState && !isInSupportedCamState)
+		{
+			ToThirdPersonState(playerCam->currentState->id == RE::CameraState::kFirstPerson);
+		}
+
+		// Check if the camera should transition to the death/dialogue camera states,
+		// which are event-driven and not user-selectable.
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		bool switchToDeathState = 
+		{
+			(camState != CamState::kDeath) &&
+			(
+				p1 &&
+				glob.globalDataInit && 
+				glob.allPlayersInit &&
+				glob.partyWiped	
+			) &&
+			(
+				(glob.p1IsEssential && p1->IsBleedingOut()) || 
+				(!glob.p1IsEssential && p1->IsDead())
+			)
+		};
+		if (switchToDeathState)
+		{
+			camState = CamState::kDeath;
+		}
+
+		auto ui = RE::UI::GetSingleton();
+		auto menuTopicManager = RE::MenuTopicManager::GetSingleton();
+		// Must have the dialogue menu open with a player in control and a recorded speaker.
+		bool switchToDialogueState = 
+		{
+			(
+				camState != CamState::kDialogue &&
+				glob.coopSessionActive && 
+				glob.menuPID >= 0 &&
+				menuTopicManager &&
+				ui &&
+				ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME)
+			) && 
+			(
+				Util::HandleIsValid(menuTopicManager->speaker) ||
+				Util::HandleIsValid(menuTopicManager->lastSpeaker)
+			)
+		};
+		// Switch back to auto-trail if currently in the dialogue state
+		// and no player is controlling menus, the dialogue menu has closed, 
+		// or the speaker is no longer valid.
+		bool switchBackToAutoTrail = 
+		(
+			(camState == CamState::kDialogue) &&
+			(
+				(glob.menuPID < 0) ||
+				(ui && !ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME)) ||
+				(!Util::HandleIsValid(camDialogueTargetHandle))
+			)
+		);
+		if (switchToDialogueState)
+		{
+			camState = CamState::kDialogue;
+		}
+		else if (switchBackToAutoTrail)
+		{
+			camState = CamState::kAutoTrail;
+		}
+
+		// Update state flags.
+		isAutoTrailing = camState == CamState::kAutoTrail;
+		isLockedOn = camState == CamState::kLockOn;
+		isManuallyPositioned = camState == CamState::kManualPositioning;
+		inDeathCamState = camState == CamState::kDeath;
+		inDialogueCamState = camState == CamState::kDialogue;
+		// Update collisions flag.
+		camCollisions = 
+		(
+			(
+				Settings::bCamExteriorCollisions && exteriorCell
+			) ||
+			(
+				Settings::bCamInteriorCollisions && !exteriorCell	
+			)
+		);
+
+		// On state change, reset TPs, transition to new state.
+		if (camState != prevCamState)
+		{
+			ResetTPs();
+			PerformStateTransition();
+		}
+	}
+
 	void CameraManager::UpdateCamZoom()
 	{
 		// Update the camera's zoom, auto-zooming out
@@ -5144,7 +5410,7 @@ namespace ALYSLC
 		}
 
 		// Set the minimum trailing distance first.
-		if (focalPlayerPID == -1)
+		if (focalPID == -1)
 		{
 			camMinTrailingDistance = Settings::fCamMinTrailingDistance;
 		}
@@ -5174,20 +5440,16 @@ namespace ALYSLC
 		// 2. A player is controlling the camera and trying to adjust the zoom.
 		bool canAdjustZoom = 
 		{
+			(IsAdjustingZoom()) &&
 			(
 				!isLockedOn || 
 				!camLockOnTargetPtr || 
 				Settings::uLockOnAssistance != !CamLockOnAssistanceLevel::kFull
-			) &&
-			(
-				camAdjMode == CamAdjustmentMode::kZoom && 
-				controlCamPID > -1 && 
-				controlCamPID < ALYSLC_MAX_PLAYER_COUNT
 			)
 		};
 		if (canAdjustZoom)
 		{
-			const auto& p = glob.coopPlayers[controlCamPID];
+			const auto& p = glob.coopPlayers[adjustingCamPID];
 			const auto& paramsList = p->pam->paParamsList;
 			// Can use the LS, so we have to check the camera adjustment bind.
 			const auto& stickData = glob.cdh->GetAnalogStickState
@@ -5222,7 +5484,7 @@ namespace ALYSLC
 					// If just moved from center, set to the true radial distance
 					// before modifying the offset. This will prevent a delayed zoom response
 					// as the offset approaches the true radial distance.
-					if (glob.coopPlayers[controlCamPID]->pam->JustStarted
+					if (glob.coopPlayers[adjustingCamPID]->pam->JustStarted
 						(
 							InputAction::kZoomCam
 						))
@@ -5313,7 +5575,7 @@ namespace ALYSLC
 		// Focus point is the party's focus point or the focal player/dialogue target's focus point.
 		bool usePartyFocusPoint = 
 		(
-			(focalPlayerPID == -1) && (!inDialogueCamState || !Settings::bDialogueCamEnabled)
+			(focalPID == -1) && (!inDialogueCamState || !Settings::bDialogueCamEnabled)
 		);
 		auto focusPoint = usePartyFocusPoint ? camFocusPoint : camRefrFocusPoint;
 		auto dirFromFocus = camBaseTargetPos - focusPoint;
@@ -5507,7 +5769,7 @@ namespace ALYSLC
 		);
 		if (!adjustingHeight)
 		{
-			if (focalPlayerPID == -1)
+			if (focalPID == -1)
 			{
 				// Have to find a new minimum radial distance 
 				// that puts all players and the lock-on target (if any) in view.
@@ -5628,7 +5890,7 @@ namespace ALYSLC
 		/*DBG
 		(
 			"Target: {} from ({}, {}, {}) and prev {}. True: {}. Is colliding: {}. "
-			"Outside: {}, dalayed: {}, {}, offset: {}, max zoom out dist: {}, can adjust: {}. "
+			"Outside: {}, delayed: {}, {}, offset: {}, max zoom out dist: {}, can adjust: {}. "
 			"Just started: {}, can zoom in: {}, can zoom out: {}, diff: {}, trying to zoom {}.",
 			camTargetRadialDistance, 
 			radialDistanceRangeMin,
@@ -5643,8 +5905,8 @@ namespace ALYSLC
 			camRadialDistanceOffset,
 			camMaxZoomOutDist,
 			canAdjustZoom,
-			controlCamPID != -1 ? 
-			glob.coopPlayers[controlCamPID]->pam->JustStarted(InputAction::kZoomCam) : 
+			adjustingCamPID != -1 ? 
+			glob.coopPlayers[adjustingCamPID]->pam->JustStarted(InputAction::kZoomCam) : 
 			false,
 			(
 				stickY > 0.0f &&
@@ -5842,6 +6104,93 @@ namespace ALYSLC
 		}
 	}
 
+	void CameraManager::UpdateFocalPIDs()
+	{
+		// Update focal player IDs. 
+		// Clears focal PID if the player is downed or the mode is disabled.
+		// Sets soft focal PID if a player is adjusting the camera 
+		// while at least one player is offscreen (camera collisions on).
+		// Clears the soft focal PID if the player is downed or if enough time has elapsed
+		// with all players continuously on screen.
+
+		
+		// Reset focal player PID if the setting is now disabled 
+		// or if the focal player is downed.
+		bool shouldAutoResetFocalPID = 
+		(
+			(focalPID != -1) && 
+			(!Settings::bFocalPlayerMode || glob.coopPlayers[focalPID]->isDowned)
+		);
+		if (shouldAutoResetFocalPID) 
+		{
+			focalPID = -1;
+		}
+
+		/*
+		const bool allPlayersOnScreen = AllPlayersOnScreenAtCamOrientation(true);
+		const bool adjustingCamera = IsAdjustingCamera();
+		// Update soft focal targeting TP so that the soft focal player remains set 
+		// while adjusting the camera or when not all players are on-screen.
+		// Set if adjusting the camera while at least one player is off-screen.
+		bool shouldSetSoftFocalPID = camCollisions && adjustingCamera;
+		if (shouldSetSoftFocalPID)
+		{
+			setSoftFocalTargetPosTP = SteadyClock::now();
+		}
+
+		// Remove if the soft focal player's managers are inactive
+		// or if not adjusting the camera and a period of time has elapsed 
+		// with all players on screen.
+		bool shouldAutoResetSoftFocalPID = 
+		(
+			(!shouldSetSoftFocalPID && softFocalPID != -1) &&
+			(
+				(!glob.coopPlayers[softFocalPID]->IsRunning()) || 
+				(Util::GetElapsedSeconds(setSoftFocalTargetPosTP) > 1.0f && allPlayersOnScreen)
+			)
+		);
+		if (shouldSetSoftFocalPID)
+		{
+			softFocalPID = adjustingCamPID;
+		}
+		else if (shouldAutoResetSoftFocalPID)
+		{
+			softFocalPID = -1;
+		}
+		*/
+
+		const bool allPlayersOnScreen = AllPlayersOnScreenAtCamOrientation(true);
+		const bool adjustingCamera = IsAdjustingCamera();
+		// Update soft focal targeting TP so that the soft focal player remains set 
+		// while adjusting the camera or when not all players are on-screen.
+		// Set if adjusting the camera while at least one player is off-screen.
+		if ((camCollisions) && (adjustingCamera || !allPlayersOnScreen))
+		{
+			setSoftFocalTargetPosTP = SteadyClock::now();
+		}
+
+		// Remove if the soft focal player's managers are inactive
+		// or if not adjusting the camera and a period of time has elapsed 
+		// with all players on screen.
+		bool shouldAutoResetSoftFocalPID = 
+		(
+			(softFocalPID != -1) &&
+			(
+				(!glob.coopPlayers[softFocalPID]->IsRunning()) || 
+				(Util::GetElapsedSeconds(setSoftFocalTargetPosTP) > 1.0f)
+			)
+		);
+		if (shouldAutoResetSoftFocalPID)
+		{
+			glob.coopPlayers[softFocalPID]->tm->SetCrosshairMessageRequest
+			(
+				CrosshairMessageType::kCamera,
+				fmt::format("P{}: Removed soft camera focus", softFocalPID + 1)
+			);
+			softFocalPID = -1;
+		}
+	}
+
 	void CameraManager::UpdateParentCell()
 	{
 		// Update the cached parent cell for the camera
@@ -5970,8 +6319,15 @@ namespace ALYSLC
 			}
 			else
 			{
-				if (!player3DPtr)
+				if (!player3DPtr || 
+					isnan(player3DPtr->worldBound.radius) ||
+					isinf(player3DPtr->worldBound.radius) ||
+					isnan(player3DPtr->worldBound.center.Length()) ||
+					isinf(player3DPtr->worldBound.center.Length()))
 				{
+					DBG("ERR: {}'s worldbound is corrupted. Extents: {}",
+						p->coopActor->GetName(),
+						(p->coopActor->GetBoundMax() - p->coopActor->GetBoundMin()).Length());
 					continue;
 				}
 				

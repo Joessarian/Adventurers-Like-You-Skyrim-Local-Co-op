@@ -1,5 +1,6 @@
 #pragma once
 #include <PrecisionAPI.h>
+#include <QuickLootAPI.h>
 #include <TrueDirectionalMovementAPI.h>
 #include <TrueHUDAPI.h>
 
@@ -64,7 +65,8 @@ namespace ALYSLC
 
 	struct QuickLootCompat
 	{
-		static void CheckForQuickLoot(const SKSE::LoadInterface* a_loadInterface);
+		static void RequestQuickLootAPIs(const SKSE::LoadInterface* a_loadInterface);
+		static bool g_apiControlReceived;
 		static bool g_installed;
 		static bool g_isQuickLootIE;
 		static double g_originalScaleX;

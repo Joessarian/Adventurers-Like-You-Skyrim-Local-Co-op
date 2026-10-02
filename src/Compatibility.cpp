@@ -15,6 +15,7 @@ namespace ALYSLC
 	bool NFFCompat::g_installed{ false };
 	bool PersistentFavoritesCompat::g_installed{ false };
 	bool PrecisionCompat::g_installed{ false };
+	bool QuickLootCompat::g_apiControlReceived{ false };
 	bool QuickLootCompat::g_installed{ false };
 	bool QuickLootCompat::g_isQuickLootIE{ false };
 	double QuickLootCompat::g_originalScaleX{ -1.0 };
@@ -245,14 +246,14 @@ namespace ALYSLC
 		}
 	}
 
-	void QuickLootCompat::CheckForQuickLoot(const SKSE::LoadInterface* a_loadInterface)
+	void QuickLootCompat::RequestQuickLootAPIs(const SKSE::LoadInterface* a_loadInterface)
 	{
 		g_isQuickLootIE = a_loadInterface->GetPluginInfo("QuickLootIE");
 		g_installed = 
 		{
+			g_isQuickLootIE ||
 			a_loadInterface->GetPluginInfo("QuickLootRE") ||
-			a_loadInterface->GetPluginInfo("QuickLootEE") ||
-			g_isQuickLootIE
+			a_loadInterface->GetPluginInfo("QuickLootEE")
 		};
 
 		auto dataHandler = RE::TESDataHandler::GetSingleton();
@@ -261,15 +262,29 @@ namespace ALYSLC
 			g_isQuickLootIE = dataHandler->LookupModByName("QuickLootIE.esp") != nullptr;
 			g_installed = 
 			{
+				g_isQuickLootIE ||
 				dataHandler->LookupModByName("QuickLootRE.esp") != nullptr ||
-				dataHandler->LookupModByName("QuickLootEE.esp") != nullptr ||
-				g_isQuickLootIE
+				dataHandler->LookupModByName("QuickLootEE.esp") != nullptr
 			};
 		}
 
 		if (g_installed) 
 		{
 			INF("{} installed!", g_isQuickLootIE ? "QuickLootIE" : "QuickLootRE/EE");
+			g_apiControlReceived = QuickLoot::API::QuickLootAPI::Init(GlobalCoopData::DLL_NAME);
+			if (g_apiControlReceived)
+			{
+				INF("Retrieved API for {}!", g_isQuickLootIE ? "QuickLootIE" : "QuickLootRE/EE");
+			}
+			else
+			{
+				INF("Failed to retrieve API for {}.", 
+					g_isQuickLootIE ? "QuickLootIE" : "QuickLootRE/EE");
+			}
+		}
+		else
+		{
+			INF("QuickLoot not installed. No API to retrieve.");
 		}
 	}
 

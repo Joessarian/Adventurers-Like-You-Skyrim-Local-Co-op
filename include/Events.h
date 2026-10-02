@@ -1,6 +1,7 @@
 #pragma once
 #include <queue>
 #include <Player.h>
+#include <QuickLootAPI.h>
 
 namespace ALYSLC
 {
@@ -374,5 +375,25 @@ namespace ALYSLC
 		(
 			CoopPositionPlayerEventHandler&& a_cppeh
 		) = delete;
+	};
+
+	class QuickLootEventsHandler
+	{
+	public:
+		static QuickLootEventsHandler* GetSingleton();
+		
+		static void Register();
+		
+		static void ProcessModifyButtonBarEvent(QuickLoot::API::ModifyButtonBarEvent* a_event);
+		static void ProcessModifyInventoryEvent(QuickLoot::API::ModifyInventoryEvent* a_event);
+		static void ProcessSelectedItemEvent(QuickLoot::API::SelectItemEvent* a_event);
+	
+	private:
+		QuickLootEventsHandler() = default;
+		QuickLootEventsHandler(const QuickLootEventsHandler& a_qleh) = delete;
+		QuickLootEventsHandler(QuickLootEventsHandler&& a_qleh) = delete;
+		~QuickLootEventsHandler() = default;
+		QuickLootEventsHandler& operator=(const QuickLootEventsHandler& a_qleh) = delete;
+		QuickLootEventsHandler& operator=(QuickLootEventsHandler&& a_qleh) = delete;
 	};
 }

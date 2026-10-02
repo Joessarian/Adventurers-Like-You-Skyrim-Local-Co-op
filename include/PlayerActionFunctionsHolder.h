@@ -173,10 +173,10 @@ namespace ALYSLC
 		// Camera is adjustable if the player is not power attacking or trying to power attack,
 		// not moving their arms.
 		bool CanAdjustCamera(const std::shared_ptr<CoopPlayer>& a_p);
-
+		
 		// Can play power attack animation if the player is transformed,
-		// or is not mounted, has enough stamina, has the unlocked right perks (if sprinting),
-		// is not already power attacking, has weapons drawn,
+		// or is not mounted, has the unlocked right perks (if sprinting),
+		// is not already power attacking,
 		// and has the correct LH/RH/2H weapon(s) equipped.
 		bool CanPlayPowerAttackAnimation
 		(
@@ -233,10 +233,10 @@ namespace ALYSLC
 			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action
 		);
 
-		// Can the player dual cast their selected spells.
+		// Can the player dual cast the given spell.
 		// NOTE: 
-		// Currently not functional.
-		bool CanDualCast(const std::shared_ptr<CoopPlayer>& a_p);
+		// Dual casting is currently not functional.
+		bool CanDualCast(const std::shared_ptr<CoopPlayer>& a_p, EquipIndex&& a_spellIndex);
 
 		// Can the player grab the given refr.
 		bool CanGrabRefr
@@ -397,20 +397,11 @@ namespace ALYSLC
 			const InputAction& a_action
 		);
 
-		// Returns true if P1 is requesting to use the paraglider from Loki's awesome mod:
-		// https://www.nexusmods.com/skyrimspecialedition/mods/53256
-		bool RequestToUseParaglider(const std::shared_ptr<CoopPlayer>& a_p);
-
 		// Change the co-op camera's adjustment mode (None, Rotate, or Zoom).
 		void SetCameraAdjustmentMode
 		(
-			const int32_t& a_reqPID, const InputAction& a_action, bool&& a_set
+			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action, bool&& a_set
 		);
-
-		// Change the co-op camera's state to the requested state 
-		// or back to default if already set to that state.
-		// Valid states are (Auto-Trail (default), Lock On, or Manual Positioning).
-		void SetCameraState(const int32_t& a_reqPID, const InputAction& a_action);
 
 		// Set up casting package to have a companion player cast a spell in the LH/RH.
 		void SetUpCastingPackage
@@ -458,6 +449,9 @@ namespace ALYSLC
 		void CycleWeaponRH(const std::shared_ptr<CoopPlayer>& a_p);
 		void GrabObject(const std::shared_ptr<CoopPlayer>& a_p);
 		void HotkeyEquip(const std::shared_ptr<CoopPlayer>& a_p);
+		void PowerAttackDual(const std::shared_ptr<CoopPlayer>& a_p);
+		void PowerAttackLH(const std::shared_ptr<CoopPlayer>& a_p);
+		void PowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p);
 		void QuickSlotCast(const std::shared_ptr<CoopPlayer>& a_p);
 		void Shout(const std::shared_ptr<CoopPlayer>& a_p);
 		void SpecialAction(const std::shared_ptr<CoopPlayer>& a_p);
@@ -489,9 +483,6 @@ namespace ALYSLC
 		void MagicMenu(const std::shared_ptr<CoopPlayer>& a_p);
 		void MapMenu(const std::shared_ptr<CoopPlayer>& a_p);
 		void Pause(const std::shared_ptr<CoopPlayer>& a_p);
-		void PowerAttackDual(const std::shared_ptr<CoopPlayer>& a_p);
-		void PowerAttackLH(const std::shared_ptr<CoopPlayer>& a_p);
-		void PowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p);
 		void QuickSlotItem(const std::shared_ptr<CoopPlayer>& a_p);
 		void ResetAim(const std::shared_ptr<CoopPlayer>& a_p);
 		void ResetCamOrientation(const std::shared_ptr<CoopPlayer>& a_p);
@@ -530,6 +521,9 @@ namespace ALYSLC
 		void GrabObject(const std::shared_ptr<CoopPlayer>& a_p);
 		void HotkeyEquip(const std::shared_ptr<CoopPlayer>& a_p);
 		void QuickSlotCast(const std::shared_ptr<CoopPlayer>& a_p);
+		void PowerAttackDual(const std::shared_ptr<CoopPlayer>& a_p);
+		void PowerAttackLH(const std::shared_ptr<CoopPlayer>& a_p);
+		void PowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p);
 		void RotateCam(const std::shared_ptr<CoopPlayer>& a_p);
 		void Shout(const std::shared_ptr<CoopPlayer>& a_p);
 		void SpecialAction(const std::shared_ptr<CoopPlayer>& a_p);

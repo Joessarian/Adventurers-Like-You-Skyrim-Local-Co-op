@@ -21,8 +21,8 @@ namespace ALYSLC
 		
 		// Event type to send when this bind is pressed/released.
 		MenuInputEventType eventType;
-		// Time point at which the input source was first pressed.
-		SteadyClock::time_point firstPressTP;
+		// Time point at which the input source was last pressed.
+		SteadyClock::time_point lastPressTP;
 		// Device linked with this bind.
 		RE::INPUT_DEVICE device;
 		// Event name associated with this bind.
@@ -194,6 +194,8 @@ namespace ALYSLC
 		// Check if P1's quick slot item/spell are still favorited, save their indices in the 
 		// Favorites Menu entry list, and update the list to reflect their equip state.
 		void InitP1QSFormEntries();
+		// Is a player gifting items to another player?
+		bool PlayerToPlayerGiftMenuOpen();
 		// Set the opened menu atop the stack or remove a menu from the stack.
 		// Will then update the current supported menu type.
 		void SetOpenedMenu(const RE::BSFixedString& a_menuName, const bool& a_isOpened);
@@ -218,10 +220,6 @@ namespace ALYSLC
 		MenuInputEventType currentMenuInputEventType;
 		// Current controllable menu's type.
 		SupportedMenu openedMenuType;
-		// Player to receive gifted items from another non-P1 player
-		// via transfer from P1 when the GiftMenu is open.
-		// Set by script and cleared when the GiftMenu closes.
-		RE::ActorHandle gifteePlayerHandle;
 		// Handle for the co-op companion player controlling menus.
 		RE::ActorHandle menuCoopActorHandle;
 		// Name of the current topmost controllable menu.

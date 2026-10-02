@@ -51,6 +51,9 @@ namespace ALYSLC
 		// Register death event handler.
 		CoopDeathEventHandler::Register();
 
+		// Register for QuickLootIE 4.0+ events.
+		QuickLootEventsHandler::Register();
+
 		INF("Event registration complete.");
 	}
 
@@ -463,7 +466,7 @@ namespace ALYSLC
 		auto fromRefr = RE::TESForm::LookupByID(a_containerChangedEvent->oldContainer);
 		auto toRefr = RE::TESForm::LookupByID(a_containerChangedEvent->newContainer);
 		// REMOVE when done debugging.
-		if (fromCoopPlayer || toCoopPlayer)
+		//if (fromCoopPlayer || toCoopPlayer)
 		{
 			DBG
 			(
@@ -647,14 +650,12 @@ namespace ALYSLC
 			);
 			if (matchesRequestedRefr)
 			{
-				// DBG("YUH");
 				return EventResult::kContinue;
 			}
 			else
 			{
 				// Stop propagation to prevent QuickLoot's event handler 
 				// from processing this request and opening/closing the LootMenu.
-				// DBG("NUH");
 				return EventResult::kStop;
 			}
 		}
@@ -1247,6 +1248,10 @@ namespace ALYSLC
 		{
 			return EventResult::kContinue;
 		}
+		
+		RE::FormID sourceFID = a_hitEvent->source;
+		auto attackingObj = RE::TESForm::LookupByID(a_hitEvent->source); 
+		auto projectileForm = RE::TESForm::LookupByID(a_hitEvent->projectile);
 
 		// Hit by a player.
 		const auto& p = glob.coopPlayers[foundAggressorIndex];
@@ -1256,11 +1261,10 @@ namespace ALYSLC
 		// Was the refr hit by a flop or thrown object?
 		bool isBonkOrSplatHitEvent = false;
 		// How can she slap?
-		bool isSlapEvent = false;
+		bool isSlapEvent = false; 
 		// Handle hit event for an actor hit by a player.
 		if (hitActor) 
 		{
-			auto projectileForm = RE::TESForm::LookupByID(a_hitEvent->projectile);
 			// Caused by player + projectile is the hit actor (splat) 
 			// or hit event projectile's form type is not projectile (bonk).
 			// Also flagged as a power attack.
@@ -1612,7 +1616,30 @@ namespace ALYSLC
 		{
 			return EventResult::kContinue;
 		}
-
+		
+		// Check if the source is non-hostile, ie. a healing projectile, and if so,
+		// do not send hit data.
+		bool isHostileSource = 
+		(
+			(attackingObj && attackingObj->As<RE::TESObjectWEAP>()) ||
+			(projectileForm && projectileForm->As<RE::Projectile>()) ||
+			(
+				isBonkOrSplatHitEvent ||
+				Util::HasHostileEffect(attackingObj) || 
+				Util::HasHostileEffect(projectileForm)
+			)
+		);
+		DBG
+		(
+			"{} was hit by {}. Hostile source: {}, hostile effect: obj ({}), proj ({}): {}, {}.", 
+			hitRefr ? hitRefr->GetName() : "NONE",
+			aggressorRefr ? aggressorRefr->GetName() : "NONE",
+			isHostileSource,
+			attackingObj ? attackingObj->GetName() : "NONE",
+			projectileForm ? Util::GetEditorID(projectileForm) : "NONE",
+			Util::HasHostileEffect(attackingObj), 
+			Util::HasHostileEffect(projectileForm)
+		);
 		// Apply and send an additional hit event 
 		// to trigger an assault alarm and potentially apply bonk/splat damage.
 		// Ignore non actors.
@@ -1625,7 +1652,7 @@ namespace ALYSLC
 		bool shouldApplyDamageOrDrawAggro = 
 		(
 			(
-				(hitActor) && 
+				(hitActor && isHostileSource) && 
 				(
 					((isBonkOrSplatHitEvent) && (!p->isInGodMode || isHostileToAPlayer)) ||
 					(!isBonkOrSplatHitEvent && !p->isPlayer1 && !isHostileToAPlayer)
@@ -1684,9 +1711,6 @@ namespace ALYSLC
 		{
 			// Also send a duplicate hit event with P1 as the aggressor
 			// to trigger any OnHit events or effects, but not any assault alarms.
-
-			RE::FormID sourceFID = a_hitEvent->source;
-			auto attackingObj = RE::TESForm::LookupByID(a_hitEvent->source); 
 
 			// Check placeholder spells for the source FID, 
 			// and if found, send the copied spell's FID instead.
@@ -2104,6 +2128,11 @@ namespace ALYSLC
 			if (wasSupportedMenuOpen && !glob.supportedMenuOpen.load())
 			{
 				glob.lastSupportedMenusClosedTP = SteadyClock::now();
+			}
+			else if (a_menuEvent->opening &&
+					 glob.SUPPORTED_MENU_NAMES.contains(a_menuEvent->menuName))
+			{
+				glob.lastSupportedMenuOpeningTP = SteadyClock::now();
 			}
 
 			SPDLOG_DEBUG("Supported menus open: {}, before: {}.", 
@@ -2634,5 +2663,356 @@ namespace ALYSLC
 		}
 
 		return EventResult::kContinue;
+	}
+
+	QuickLootEventsHandler* QuickLootEventsHandler::GetSingleton()
+	{
+		static QuickLootEventsHandler singleton;
+		return std::addressof(singleton);
+	}
+
+	void QuickLootEventsHandler::Register()
+	{
+		if (!ALYSLC::QuickLootCompat::g_installed || !ALYSLC::QuickLootCompat::g_apiControlReceived)
+		{
+			INF("Could not register for QuickLoot events.");
+			return;
+		}
+
+		const auto singleton = GetSingleton();
+		if (!singleton)
+		{
+			return;
+		}
+
+		QuickLoot::API::QuickLootAPI::RegisterModifyButtonBarHandler(ProcessModifyButtonBarEvent);
+		QuickLoot::API::QuickLootAPI::RegisterModifyInventoryHandler(ProcessModifyInventoryEvent);
+		QuickLoot::API::QuickLootAPI::RegisterSelectItemHandler(ProcessSelectedItemEvent);
+	}
+
+	void QuickLootEventsHandler::ProcessModifyButtonBarEvent
+	(
+		QuickLoot::API::ModifyButtonBarEvent* a_event
+	)
+	{
+		if (!a_event || !glob.globalDataInit || !glob.coopSessionActive || glob.menuPID < 0)
+		{
+			return;
+		}
+
+		DBG
+		(
+			"Container: {}. Item stack inv entry: {}, object name: {}, "
+			"owner: {}, drop ref: {}.", 
+			Util::HandleIsValid(a_event->container) ? 
+			a_event->container.get()->GetName() :
+			"NONE",
+			a_event->stack && a_event->stack->entry ? 
+			a_event->stack->entry->GetDisplayName() :
+			"NONE",
+			a_event->stack && a_event->stack->entry && a_event->stack->entry->object ? 
+			a_event->stack->entry->object->GetName() :
+			"NONE",
+			a_event->stack && a_event->stack->entry && a_event->stack->entry->GetOwner()? 
+			a_event->stack->entry->GetOwner()->GetName() :
+			"NONE",
+			a_event->stack && Util::HandleIsValid(a_event->stack->dropRef) ? 
+			a_event->stack->dropRef.get()->GetName() : 
+			"NONE"
+		);
+
+		if (!Util::HandleIsValid(a_event->container) ||
+			a_event->container != glob.lootBuddyChest->GetHandle() ||
+			!a_event->stack || 
+			!a_event->stack->entry || 
+			!a_event->stack->entry->object)
+		{
+			return;
+		}
+
+		const auto& menuP = glob.coopPlayers[glob.menuPID];
+		for (const auto& button : a_event->buttons)
+		{
+			DBG
+			(
+				"Button label {} has art index 0x{:X}, action: {}, stealing: {}.",
+				button.label,
+				button.buttonArtIndex,
+				!button.action,
+				button.stealing
+			);
+		}
+
+		{
+			std::unique_lock<std::mutex> lock(glob.proximityLootMapMutex, std::try_to_lock);
+			if (lock)
+			{
+				DBG
+				(
+					"Lock obtained: (0x{:X})", 
+					std::hash<std::jthread::id>()(std::this_thread::get_id())
+				);
+				const auto itemStack = a_event->stack;
+				const auto iter = glob.proximityLootItemMap.find(itemStack->entry->object);
+				if (iter != glob.proximityLootItemMap.end())
+				{
+					for (const auto& fid : iter->second)
+					{
+						auto form = RE::TESForm::LookupByID(fid);
+						if (!form)
+						{
+							continue;
+						}
+
+						auto refr = form->AsReference();
+						if (!refr)
+						{
+							continue;
+						}
+
+						bool isOffLimits = Util::ActivationIsOffLimits
+						(
+							menuP->coopActor.get(), refr
+						);
+						DBG
+						(
+							"{} maps to refr 0x{:X}. Is off limits: {}.",
+							itemStack->entry->object->GetName(), 
+							fid,
+							isOffLimits
+						);
+						if (isOffLimits)
+						{
+							for (auto& button : a_event->buttons)
+							{
+								DBG
+								(
+									"Button label {} has art index 0x{:X}, "
+									"action: {}, stealing: {}.",
+									button.label,
+									button.buttonArtIndex,
+									!button.action,
+									button.stealing
+								);
+								if (button.stealing != isOffLimits)
+								{
+									button.stealing = isOffLimits;
+								}
+							}
+						}
+
+						break;
+					}
+				}
+			}
+			else
+			{
+				DBG
+				(
+					"Failed to obtain proximity loot map lock: (0x{:X})", 
+					std::hash<std::jthread::id>()(std::this_thread::get_id())
+				);
+			}
+		}
+	}
+
+	void QuickLootEventsHandler::ProcessModifyInventoryEvent
+	(
+		QuickLoot::API::ModifyInventoryEvent* a_event
+	)
+	{
+		if (!a_event || !glob.globalDataInit || !glob.coopSessionActive || glob.menuPID < 0)
+		{
+			return;
+		}
+
+		{
+			std::unique_lock<std::mutex> lock(glob.proximityLootMapMutex, std::try_to_lock);
+			if (lock)
+			{
+				DBG
+				(
+					"Lock obtained: (0x{:X})", 
+					std::hash<std::jthread::id>()(std::this_thread::get_id())
+				);
+				for (const auto& itemStack : a_event->inventory)
+				{
+					if (!itemStack.entry || !itemStack.entry->object)
+					{
+						continue;
+					}
+
+					DBG
+					(
+						"Container {} has item stack inv entry {}, owner {}, count {}.", 
+						Util::HandleIsValid(a_event->container) ? 
+						a_event->container.get()->GetName() :
+						"NONE",
+						itemStack.entry->GetDisplayName(),
+						itemStack.entry->GetOwner()? 
+						itemStack.entry->GetOwner()->GetName() :
+						"NONE",
+						itemStack.entry->countDelta
+					);
+
+					const auto iter = glob.proximityLootItemMap.find(itemStack.entry->object);
+					if (iter != glob.proximityLootItemMap.end())
+					{
+						for (const auto& fid : iter->second)
+						{
+							DBG("{} maps to refr 0x{:X}.", itemStack.entry->object->GetName(), fid);
+						}
+					}
+				}
+			}
+			else
+			{
+				DBG
+				(
+					"Failed to obtain proximity loot map lock: (0x{:X})", 
+					std::hash<std::jthread::id>()(std::this_thread::get_id())
+				);
+			}
+		}
+	}
+
+	void QuickLootEventsHandler::ProcessSelectedItemEvent(QuickLoot::API::SelectItemEvent* a_event)
+	{
+		if (!a_event || !glob.globalDataInit || !glob.coopSessionActive || glob.menuPID < 0)
+		{
+			return;
+		}
+
+		DBG
+		(
+			"Actor: {}, container: {}. Item stack inv entry: {}, object name: {}, "
+			"owner: {}, drop ref: {}.", 
+			a_event ? a_event->actor->GetName() : "NONE",
+			Util::HandleIsValid(a_event->container) ? 
+			a_event->container.get()->GetName() :
+			"NONE",
+			a_event->stack && a_event->stack->entry ? 
+			a_event->stack->entry->GetDisplayName() :
+			"NONE",
+			a_event->stack && a_event->stack->entry && a_event->stack->entry->object ? 
+			a_event->stack->entry->object->GetName() :
+			"NONE",
+			a_event->stack && a_event->stack->entry && a_event->stack->entry->GetOwner()? 
+			a_event->stack->entry->GetOwner()->GetName() :
+			"NONE",
+			a_event->stack && Util::HandleIsValid(a_event->stack->dropRef) ? 
+			a_event->stack->dropRef.get()->GetName() : 
+			"NONE"
+		);
+
+		if (a_event->container != glob.lootBuddyChest->GetHandle() || 
+			!a_event->stack ||
+			!a_event->stack->entry ||
+			!a_event->stack->entry->object)
+		{
+			return;
+		}
+
+		{
+			std::unique_lock<std::mutex> lock(glob.proximityLootMapMutex, std::try_to_lock);
+			if (lock)
+			{
+				DBG
+				(
+					"Lock obtained: (0x{:X})", 
+					std::hash<std::jthread::id>()(std::this_thread::get_id())
+				);
+
+				const auto& menuP = glob.coopPlayers[glob.menuPID];
+				// Clear shaders on all nearby items.
+				for (const auto& [_, fidSet] : glob.proximityLootItemMap)
+				{
+					for (const auto& fid : fidSet)
+					{
+						auto form = RE::TESForm::LookupByID(fid);
+						if (!form)
+						{
+							continue;
+						}
+
+						auto refr = form->AsReference();
+						if (!refr)
+						{
+							continue;
+						}
+
+						Util::StopAllActivationEffectShaders(refr, menuP->playerID);
+					}
+				}
+
+				const auto itemStack = a_event->stack;
+				const auto iter = glob.proximityLootItemMap.find(itemStack->entry->object);
+				if (iter != glob.proximityLootItemMap.end())
+				{
+					bool shouldSetActivationRefr = 
+					(
+						!Util::HandleIsValid(menuP->tm->activationRefrHandle) || 
+						!iter->second.contains(menuP->tm->activationRefrHandle.get()->formID)
+					);
+					for (const auto& fid : iter->second)
+					{
+						auto form = RE::TESForm::LookupByID(fid);
+						if (!form)
+						{
+							continue;
+						}
+
+						auto refr = form->AsReference();
+						if (!refr)
+						{
+							continue;
+						}
+
+						DBG
+						(
+							"{} maps to refr 0x{:X}. Is in activation range: {}.",
+							itemStack->entry->object->GetName(), 
+							fid,
+							menuP->tm->RefrIsInActivationRange(refr->GetHandle())
+						);
+				
+						// Set the first instance of the nearby bound object 
+						// as the player's activation refr.
+						if (shouldSetActivationRefr)
+						{
+							DBG("Set {} as {}'s activation refr.", 
+								refr->GetName(), menuP->coopActor->GetName());
+							shouldSetActivationRefr = false;
+							menuP->tm->SetActivationRefrHandle(refr->GetHandle());
+						}
+
+						// Play highlight shader on selected item.
+						menuP->tm->AdjustHighlightShader
+						(
+							glob.activateHighlightShaders[menuP->playerID],
+							Util::ActivationCanTriggerBounty(menuP->coopActor.get(), refr),
+							true,
+							false,
+							false,
+							false
+						);
+						Util::StartEffectShader
+						(
+							refr, 
+							glob.activateHighlightShaders[menuP->playerID], 
+							1.0f
+						);
+					}
+				}
+			}
+			else
+			{
+				DBG
+				(
+					"Failed to obtain proximity loot map lock: (0x{:X})", 
+					std::hash<std::jthread::id>()(std::this_thread::get_id())
+				);
+			}
+		}
 	}
 }

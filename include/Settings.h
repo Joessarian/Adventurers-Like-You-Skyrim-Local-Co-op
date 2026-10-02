@@ -375,15 +375,23 @@ namespace ALYSLC
 		static inline float fMinDashDodgeSpeedmult = 300.0f;
 		// Switch to performing alternate activation, if any, or activate non-selected objects
 		// on release after holding the activate bind for this many seconds.
-		static inline float fSecsBeforeAlternateActivation = 0.6f;
+		static inline float fSecsBeforeAlternateActivation = 0.3f;
 		// Seconds between activation checks 
 		// (time between highlighting objects once cycling starts).
 		static inline float fSecsBetweenActivationChecks = 0.7f;
 		// Seconds between cycling favorited items/emote idles while holding a cycling bind.
 		static inline float fSecsCyclingInterval = 0.8f;
+		// Default number of seconds for analog stick displacement to be considered a 'flick'.
+		// The 'flick' motion is defined as follows:
+		// 1. Move the stick from rest.
+		// 2. Reach max displacement.
+		// 3. Return stick towards center.
+		// Currently set to half-way to ignore small deviations in stick magnitude,
+		// either from faulty controllers or from infrequent XInput packet updates.
+		static inline float fSecsDefFlickInterval = 0.15f;
 		// Default input hold time threshold for triggering on-hold player actions, 
 		// such as power attacks.
-		static inline float fSecsDefMinHoldTime = 0.2f;
+		static inline float fSecsDefMinHoldTime = 0.3f;
 		// Seconds to fully revive a player when downed, if uninterrupted.
 		static inline float fSecsReviveTime = 5.0f;
 		// Seconds until an unrevived downed player, and all other active players, die.
@@ -842,7 +850,7 @@ namespace ALYSLC
 		// Player indicator side length (pixels).
 		static inline std::vector<float> vfPlayerIndicatorLength = 
 		{
-			30.0f, 30.0f, 30.0f, 30.0f 
+			20.0f, 20.0f, 20.0f, 20.0f 
 		};
 		// Player indicator side thickness (pixels).
 		static inline std::vector<float> vfPlayerIndicatorThickness = 
@@ -860,10 +868,10 @@ namespace ALYSLC
 		// 3: Skyrim Style Inverted (prongs are flipped to point inward instead of outward)
 		static inline std::vector<uint32_t> vuCrosshairStyle = 
 		{
-			!CrosshairStyle::kRing, 
-			!CrosshairStyle::kRing,
-			!CrosshairStyle::kRing,
-			!CrosshairStyle::kRing 
+			!CrosshairStyle::kDiamond, 
+			!CrosshairStyle::kDiamond,
+			!CrosshairStyle::kDiamond,
+			!CrosshairStyle::kDiamond 
 		};
 		// Crosshair body is the same color as the overlay.
 		// Blue, Green, Yellow, and Magenta by default.
@@ -1055,8 +1063,14 @@ namespace ALYSLC
 		static inline const bool bUseGenericKillmovesOnUnsupportedNPCs = false;
 		// Speed up the player's animations with this factor while dash dodging.
 		static inline const float fDashDodgeAnimSpeedFactor = 2.0f;
+		// Max radial distance outward from the player's position
+		// to search for an object to activate.
+		static inline const float fMaxDistToActivate = 150.0f;
 		// Max radial distance from a revive target to start reviving.
 		static inline const float fMaxDistToRevive = 150.0f;
+		// Max radial distance from the player's position to search for nearby items 
+		// to add to the proximity loot menu.
+		static inline const float fMaxDistToSearchForNearbyItems = 250.0f;
 		// Min health reached while reviving another player.
 		static inline const float fMinHealthWhileReviving = 1.0f;
 		// Max number of seconds to block all input actions 
@@ -1117,6 +1131,8 @@ namespace ALYSLC
 		// Use the aim correction 'ring' indicator for targeting interactible objects as well.
 		// No more pointy arrows.
 		static inline const bool bRingIndicatorForActivation = false;
+		// Multiplier to the max activation distance to apply when targeting living actors.
+		static inline const float fLivingActorActivationDistMult = 2.0f;
 		// Max distance in game units from the player at which to search for 
 		// a non-hostile aim correction target.
 		static inline const float fMaxNonHostileAimCorrectionTargetDistance = 14481.0f;
@@ -1129,12 +1145,16 @@ namespace ALYSLC
 		static inline const float fMinTurnAngToRefreshRefrs = 1.0f * PI / 180.0f;
 		// Max activation reach multiplier when mounted.
 		static inline const float fMountedActivationReachMult = 2.0f;
+		// Seconds without a selected activation refr before disabling auto-selection automatically.
+		static inline const float fSecsBeforeDisablingAutoSelection = 5.0f;
 		// Seconds before the crosshair fully snaps onto the chosen lock on target.
 		static inline const float fSecsToSnapCrosshairToLockOnTarget = 0.1f;
+		// Seconds before selecting a new activation refr if searching relative to the current one.
+		static inline const float fSecsBetweenSelectingActivationTargets = 0.20f;
 		// Seconds before selecting a new aim correction target.
 		static inline const float fSecsBetweenSelectingAimCorrectionTargets = 0.3f;
 		// Seconds before selecting a new lock on target if searching relative to the current one.
-		static inline const float fSecsBetweenSelectingLockOnTargets = 0.2f;
+		static inline const float fSecsBetweenSelectingLockOnTargets = 0.15f;
 		// If the distance from the player's attack source to the target position
 		// is less than or equal to this value, begin slowing the player's rotation.
 		static inline const float fTargetAttackSourceDistToSlowRotation = 200.0f;
@@ -1142,7 +1162,7 @@ namespace ALYSLC
 		// to remove from the managed queue.
 		static inline const uint8_t uManagedPlayerProjectilesBeforeRemoval = 50;
 		// Maximum number of actors to check when choosing a lock on target.
-		static inline const uint8_t uMaxLockOnTargetsToCheckForLOS = 5;
+		static inline const uint8_t uMaxLockOnTargetsToCheckForLOS = 25;
 
 		//------------------
 		//[Timer Intervals]:

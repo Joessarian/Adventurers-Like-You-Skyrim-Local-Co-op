@@ -78,6 +78,12 @@ Int Property OPTION_RACE = 5 Auto
 Int Property OPTION_VOICE_TYPE = 6 Auto
 Int Property OPTION_WEIGHT = 7 Auto
 
+; Gender options
+Int Property GENDER_FEMALE_FEMALE_ANIMS = 0 Auto
+Int Property GENDER_MALE_MALE_ANIMS = 1 Auto
+Int Property GENDER_FEMALE_MALE_ANIMS = 2 Auto
+Int Property GENDER_MALE_FEMALE_ANIMS = 3 Auto
+
 ; Initialize array and co-op session state variables.
 Function Initialize()
     StatsMenuArr = new Message[3]
@@ -126,15 +132,17 @@ Function HandleCharacterCustomization()
     While (SelectedOptionIndex != -1)
         ALYSLC.Log("[SUMMON SCRIPT] Selected option index from customization menu: " + SelectedOptionIndex + ", string: " + SelectedString)
         ; Open the Race Menu for full customization.
-        If (SelectedOptionIndex == SHOW_RACE_MENU_ENTRY_INDEX && SHOW_RACE_MENU_ENTRY_INDEX != -1)
+        If (SHOW_RACE_MENU_ENTRY_INDEX != -1 && SelectedOptionIndex == SHOW_RACE_MENU_ENTRY_INDEX)
             ActorBase P1ActorBase = PlayerRef.GetActorBase()
             Race CurrentRace = StorageUtil.GetFormValue(SelectedCharacter, "ALYSLC_Race", Base.GetRace()) as Race
             Int CurrentGenderOption = StorageUtil.GetIntValue(SelectedCharacter, "ALYSLC_GenderOption", 1 - Base.GetSex())
-            Bool IsCurrentlyFemale = CurrentGenderOption == 0 || CurrentGenderOption == 2
+            Bool IsCurrentlyFemale = CurrentGenderOption == GENDER_FEMALE_FEMALE_ANIMS || CurrentGenderOption == GENDER_FEMALE_MALE_ANIMS
 
             ; Modifying this character's actor base directly.
             ; Indicates that we are using a custom appearance for this character and not just copying over another NPC's appearance.
             StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", Base)
+            ; Save original actor base to apply on save-load.
+            ALYSLC.SavePlayerCharacterNPCAppearancePreset(SelectedCharacter, None)
             ; Save P1's appearance, name, and race first.
             String SavedP1Name = PlayerRef.GetDisplayName()
             Race SavedP1Race = PlayerRef.GetRace()
@@ -192,14 +200,19 @@ Function HandleCharacterCustomization()
             EndIf
 
             Int NewGenderOption = 1 - P1ActorBase.GetSex()
-            Bool IsFemale = (NewGenderOption == 0 || NewGenderOption == 2)
+            Bool IsFemale = (NewGenderOption == GENDER_FEMALE_FEMALE_ANIMS || NewGenderOption == GENDER_FEMALE_MALE_ANIMS)
+            Bool GenderMismatch = False
             ALYSLC.Log("[SUMMON SCRIPT] Gender option chosen: " + SelectedString + ", index " + SelectedOptionIndex)
             If (NewGenderOption != -1)
                 ALYSLC.Log("[SUMMON SCRIPT] Gender option chosen: " + NewGenderOption)
                 StorageUtil.SetIntValue(SelectedCharacter, "ALYSLC_GenderOption", NewGenderOption)
-                If (NewGenderOption != CurrentGenderOption)
+                GenderMismatch = NewGenderOption != CurrentGenderOption
+                If (GenderMismatch)
                     ALYSLC.Log("[SUMMON SCRIPT] Gender changed from " + CurrentGenderOption + " to " + NewGenderOption + ".")
                 EndIf
+
+                ; Save new gender choice.
+                ALYSLC.SavePlayerCharacterGenderChoice(SelectedCharacter, IsFemale, NewGenderOption == GENDER_FEMALE_MALE_ANIMS || NewGenderOption == GENDER_MALE_FEMALE_ANIMS)
             EndIf
 
             ; Save the appearance changes to this character's preset file.
@@ -209,6 +222,29 @@ Function HandleCharacterCustomization()
             ; Export P1's appearance onto this character.
             ALYSLC.ExportP1ActorBaseAppearanceData(SelectedCharacter)
             ALYSLC.Wait(0.5)
+
+            ; Prompt the player to change their voice type since their current one may mismatch with their gender.
+            If (GenderMismatch)
+                Debug.MessageBox("[ALYSLC] Voice type mismatch on gender change.\n" + "Player " + PlayerNumber + ", please select a new voice type.")
+                Float SecsWaited = 0.0
+                While (!UI.IsMenuOpen("MessageBoxMenu") && SecsWaited < 2.0)
+                    ALYSLC.Wait(0.1)
+                    SecsWaited += 0.1
+                EndWhile
+
+                ; Once open, wait until closed.
+                While (UI.IsMenuOpen("MessageBoxMenu"))
+                    ALYSLC.Wait(0.1)
+                EndWhile
+
+                VoiceType NewVoiceType = ShowVoiceTypeSelectionMenu()
+                If (NewVoiceType)
+                    ALYSLC.Log("[SUMMON SCRIPT] New voice type: " + NewVoiceType.GetName())
+                    StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_VoiceType", NewVoiceType)
+                    ALYSLC.SavePlayerCharacterVoiceType(SelectedCharacter, NewVoiceType)
+                EndIf
+                ALYSLC.Log("[SUMMON SCRIPT] New voice type: " + SelectedString + ", selected option index " + SelectedOptionIndex)
+            EndIf
 
             ; Restore P1's appearance, height, weight, and name.
             P1ActorBase.SetName(SavedP1Name)
@@ -261,7 +297,7 @@ Function HandleCharacterCustomization()
             ; Give menu control back to the companion player.
             ALYSLC.ToggleSetupMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, True)
         ; Name
-        ElseIf (SelectedOptionIndex == CHARACTER_NAME_ENTRY_INDEX)
+        ElseIf (CHARACTER_NAME_ENTRY_INDEX != -1 && SelectedOptionIndex == CHARACTER_NAME_ENTRY_INDEX)
             Debug.MessageBox("Please input a new name. In order to have your naming changes reflected in some UI components, " + \
             "such as Party Combat Parameter's character cards, you must save the game after changing the player's name and reload.")
 
@@ -278,6 +314,8 @@ Function HandleCharacterCustomization()
                 Bool Renamed = SelectedCharacter.SetDisplayName(ResultStr, True)
                 If (Renamed)
                     ALYSLC.Log("[SUMMON SCRIPT] Set name: '" + ResultStr + "'.")
+                    ; Must save the preset again with the new character name.
+                    ALYSLC.SavePlayerCharacterPreset(SelectedCharacter)
                 Else
                     ALYSLC.Log("[SUMMON SCRIPT] Could not rename player.")
                 EndIf
@@ -302,7 +340,7 @@ Function HandleCharacterCustomization()
             While (SelectedOptionIndex != -1)
                 CurrentRace = StorageUtil.GetFormValue(SelectedCharacter, "ALYSLC_Race", Base.GetRace()) as Race
                 CurrentGenderOption = StorageUtil.GetIntValue(SelectedCharacter, "ALYSLC_GenderOption", 1 - Base.GetSex())
-                IsCurrentlyFemale = CurrentGenderOption == 0 || CurrentGenderOption == 2
+                IsCurrentlyFemale = CurrentGenderOption == GENDER_FEMALE_FEMALE_ANIMS || CurrentGenderOption == GENDER_FEMALE_MALE_ANIMS
                 ALYSLC.Log("[SUMMON SCRIPT] Selected option index from appearance customization menu: " + SelectedOptionIndex + ", string: " + SelectedString)
                 ; Race
                 If (SelectedOptionIndex == 0)
@@ -331,10 +369,15 @@ Function HandleCharacterCustomization()
                                     If (Preset && Preset != Base)
                                         ALYSLC.Log("[SUMMON SCRIPT] Race change, set appearance preset to first one: " + Preset.GetName())
                                         StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", Preset)
+                                        ; Save new actor base to apply on save-load.
+                                        ALYSLC.SavePlayerCharacterNPCAppearancePreset(SelectedCharacter, Preset)
                                     Else
                                         ALYSLC.Log("[SUMMON SCRIPT] Race change, but there are no presets. Clear current base.")
                                         StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", None)
+                                        ; Save original actor base to apply on save-load.
+                                        ALYSLC.SavePlayerCharacterNPCAppearancePreset(SelectedCharacter, None)
                                     EndIf
+
                                 EndIf
                              EndIf
                             ALYSLC.Log("[SUMMON SCRIPT] Race chosen: " + SelectedString + ", index " + SelectedOptionIndex)
@@ -353,10 +396,12 @@ Function HandleCharacterCustomization()
                     Int NewGenderOption = ShowGenderSelectionMenu()
                     If (NewGenderOption != -1)
                         ALYSLC.Log("[SUMMON SCRIPT] Gender option chosen: " + NewGenderOption)
-                        StorageUtil.SetIntValue(SelectedCharacter, "ALYSLC_GenderOption", NewGenderOption)
+                        StorageUtil.SetIntValue(SelectedCharacter, "ALYSLC_GenderOption", NewGenderOption)                            
+                        Bool IsNowFemale = NewGenderOption == GENDER_FEMALE_FEMALE_ANIMS || NewGenderOption == GENDER_FEMALE_MALE_ANIMS
+                        ; Save new gender choice.
+                        ALYSLC.SavePlayerCharacterGenderChoice(SelectedCharacter, IsNowFemale, NewGenderOption == GENDER_FEMALE_MALE_ANIMS || NewGenderOption == GENDER_MALE_FEMALE_ANIMS)
                         If (NewGenderOption != CurrentGenderOption)
                             ALYSLC.Log("[SUMMON SCRIPT] Gender changed from " + CurrentGenderOption + " to " + NewGenderOption + ". Refreshing dependent appearance presets list. Current race: " + CurrentRace.GetName())
-                            Bool IsNowFemale = NewGenderOption == 0 || NewGenderOption == 2
                             CoopNPCAppearancePresets = ALYSLC.GetAllAppearancePresets(CurrentRace, IsNowFemale)
                             ActorBase Preset = None 
                             If (CoopNPCAppearancePresets.Length > 0)
@@ -366,9 +411,13 @@ Function HandleCharacterCustomization()
                             If (Preset && Preset != Base)
                                 ALYSLC.Log("[SUMMON SCRIPT] Gender change, set appearance preset to first one: " + Preset.GetName())
                                 StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", Preset)
+                                ; Save new actor base to apply on save-load.
+                                ALYSLC.SavePlayerCharacterNPCAppearancePreset(SelectedCharacter, Preset)
                             Else
-                                ALYSLC.Log("[SUMMON SCRIPT] Race change, but there are no presets. Clear current base.")
+                                ALYSLC.Log("[SUMMON SCRIPT] Actor base change, but there are no presets. Clear current base.")
                                 StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", None)
+                                ; Save original actor base to apply on save-load.
+                                ALYSLC.SavePlayerCharacterNPCAppearancePreset(SelectedCharacter, None)
                             EndIf
                         EndIf
                     EndIf
@@ -380,9 +429,13 @@ Function HandleCharacterCustomization()
                     If (NewPreset)
                         ALYSLC.Log("[SUMMON SCRIPT] NPC appearance preset chosen: " + NewPreset.GetName())
                         StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", NewPreset)
+                        ; Save new actor base to apply on save-load.
+                        ALYSLC.SavePlayerCharacterNPCAppearancePreset(SelectedCharacter, NewPreset)
                     Else
                         ALYSLC.Log("[SUMMON SCRIPT] No preset chosen. Clear current preset.")
                         StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", None)
+                        ; Save original actor base to apply on save-load.
+                        ALYSLC.SavePlayerCharacterNPCAppearancePreset(SelectedCharacter, None)
                     EndIf
                     
                     ALYSLC.Log("[SUMMON SCRIPT] NPC appearance preset chosen: " + SelectedString + ", index " + SelectedOptionIndex)
@@ -398,6 +451,7 @@ Function HandleCharacterCustomization()
             If (NewVoiceType)
                 ALYSLC.Log("[SUMMON SCRIPT] New voice type: " + NewVoiceType.GetName())
                 StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_VoiceType", NewVoiceType)
+                ALYSLC.SavePlayerCharacterVoiceType(SelectedCharacter, NewVoiceType)
             EndIf
             ALYSLC.Log("[SUMMON SCRIPT] New voice type: " + SelectedString + ", selected option index " + SelectedOptionIndex)
         ; Height
@@ -732,24 +786,29 @@ Function SetCompanionPlayerCustomizationOptions(Actor akPlayerActor)
     EndIf
 
     ; Appearance preset and gender option
+    Int BaseSex = Base.GetSex()
     Int GenderOption = StorageUtil.GetIntValue(akPlayerActor, "ALYSLC_GenderOption", -1)
     Bool SetUseOppositeGenderAnims = GenderOption >= 2
-    Bool SetFemale = (GenderOption == 0 || GenderOption == 2) || (GenderOption == -1 && Base.GetSex() == 1)
+    Bool SetFemale = (GenderOption == GENDER_FEMALE_FEMALE_ANIMS || GenderOption == GENDER_FEMALE_MALE_ANIMS) || (GenderOption == -1 && BaseSex == 1)
     ActorBase Preset = StorageUtil.GetFormValue(akPlayerActor, "ALYSLC_AppearancePreset", None) as ActorBase
-    ALYSLC.Log("[SUMMON SCRIPT] Saved preset sex: " + Preset.GetSex() + ", current sex: " + Base.GetSex() + ", gender option to set: " + GenderOption + "(female: " + SetFemale + ").")
+    ALYSLC.Log("[SUMMON SCRIPT] Saved preset sex: " + Preset.GetSex() + ", current sex: " + BaseSex + ", gender option to set: " + GenderOption + "(female: " + SetFemale + ").")
     ALYSLC.Log("[SUMMON SCRIPT] Saved preset is " + Preset.GetName() + " (" + Preset + "), current base is " + Base.GetName() + " (" + Base + ").")
+    ; Save gender choice to apply on save-load.
+    ALYSLC.SavePlayerCharacterGenderChoice(SelectedCharacter, SetFemale, GenderOption == GENDER_FEMALE_MALE_ANIMS || GenderOption == GENDER_MALE_FEMALE_ANIMS)
+    ; Save preset to restore on save-load.
+    ALYSLC.SavePlayerCharacterNPCAppearancePreset(akPlayerActor, Preset)
     If (!Preset)
         ; No preset to set, so set to the default racial preset, change gender, anims, and update face/body skin tone.
         ALYSLC.Log("[SUMMON SCRIPT] Set sex to female: " + SetFemale + " and update body to racial default, no valid preset. Gender option: " + GenderOption)
-        ALYSLC.SetDefaultRacialAppearance(PlayerID, SetFemale, SetUseOppositeGenderAnims)
-    ElseIf ((Preset && Preset != Base) || ((Base.GetSex() == -1) || (Base.GetSex() == 0 && SetFemale) || (Base.GetSex() == 1 && !SetFemale)))
+        ALYSLC.CopyDefaultRacialAppearanceToPlayer(PlayerID, SetFemale, SetUseOppositeGenderAnims)
+    ElseIf ((Preset && Preset != Base) || ((BaseSex == -1) || (BaseSex == 0 && SetFemale) || (BaseSex == 1 && !SetFemale)))
         If (Preset && Preset != Base)
             ALYSLC.Log("[SUMMON SCRIPT] Set appearance preset to " + Preset.GetName() + ", use opposite gender animations: " + SetUseOppositeGenderAnims + ", gender option: " + GenderOption)
         Else
-            ALYSLC.Log("[SUMMON SCRIPT] Gender mismatch. Current sex: " + Base.GetSex() + ". Set sex to female: " + SetFemale + ". Gender option: " + GenderOption)
+            ALYSLC.Log("[SUMMON SCRIPT] Gender mismatch. Current sex: " + BaseSex + ". Set sex to female: " + SetFemale + ". Gender option: " + GenderOption)
         EndIf
 
-        ALYSLC.CopyNPCAppearanceToPlayer(PlayerID, Preset, SetUseOppositeGenderAnims)
+        ALYSLC.CopyBaseAppearanceToPlayer(PlayerID, Preset, SetUseOppositeGenderAnims)
     EndIf
 
 	; Apply custom appearance preset afterward, if any.
@@ -760,6 +819,17 @@ Function SetCompanionPlayerCustomizationOptions(Actor akPlayerActor)
     ; Voice Type
     VoiceType CurrentVoiceType = Base.GetVoiceType()
     VoiceType NewVoiceType = StorageUtil.GetFormValue(akPlayerActor, "ALYSLC_VoiceType", None) as VoiceType
+    ; Mismatch between previous gender and current gender, so we need to change the voice type.
+    If ((Preset) && (((GenderOption == GENDER_FEMALE_FEMALE_ANIMS || GenderOption == GENDER_FEMALE_MALE_ANIMS) && (BaseSex == 0 || BaseSex == -1)) || ((GenderOption == GENDER_MALE_MALE_ANIMS || GenderOption == GENDER_MALE_FEMALE_ANIMS) && (BaseSex == 1))))
+        NewVoiceType = Preset.GetVoiceType()
+        If (NewVoiceType)
+            ALYSLC.Log("[SUMMON SCRIPT] New voice type on gender change: " + NewVoiceType.GetName())
+            StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_VoiceType", NewVoiceType)
+            ALYSLC.SavePlayerCharacterVoiceType(SelectedCharacter, NewVoiceType)
+        EndIf
+    EndIf
+
+    ALYSLC.SavePlayerCharacterVoiceType(akPlayerActor, NewVoiceType)
     If (NewVoiceType && NewVoiceType != CurrentVoiceType)
         ALYSLC.Log("[SUMMON SCRIPT] Set voice type to " + NewVoiceType)
         Base.SetVoiceType(NewVoiceType)
@@ -842,7 +912,7 @@ ActorBase Function ShowAppearancePresetSelectionMenu()
     EndIf
 
     Int GenderOption = StorageUtil.GetIntValue(SelectedCharacter, "ALYSLC_GenderOption", 1 - SelectedCharacter.GetActorBase().GetSex())
-    Bool IsFemale = (GenderOption == 0 || GenderOption == 2)
+    Bool IsFemale = (GenderOption == GENDER_FEMALE_FEMALE_ANIMS || GenderOption == GENDER_FEMALE_MALE_ANIMS)
 
     CoopNPCAppearancePresets = ALYSLC.GetAllAppearancePresets(SavedRace, IsFemale)
     If (CoopNPCAppearancePresets.Length > 0)
@@ -1044,7 +1114,7 @@ Function ShowCustomizationOptionsMenu()
     ; Setup list menu with nested lists for each customization option.
     ; Max number of items per list menu = 128
     UIListMenu CustomizationMenu = UIExtensions.GetMenu("UIListMenu") as UIListMenu
-    ; Add Name, Class, Appearance, Voice, Height, and Weight options.
+    ; Add RaceMenu/Name, Class, Appearance, Voice, Height, and Weight options.
     ; Customization options:
     ; Can only edit companion characters through the Race Menu if RaceMenu is installed.
     ; Temporary measure until I can figure out why the face skintone and overlays 
@@ -1052,23 +1122,25 @@ Function ShowCustomizationOptionsMenu()
     If (ALYSLC.IsRaceMenuInstalled())
         CustomizationMenu.AddEntryItem("Show Race Menu", -1, -1, False)
         SHOW_RACE_MENU_ENTRY_INDEX = 0
+        CHARACTER_NAME_ENTRY_INDEX = -1
     Else
+        CustomizationMenu.AddEntryItem("Character Name", -1, -1, False)
         SHOW_RACE_MENU_ENTRY_INDEX = -1
+        CHARACTER_NAME_ENTRY_INDEX = 0
     EndIf
-    CustomizationMenu.AddEntryItem("Character Name", -1, -1, False)
-    CustomizationMenu.AddEntryItem("Class", -1, -1, False)
-    CustomizationMenu.AddEntryItem("Appearance", -1, -1, False)
-    CustomizationMenu.AddEntryItem("Voice Type", -1, -1, False)
-    CustomizationMenu.AddEntryItem("Height", -1, -1, False)
-    CustomizationMenu.AddEntryItem("Weight", -1, -1, False)
+
+    CustomizationMenu.AddEntryItem("Class ", -1, -1, False)
+    CustomizationMenu.AddEntryItem("Appearance ", -1, -1, False)
+    CustomizationMenu.AddEntryItem("Voice Type ", -1, -1, False)
+    CustomizationMenu.AddEntryItem("Height ", -1, -1, False)
+    CustomizationMenu.AddEntryItem("Weight ", -1, -1, False)
 
     ; Set entry indices so we can keep track of what option the player has chosen.
-    CHARACTER_NAME_ENTRY_INDEX = SHOW_RACE_MENU_ENTRY_INDEX + 1
-    CLASS_ENTRY_INDEX = CHARACTER_NAME_ENTRY_INDEX + 1
-    APPEARANCE_ENTRY_INDEX = CLASS_ENTRY_INDEX + 1
-    VOICE_TYPE_ENTRY_INDEX = APPEARANCE_ENTRY_INDEX + 1
-    HEIGHT_ENTRY_INDEX = VOICE_TYPE_ENTRY_INDEX + 1
-    WEIGHT_ENTRY_INDEX = HEIGHT_ENTRY_INDEX + 1
+    CLASS_ENTRY_INDEX = 1
+    APPEARANCE_ENTRY_INDEX =2
+    VOICE_TYPE_ENTRY_INDEX = 3
+    HEIGHT_ENTRY_INDEX = 4
+    WEIGHT_ENTRY_INDEX = 5
 
     ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, CustomizationMenu.ROOT_MENU)
     CustomizationMenu.OpenMenu()
@@ -1092,13 +1164,13 @@ Int Function ShowGenderSelectionMenu()
         CurrentGenderOptionIndex = 1 - SelectedCharacter.GetActorBase().GetSex()
     EndIf
 
-    If (CurrentGenderOptionIndex == 0)
+    If (CurrentGenderOptionIndex == GENDER_FEMALE_FEMALE_ANIMS)
         CurrentGenderOptionStr = "Female + Female Animations"
-    ElseIf (CurrentGenderOptionIndex == 1)
+    ElseIf (CurrentGenderOptionIndex == GENDER_MALE_MALE_ANIMS)
         CurrentGenderOptionStr = "Male + Male Animations"
-    ElseIf (CurrentGenderOptionIndex == 2)
+    ElseIf (CurrentGenderOptionIndex == GENDER_FEMALE_MALE_ANIMS)
         CurrentGenderOptionStr = "Female + Male Animations"
-    ElseIf (CurrentGenderOptionIndex == 3)
+    ElseIf (CurrentGenderOptionIndex == GENDER_MALE_FEMALE_ANIMS)
         CurrentGenderOptionStr = "Male + Female Animations"
     EndIf
 
@@ -1165,7 +1237,7 @@ EndFunction
 ; Show a UIExtensions list menu with all selectable voice types for the player's chosen gender.
 VoiceType Function ShowVoiceTypeSelectionMenu()
     Int GenderOption = StorageUtil.GetIntValue(SelectedCharacter, "ALYSLC_GenderOption", 1 - SelectedCharacter.GetActorBase().GetSex())
-    Bool IsFemale = (GenderOption == 0 || GenderOption == 2)
+    Bool IsFemale = (GenderOption == GENDER_FEMALE_FEMALE_ANIMS || GenderOption == GENDER_FEMALE_MALE_ANIMS)
     CoopVoiceTypes = ALYSLC.GetAllVoiceTypes(IsFemale)
     If (CoopVoiceTypes.Length > 0)
         PopulateAndShowListMenu("Voice Type", OPTION_VOICE_TYPE, CoopVoiceTypes, 0)
@@ -1187,7 +1259,9 @@ EndFunction
 Function SetUpPlayersAndSummon()
     ; Spawn in co-op companions after disabling them.
     ; The companion player initialization script will enable them when it runs before co-op starts.
-    ; Save P1's chargen race even though we have no custommization options to set.
+    ; Save P1's chargen actor base, gender choice, and race even though we have no customization options to set.
+    ALYSLC.SavePlayerCharacterNPCAppearancePreset((PlayerRef as Actor), None)
+    ALYSLC.SavePlayerCharacterGenderChoice((PlayerRef as Actor), False, False)
     ALYSLC.SavePlayerCharacterRace((PlayerRef as Actor), None)
     Int Index = 1
     While (Index < CoopActors.Length)

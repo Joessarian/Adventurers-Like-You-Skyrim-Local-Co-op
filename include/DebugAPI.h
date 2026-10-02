@@ -165,8 +165,10 @@ namespace ALYSLC
 			glm::vec2 a_center, 
 			uint32_t a_rgba,
 			uint32_t a_segments,
+			bool a_fill,
 			float a_radius, 
 			float a_lineThickness, 
+			float a_startingAngle = 0.0f,
 			float a_durationSecs = 0
 		);
 		
@@ -176,6 +178,7 @@ namespace ALYSLC
 			glm::vec3 a_worldNormal,
 			uint32_t a_rgba,
 			uint32_t a_segments,
+			bool a_fill,
 			float a_radius, 
 			float a_lineThickness, 
 			bool a_connectCenterToVertices = false,

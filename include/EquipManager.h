@@ -396,6 +396,37 @@ namespace ALYSLC
 
 			return false;
 		}
+		
+		// Check if the player has a non-hostile spell that is not self-targeted
+		// equipped in their hands or quick slot.
+		inline bool HasTargetedNonHostileSpellEquipped() const
+		{
+			auto spell = GetRHSpell();
+			if (spell &&
+				!Util::HasHostileEffect(spell) &&
+				spell->GetDelivery() != RE::MagicSystem::Delivery::kSelf)
+			{
+				return true;
+			}
+			
+			spell = GetLHSpell();
+			if (spell &&
+				!Util::HasHostileEffect(spell) && 
+				spell->GetDelivery() != RE::MagicSystem::Delivery::kSelf)
+			{
+				return true;
+			}
+
+			if (quickSlotSpell && 
+				!Util::HasHostileEffect(quickSlotSpell) &&
+				spell &&
+				spell->GetDelivery() != RE::MagicSystem::Delivery::kSelf)
+			{
+				return true;
+			}
+
+			return false;
+		}
 
 		// Check if the player has a torch equipped.
 		inline bool HasTorchEquipped() const

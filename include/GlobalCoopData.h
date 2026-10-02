@@ -401,8 +401,12 @@ namespace ALYSLC
 				usedPerkPoints(0),
 				extraPerkPoints(0),
 				prevTotalUnlockedPerks(0),
+				usesOppositeGenderAnims(false),
 				raceMenuPresetName(""sv),
-				chosenRace(nullptr)
+				isFemale(false),
+				chosenNPCAppearancePreset(nullptr),
+				chosenRace(nullptr),
+				chosenVoiceType(nullptr)
 			{
 				equippedForms.clear();
 				equippedForms = std::vector<RE::TESForm*>(!EquipIndex::kTotal, nullptr);
@@ -447,8 +451,12 @@ namespace ALYSLC
 				SkillList a_skillXPList,
 				std::vector<RE::BGSPerk*> a_takenSharedPerksList,
 				std::vector<RE::BGSPerk*> a_unlockedPerksList,
+				bool a_isFemale,
+				bool a_usesOppositeGenderAnims,
 				RE::BSFixedString a_raceMenuPresetName,
-				RE::TESRace* a_chosenRace
+				RE::TESNPC* a_chosenNPCAppearancePreset,
+				RE::TESRace* a_chosenRace,
+				RE::BGSVoiceType* a_chosenVoiceType
 			) :
 				copiedMagic(a_copiedMagic),
 				cyclableEmoteIdleEvents(a_cyclableEmoteIdleEvents),
@@ -470,8 +478,12 @@ namespace ALYSLC
 				skillLevelIncreasesList(a_skillLevelIncreasesList),
 				skillXPList(a_skillXPList),
 				unlockedPerksList(a_unlockedPerksList),
+				isFemale(a_isFemale),
+				usesOppositeGenderAnims(a_usesOppositeGenderAnims),
 				raceMenuPresetName(a_raceMenuPresetName),
-				chosenRace(a_chosenRace)
+				chosenNPCAppearancePreset(a_chosenNPCAppearancePreset),
+				chosenRace(a_chosenRace),
+				chosenVoiceType(a_chosenVoiceType)
 			{
 				p1HMSBaseAVsOnMenuEntry.fill(0.0f);
 				skillLevelsOnMenuEntry.fill(15.0f);
@@ -662,8 +674,18 @@ namespace ALYSLC
 			uint32_t level;
 			// Used levelup perk points.
 			uint32_t usedPerkPoints;
+			// The player chose 'female' as their gender.
+			bool isFemale;
+			// The player chose for their character to use animations from the opposite gender.
+			bool usesOppositeGenderAnims;
 			// RaceMenu preset file name for the preset applied to the player for the loaded save.
 			RE::BSFixedString raceMenuPresetName;
+			// The voice type the player has assigned to their character.
+			// Since the companion player's voice type is reset outside co-op upon loading a save,
+			// we must save the voice type and re-apply it.
+			RE::BGSVoiceType* chosenVoiceType;
+			// The actor base to copy appearance data from to the player's character.
+			RE::TESNPC* chosenNPCAppearancePreset;
 			// The race the player has assigned to their character.
 			// Same idea as P1's saved 'chargen' race.
 			RE::TESRace* chosenRace;
@@ -832,6 +854,11 @@ namespace ALYSLC
 		// Have to poll for changes periodically in the absence of events 
 		// that signal changes to these quantities.
 		static void HandleEnderalProgressionChanges();
+		
+		// Import saved appearance for companion players.
+		// Appearance data from saved actor base, saved race, gender, voice type, 
+		// and RaceMenu preset.
+		static void ImportSavedAppearance(RE::Actor* a_coopActor);
 
 		// Remove all perks for this player and then add back all serialized unlocked perks.
 		static void ImportUnlockedPerks(RE::Actor* a_coopActor);
@@ -870,7 +897,7 @@ namespace ALYSLC
 		// (co-op camera toggled off or in hybrid mode)
 		static bool IsP1UsingSingleplayerControlsInCoop();
 
-		// Is a co-op player-controllable menu open?
+		// Is a player-controllable menu open?
 		static bool IsSupportedMenuOpen();
 
 		// Load/save a RaceMenu player character preset for the given player character.
@@ -1188,6 +1215,8 @@ namespace ALYSLC
 		//
 		// Const Members
 		//
+		
+		static constexpr const auto DLL_NAME = "ALYSLC.dll";
 
 		// Max number of composing input actions assignable to a bind.
 		static constexpr uint8_t MAX_ACTIONS_PER_BIND = 4;
@@ -2147,7 +2176,16 @@ namespace ALYSLC
 		std::unique_ptr<PlayerActionInfoHolder> paInfoHolder;
 		// Detached thread running queued async tasks.
 		std::unique_ptr<TaskRunner> taskRunner;
-
+		
+		// Player to receive gifted items from another non-P1 player
+		// via transfer from P1 when the GiftMenu is open.
+		// Set by script and cleared when the GiftMenu closes.
+		RE::ActorHandle gifteePlayerHandle;
+		// Handle for the player attempting to open the gift menu to give items to another player.
+		// Cleared when the Gift Menu closes.
+		RE::ActorHandle gifterPlayerHandle;
+		// Loot buddy. He holds nearby items. He is also a naked old man in a far off dimension.
+		RE::ActorPtr lootBuddy;
 		// P1's actor
 		RE::ActorPtr player1Actor;
 		// Glow effect to play on inactive player characters.
@@ -2217,6 +2255,8 @@ namespace ALYSLC
 		RE::TESObjectMISC* paraglider;
 		// Shaders.
 		std::array<RE::TESEffectShader*, (size_t)ALYSLC_MAX_PLAYER_COUNT> activateHighlightShaders;
+		std::array<RE::TESEffectShader*, (size_t)ALYSLC_MAX_PLAYER_COUNT> crosshairHighlightShaders;
+		std::array<RE::TESEffectShader*, (size_t)ALYSLC_MAX_PLAYER_COUNT> useHighlightShaders;
 		RE::TESEffectShader* activateDefaultShader;
 		RE::TESEffectShader* activateFailureShader;
 		RE::TESEffectShader* activateUseShader;
@@ -2248,6 +2288,8 @@ namespace ALYSLC
 		RE::TESGlobal* werewolfTransformationGlob;
 		// Dormant state idle.
 		RE::TESIdleForm* dormantStateIdle;
+		// Nearby loot menu storage chest.
+		RE::TESObjectREFRPtr lootBuddyChest;
 		// Package run by followers that forces them to follow the player.
 		RE::TESPackage* followerPackage;
 		// Default combat override packages for followers.
@@ -2280,6 +2322,8 @@ namespace ALYSLC
 		// Time point at which co-op companion player Enderal skill AVs 
 		// were last checked for changes.
 		SteadyClock::time_point lastCoopCompanionSkillLevelsCheckTP;
+		// Time point at which a supported menu last opened.
+		SteadyClock::time_point lastSupportedMenuOpeningTP;
 		// Time point at which all supported menus were last closed.
 		SteadyClock::time_point lastSupportedMenusClosedTP;
 		// Time point at which all temporary menus were last closed.
@@ -2307,6 +2351,10 @@ namespace ALYSLC
 		std::unordered_map
 		<RE::TESForm*, std::set<std::pair<RE::ExtraDataList*, int8_t>>> p1FavoritedFormsMap;
 		std::set<RE::InventoryEntryData*> favMenuEntriesSet;
+		// Maps bound objects to a list of the refr FIDs that are within activation range 
+		// of the player trying to open the proximity loot container.
+		std::unordered_map<RE::TESBoundObject*, std::set<RE::FormID>> 
+		proximityLootItemMap;
 		// Serializable data to write to/read from the SKSE co-save for each player, 
 		// indexed by the players' form IDs.
 		std::unordered_map<RE::FormID, std::unique_ptr<SerializablePlayerData>> 
@@ -2433,6 +2481,8 @@ namespace ALYSLC
 		std::atomic_bool supportedMenuOpen;
 		// Menu player ID mutex when setting/resetting menu player IDs.
 		std::mutex menuPIDMutex;
+		// Mutex for accessing the nearby loot menu's map of bound objects to sets of FIDs.
+		std::mutex proximityLootMapMutex;
 		// P1 skill XP modification mutex.
 		std::mutex p1SkillXPMutex;
 		// Player ID of the player who last had data copied over to P1 when controlling menus.

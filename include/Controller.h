@@ -189,15 +189,21 @@ namespace ALYSLC
 		struct AnalogStickState
 		{
 			AnalogStickState() :
+				flicked(false),
+				flickedWithinInterval(false),
+				wasFlicked(false),
 				normMag(0.0f), 
 				prevNormMag(0.0f),
+				maxNormMag(0.0f),
 				stickAngularSpeed(0.0f), 
 				stickLinearSpeed(0.0f),
 				prevXComp(0.0f),
 				prevYComp(0.0f),
 				xComp(0.0f), 
 				yComp(0.0f),
-				maxMag(0)
+				maxMag(0),
+				fullDisplacementTP(SteadyClock::now()),
+				lastPacketNum(0)
 			{ }
 
 			// Analog stick is displaced fully from center.
@@ -227,7 +233,7 @@ namespace ALYSLC
 			// Analog stick is moving away from the center.
 			inline bool MovingAwayFromCenter() const
 			{
-				auto deltaPos = RE::NiPoint2(xComp - prevXComp, yComp - prevYComp);
+				/*auto deltaPos = RE::NiPoint2(xComp - prevXComp, yComp - prevYComp);
 				if (deltaPos.Length() == 0.0f)
 				{
 					return false;
@@ -236,14 +242,15 @@ namespace ALYSLC
 				deltaPos.Unitize();
 				return 
 				(
-					acosf(deltaPos.Dot(RE::NiPoint2(xComp, yComp))) >= 0.0f
-				);	
+					acosf(deltaPos.Dot(RE::NiPoint2(prevXComp, prevYComp))) >= 0.0f
+				);*/	
+				return normMag - 1E-3f > prevNormMag;
 			}
 
 			// Analog stick is moving towards the center.
 			inline bool MovingTowardsCenter() const
 			{
-				auto deltaPos = RE::NiPoint2(xComp - prevXComp, yComp - prevYComp);
+				/*auto deltaPos = RE::NiPoint2(xComp - prevXComp, yComp - prevYComp);
 				if (deltaPos.Length() == 0.0f)
 				{
 					return false;
@@ -252,18 +259,39 @@ namespace ALYSLC
 				deltaPos.Unitize();
 				return 
 				(
-					acosf(deltaPos.Dot(RE::NiPoint2(xComp, yComp))) < 0.0f
-				);	
+					acosf(deltaPos.Dot(RE::NiPoint2(prevXComp, prevYComp))) < 0.0f
+				);*/
+				
+				return normMag + 1E-3f < prevNormMag;
 			}
-
-			// Normalized magnitude of the analog stick's displacement: [0.0, 1.0].
+			
+			// Time point indicating when the analog stick last reached its full displacement
+			// when moving away from center.
+			SteadyClock::time_point fullDisplacementTP;
+			
+			// Flick is defined as displacing the stick any amount and then starting to recenter it.
+			// Was the analog stick flicked this frame?
+			bool flicked;
+			// Did the flick occur within the time interval defined by 
+			// Settings::fSecsDefFlickInterval?
+			bool flickedWithinInterval;
+			// Was the analog stick flicked since it was displaced from center?
+			// If so, remains true until re-centered.
+			bool wasFlicked;
+			// Normalized magnitude of the analog stick's displacement ([0.0, 1.0])
+			// for the current and previous frame.
 			float normMag;
-			// Previous normalized magnitude recorded the last frame.
 			float prevNormMag;
-			// Angular speed of the analog stick (radians per second).
+			// Maximum displacement from center until re-centered.
+			float maxNormMag;
+			// Angular speed of the analog stick (radians per second) 
+			// for the current and previous frame.
 			float stickAngularSpeed;
-			// Linear speed of the analog stick (normalized magnitude change per second).
+			float prevStickAngularSpeed;
+			// Linear speed of the analog stick (normalized magnitude change per second)
+			// for the current and previous frame.
 			float stickLinearSpeed;
+			float prevStickLinearSpeed;
 			// Previous X component of the analog stick's displacement.
 			float prevXComp;
 			// Previous Y component of the analog stick's displacement.
@@ -274,6 +302,8 @@ namespace ALYSLC
 			float yComp;
 			// Maximum pre-normalized full displacement from center.
 			SHORT maxMag;
+
+			DWORD lastPacketNum;
 		};
 
 		struct InputState
@@ -342,6 +372,26 @@ namespace ALYSLC
 		) const
 		{
 			return inputStatesList[a_controllerID][!a_index];
+		}
+
+		// Returns a time point for the time at which the given input on the given controller
+		// was last pressed.
+		inline const SteadyClock::time_point& GetPressTP
+		(
+			const int32_t& a_controllerID, const InputAction& a_index
+		)
+		{
+			return lastPressTPsList[a_controllerID][!a_index];
+		}
+
+		// Returns a time point for the time at which the given input on the given controller
+		// was last released.
+		inline const SteadyClock::time_point& GetReleaseTP
+		(
+			const int32_t& a_controllerID, const InputAction& a_index
+		)
+		{
+			return lastReleaseTPsList[a_controllerID][!a_index];
 		}
 
 		// Returns the number of seconds that the input has been held/moved 
@@ -611,7 +661,7 @@ namespace ALYSLC
 		// Time points indicating when each button was last pressed 
 		// or analog stick moved for each player.
 		std::array<std::vector<SteadyClock::time_point>, Settings::fMaxNumControllers> 
-		firstPressTPsList;
+		lastPressTPsList;
 		// Input (button/analog stick) states for each player.
 		std::array<std::vector<InputState>, Settings::fMaxNumControllers> inputStatesList;
 		// Time points indicating when each button was last released 

@@ -1885,6 +1885,40 @@ namespace ALYSLC
 
 			a_charController->fallTime = 0.0f;
 		}
+		
+		// Check if the refr is lootable.
+		inline bool CanAddToInventory(RE::TESObjectREFR* a_refr)
+		{
+
+			// Refr, its 3D, its handle, or base object are invalid,
+			// or it is deleted or disabled.
+			if (!a_refr || 
+				!a_refr->loadedData || 
+				a_refr->IsDisabled() || 
+				a_refr->IsDeleted() ||
+				!a_refr->IsHandleValid() ||
+				!a_refr->GetObjectReference())
+			{
+				return false;
+			}
+
+			auto baseObj = a_refr->GetObjectReference();
+			// Projectile without active collision, 
+			// or inventory object that is not a light or a carryable light (torch).
+			// IMPORTANT:
+			// To avoid crashes, projectile refrs must be looted as their underlying ammo type.
+			return 
+			(
+				(a_refr->As<RE::Projectile>() && a_refr->As<RE::Projectile>()->ShouldBeLimited()) ||
+				(
+					(baseObj && baseObj->IsInventoryObject()) &&
+					(
+						!baseObj->As<RE::TESObjectLIGH>() ||
+						baseObj->As<RE::TESObjectLIGH>()->CanBeCarried()
+					)
+				)
+			);
+		}
 
 		// Malloc, construct and return a new extra data list.
 		inline RE::ExtraDataList* CreateExtraDataList()
@@ -3216,6 +3250,186 @@ namespace ALYSLC
 			);
 		}
 
+		inline bool IsClutter(RE::TESObjectREFR* a_refr)
+		{
+			if (!a_refr)
+			{
+				return false;
+			}
+
+			auto baseObj = a_refr->GetBaseObject();
+			if (!baseObj)
+			{
+				return false;
+			}
+
+			/*
+			DBG
+			(
+				"{} (0x{:X}) has value of {}, form type 0x{:X} (0x{:X}). "
+				"Is clutter: {} ({}, {}, {}, {}, {}).",
+				a_refr->GetName(),
+				baseObj->formID, 
+				baseObj->GetGoldValue(),
+				*baseObj->formType,
+				*a_refr->formType,
+				(
+					!a_refr->extraList.HasQuestObjectAlias() && 
+					!baseObj->IsGold() && 
+					!baseObj->IsLockpick() &&
+					!baseObj->IsSkooma()
+				) &&
+				(
+					baseObj->IsNot
+					(
+						RE::FormType::Activator,
+						RE::FormType::ActorCharacter,
+						RE::FormType::AlchemyItem,
+						RE::FormType::Ammo,
+						RE::FormType::Armor,
+						RE::FormType::Container,
+						RE::FormType::Door,
+						RE::FormType::Flora,
+						RE::FormType::Furniture,
+						RE::FormType::Ingredient,
+						RE::FormType::KeyMaster,
+						RE::FormType::LeveledItem,
+						RE::FormType::LeveledNPC,
+						RE::FormType::Light,
+						RE::FormType::Flora,
+						RE::FormType::Note,
+						RE::FormType::NPC,
+						RE::FormType::Projectile,
+						RE::FormType::ProjectileArrow,
+						RE::FormType::ProjectileMissile,
+						RE::FormType::Scroll,
+						RE::FormType::SoulGem,
+						RE::FormType::TalkingActivator,
+						RE::FormType::Tree,
+						RE::FormType::Weapon
+					)
+				) &&
+				(
+					(!baseObj->IsBook()) || 
+					(
+						!baseObj->As<RE::TESObjectBOOK>()->TeachesSkill() &&
+						!baseObj->As<RE::TESObjectBOOK>()->TeachesSpell()
+					)
+				) &&
+				(
+					(!baseObj->Is(RE::FormType::Flora, RE::FormType::Tree)) || 
+					(
+						(a_refr->formFlags & RE::TESObjectREFR::RecordFlags::kHarvested) != 0
+					)
+				) &&
+				(baseObj->GetGoldValue() < 100),
+				(
+					!a_refr->extraList.HasQuestObjectAlias() && 
+					!baseObj->IsGold() && 
+					!baseObj->IsLockpick() &&
+					!baseObj->IsSkooma()
+				), 
+				(
+					baseObj->IsNot
+					(
+						RE::FormType::Activator,
+						RE::FormType::ActorCharacter,
+						RE::FormType::AlchemyItem,
+						RE::FormType::Ammo,
+						RE::FormType::Armor,
+						RE::FormType::Container,
+						RE::FormType::Door,
+						RE::FormType::Flora,
+						RE::FormType::Furniture,
+						RE::FormType::Ingredient,
+						RE::FormType::KeyMaster,
+						RE::FormType::LeveledItem,
+						RE::FormType::LeveledNPC,
+						RE::FormType::Light,
+						RE::FormType::Flora,
+						RE::FormType::Note,
+						RE::FormType::NPC,
+						RE::FormType::Projectile,
+						RE::FormType::ProjectileArrow,
+						RE::FormType::ProjectileMissile,
+						RE::FormType::Scroll,
+						RE::FormType::SoulGem,
+						RE::FormType::TalkingActivator,
+						RE::FormType::Tree,
+						RE::FormType::Weapon
+					)
+				),
+				(
+					(!baseObj->IsBook()) || 
+					(
+						!baseObj->As<RE::TESObjectBOOK>()->TeachesSkill() &&
+						!baseObj->As<RE::TESObjectBOOK>()->TeachesSpell()
+					)
+				),
+				(
+					(!baseObj->Is(RE::FormType::Flora, RE::FormType::Tree)) || 
+					(
+						(a_refr->formFlags & RE::TESObjectREFR::RecordFlags::kHarvested) != 0
+					)
+				),
+				(baseObj->GetGoldValue() < 100)
+			);
+			*/
+			return
+			(
+				(
+					!a_refr->extraList.HasQuestObjectAlias() && 
+					!baseObj->IsGold() && 
+					!baseObj->IsLockpick() &&
+					!baseObj->IsSkooma()
+				) &&
+				(
+					baseObj->IsNot
+					(
+						RE::FormType::Activator,
+						RE::FormType::ActorCharacter,
+						RE::FormType::AlchemyItem,
+						RE::FormType::Ammo,
+						RE::FormType::Armor,
+						RE::FormType::Container,
+						RE::FormType::Door,
+						RE::FormType::Flora,
+						RE::FormType::Furniture,
+						RE::FormType::Ingredient,
+						RE::FormType::KeyMaster,
+						RE::FormType::LeveledItem,
+						RE::FormType::LeveledNPC,
+						RE::FormType::Light,
+						RE::FormType::Flora,
+						RE::FormType::Note,
+						RE::FormType::NPC,
+						RE::FormType::Projectile,
+						RE::FormType::ProjectileArrow,
+						RE::FormType::ProjectileMissile,
+						RE::FormType::Scroll,
+						RE::FormType::SoulGem,
+						RE::FormType::TalkingActivator,
+						RE::FormType::Tree,
+						RE::FormType::Weapon
+					)
+				) &&
+				(
+					(!baseObj->IsBook()) || 
+					(
+						!baseObj->As<RE::TESObjectBOOK>()->TeachesSkill() &&
+						!baseObj->As<RE::TESObjectBOOK>()->TeachesSpell()
+					)
+				) &&
+				(
+					(!baseObj->Is(RE::FormType::Flora, RE::FormType::Tree)) || 
+					(
+						(a_refr->formFlags & RE::TESObjectREFR::RecordFlags::kHarvested) != 0
+					)
+				) &&
+				(baseObj->GetGoldValue() < 100)
+			);
+		}
+
 		// If the given actor in dialogue with the player?
 		inline bool IsDialogueTarget(RE::Actor* a_actor)
 		{
@@ -3332,7 +3546,7 @@ namespace ALYSLC
 				)
 			);
 		}
-
+		
 		inline bool IsKeyPressed(RE::BSKeyboardDevice::Keys::Key a_keyCode)
 		{
 			// Return true if the given key is pressed.
@@ -3537,6 +3751,35 @@ namespace ALYSLC
 			return false;
 		}
 
+		// Is the given form a shield?
+		inline bool IsShield(RE::TESForm* a_form)
+		{
+			if (!a_form)
+			{
+				return false;
+			}
+
+			return
+			( 
+				a_form->As<RE::TESObjectARMO>() && a_form->As<RE::TESObjectARMO>()->IsShield()
+			);
+		}
+
+		// Is the given form a torch?
+		inline bool IsTorch(RE::TESForm* a_form)
+		{
+			if (!a_form)
+			{
+				return false;
+			}
+
+			return
+			( 
+				a_form->As<RE::TESObjectLIGH>() && 
+				a_form->As<RE::TESObjectLIGH>()->data.flags.all(RE::TES_LIGHT_FLAGS::kCanCarry)
+			);
+		}
+
 		// Is the refr valid for targeting with the crosshair,
 		// as an aim correction target, or for activation?
 		// Baseline check for availability and handle + 3D validity. 
@@ -3592,17 +3835,22 @@ namespace ALYSLC
 			}
 		}
 		
+		// ALERT: DO NOT USE.
+		// Keeping for now if the issue with the function is found 
+		// and loading a 'blank slate' preset is required to fix RaceMenu issuess.
+		// Causes companion players to become invisible and freeze the game 
+		// after the player's 3D worldbound becomes corrupted.
+		// Likely due to an improperly generated default preset.
 		// Load a RaceMenu preset with default morphs and no headparts or tints.
-		inline void LoadDefaultBasePreset()
+		inline void LoadDefaultBasePreset(RE::Actor* a_actor)
 		{
-			return;
 			auto p1 = RE::PlayerCharacter::GetSingleton();
-			auto p1ActorBase = p1 ? p1->GetActorBase() : nullptr;
-			if (!p1 || !p1ActorBase)
+			if (!p1 || !a_actor)
 			{
 				return;
 			}
-
+			
+			DBG("{}", a_actor->GetName());
 			if (auto msgIntfc = SKSE::GetMessagingInterface(); msgIntfc)
 			{
 				InterfaceExchangeMessage msg{ };
@@ -3613,6 +3861,18 @@ namespace ALYSLC
 				);
 				if (msg.interfaceMap)
 				{
+					auto overrideInterface = static_cast<IOverrideInterface*>
+					(
+						msg.interfaceMap->QueryInterface("Override")
+					);
+					if (overrideInterface)
+					{
+						DBG("Remove all overrides.");
+						overrideInterface->RemoveAllArmorOverridesByReference(a_actor);
+						overrideInterface->RemoveAllNodeOverridesByReference(a_actor);
+						overrideInterface->RemoveAllSkinOverridesByReference(a_actor);
+					}
+
 					auto overlayInterface = static_cast<IOverlayInterface*>
 					(
 						msg.interfaceMap->QueryInterface("Overlay")
@@ -3620,12 +3880,22 @@ namespace ALYSLC
 					if (overlayInterface)
 					{
 						DBG("Erase overlays.");
-						overlayInterface->EraseOverlays(p1);
+						overlayInterface->EraseOverlays(a_actor);
+					}
+
+					auto niTransformInterface = static_cast<INiTransformInterface*>
+					(
+						msg.interfaceMap->QueryInterface("NiTransform")
+					);
+					if (niTransformInterface)
+					{
+						DBG("Remove all NiTransforms.");
+						niTransformInterface->RemoveAllReferenceTransforms(a_actor);
 					}
 				}
 			}
 
-			if (p1->overlayTintMasks)
+			if (a_actor == p1 && p1->overlayTintMasks)
 			{
 				RE::free(p1->overlayTintMasks);
 				p1->overlayTintMasks = nullptr;
@@ -3644,11 +3914,11 @@ namespace ALYSLC
 			}
 			DBG
 			(
-				"Load default preset ALYSLC_Default onto {}.", 
-				p1->GetName()
+				"Load default preset ALYSLC_Default_Preset onto {}.", 
+				a_actor->GetName()
 			);
-			script->SetCommand("skee preset-load ALYSLC_Default");
-			script->CompileAndRun(p1);
+			script->SetCommand("skee preset-load ALYSLC_Default_Preset");
+			script->CompileAndRun(a_actor);
 		}
 
 		// Return true if a menu is open that stops or should stop the player from moving.
@@ -4094,7 +4364,7 @@ namespace ALYSLC
 		)
 		{
 			DBG("SetActorRaceAndGender");
-			if (!a_actor || !a_race || !a_actor->race)
+			if (!a_actor)
 			{
 				return;
 			}
@@ -4115,37 +4385,43 @@ namespace ALYSLC
 				RE::ACTOR_BASE_DATA::Flag::kOppositeGenderAnims, 
 				a_setOppositeGenderAnims
 			);
-			const auto scriptFactory = 
-			(
-				RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
-			);
-			const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
-			if (script)
+
+			if (a_race)
 			{
-				// Update race.
-				if (a_actor->race != a_race)
+				const auto scriptFactory = 
+				(
+					RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+				);
+				const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
+				if (script)
 				{
-					a_actor->race = a_race;
-					actorBase->originalRace = a_race;
-					actorBase->race = a_race;
-					if (a_actor->IsPlayerRef())
+					// Update race.
+					if (a_actor->race != a_race)
 					{
-						auto p1 = RE::PlayerCharacter::GetSingleton();
-						if (p1)
+						a_actor->race = a_race;
+						actorBase->originalRace = a_race;
+						actorBase->race = a_race;
+						if (a_actor->IsPlayerRef())
 						{
-							p1->charGenRace = p1->race2 = p1->race = a_race;
+							auto p1 = RE::PlayerCharacter::GetSingleton();
+							if (p1)
+							{
+								p1->charGenRace = p1->race2 = p1->race = a_race;
+							}
 						}
+
+						script->SetCommand(fmt::format("setrace {}", a_race->formEditorID));
 					}
+
+					// Switch gender and back again to ensure gendered actor animations 
+					// match the new gender flags, if changed.
+					script->SetCommand("sexchange"sv);
+					script->CompileAndRun(a_actor);
+					script->SetCommand("sexchange"sv);
+					script->CompileAndRun(a_actor);
+
+					delete script;
 				}
-
-				// Switch gender and back again to ensure gendered actor animations 
-				// match the new gender flags, if changed.
-				script->SetCommand("sexchange"sv);
-				script->CompileAndRun(a_actor);
-				script->SetCommand("sexchange"sv);
-				script->CompileAndRun(a_actor);
-
-				delete script;
 			}
 		}
 
@@ -4406,78 +4682,6 @@ namespace ALYSLC
 			main->freezeTime = a_shouldFreeze;
 		}
 		
-		// Toggle ghost actorbase flag and state on the given actor to true/false.
-		inline void ToggleGhostTask(RE::Actor* a_actor, bool a_set)
-		{
-			if (!a_actor)
-			{
-				return;
-			}
-
-			auto taskInterface = SKSE::GetTaskInterface();
-			if (!taskInterface)
-			{
-				return;
-			}
-
-			taskInterface->AddTask
-			(
-				[a_actor, a_set]()
-				{
-					auto actorBase = a_actor->GetActorBase();
-					if (!actorBase)
-					{
-						return;
-					}
-
-					DBG("{}: Set ghost to {}.", a_actor->GetName(), a_set);
-					const auto scriptFactory = 
-					(
-						RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
-					);
-					const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
-					if (script)
-					{
-						if (a_set)
-						{
-							Util::NativeFunctions::SetActorBaseFlag
-							(
-								actorBase, RE::ACTOR_BASE_DATA::Flag::kInvulnerable, true, false
-							);
-							Util::NativeFunctions::SetActorBaseFlag
-							(
-								actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, true, false
-							);
-							Util::NativeFunctions::SetActorBaseFlag
-							(
-								actorBase, RE::ACTOR_BASE_DATA::Flag::kDoesntBleed, true, false
-							);
-						}
-						else
-						{
-							Util::NativeFunctions::SetActorBaseFlag
-							(
-								actorBase, RE::ACTOR_BASE_DATA::Flag::kInvulnerable, false, false
-							);
-							Util::NativeFunctions::SetActorBaseFlag
-							(
-								actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, false, false
-							);
-							Util::NativeFunctions::SetActorBaseFlag
-							(
-								actorBase, RE::ACTOR_BASE_DATA::Flag::kDoesntBleed, false, false
-							);
-						}
-
-						script->SetCommand(fmt::format("SetGhost {}", a_set ? 1 : 0).c_str());
-						script->CompileAndRun(a_actor);
-						// Cleanup.
-						delete script;
-					}
-				}
-			);
-		}
-
 		// Set all the characters in the given string to lowercase.
 		inline void ToLowercase(std::string& a_stringOut) 
 		{
@@ -4513,6 +4717,9 @@ namespace ALYSLC
 			bool a_defaultProcessingOnly,
 			bool a_useSecondaryActivation
 		);
+
+		// Return true if activating the given refr with the given actor can trigger a bounty.
+		bool ActivationCanTriggerBounty(RE::Actor* a_actor, RE::TESObjectREFR* a_refr);
 
 		// Return true if the given actor activating the given object refr would be considered 
 		// stealing or trigger an alarm.
@@ -4623,9 +4830,28 @@ namespace ALYSLC
 		(
 			RE::Actor* a_actor, RE::BGSPerk* a_perk, bool&& a_add, int32_t a_rank = -1
 		);
+
+		// Copy the given actor base's headparts, skin tone, and more to given actor.
+		// Set gender and opposite gender animations, if needed.
+		void CopyBaseAppearanceToActor
+		(
+			RE::Actor* a_toActor, RE::TESNPC* a_baseToCopy, bool a_setOppositeGenderAnims
+		);
+
+		// From the actor's current actor base, import default racial headparts, 
+		// update gender, animations, skin tone, and refresh the player actor's 3D model when done.
+		void CopyDefaultRacialAppearanceToActor
+		(
+			RE::Actor* a_toActor, bool a_setFemale, bool a_setOppositeGenderAnims
+		);
 		
 		// Allocate, construct, and return a deep copy of the given extra data list.
-		RE::ExtraDataList* CopyExtraDataList(RE::ExtraDataList* a_toCopy);
+		// Can choose to copy all supported data types or just intrinsic types 
+		// (use when copying a refr's exData list).
+		RE::ExtraDataList* CopyExtraDataList
+		(
+			RE::ExtraDataList* a_toCopy, bool a_onlyIntrinsicTypes
+		);
 
 		// Creates a LS/RS thumbstick event using the provided user event name
 		// and stick X, Y displacement values. 
@@ -4931,6 +5157,9 @@ namespace ALYSLC
 			bool a_showDebugInfo = false
 		);
 		
+		// Does the given actor have the required perk to dual cast the given spell?
+		bool HasPerkToDualCast(RE::Actor* a_actor, RE::SpellItem* a_spell);
+
 		// WIP:
 		// Check for raycast LOS from the observer refr to the target refr and all its child nodes.
 		// Can cast from the given start point and to the crosshair world position as well.
@@ -5214,7 +5443,7 @@ namespace ALYSLC
 		// and do not provide a requesting PID.
 		void SendCrosshairEvent
 		(
-			RE::TESObjectREFR* a_crosshairRefrToSet, const int32_t& a_requestingPID = -1
+			RE::TESObjectREFR* a_crosshairRefrToSet, const int32_t& a_requestingPID
 		);
 
 		// Apply and send hit data which triggers a hit event.

@@ -140,6 +140,13 @@ namespace ALYSLC
 		// Setting to None/nullptr clears the giftee player.
 		void SetGifteePlayerActor(RE::StaticFunctionTag*, RE::Actor* a_playerActor);
 
+		// When opening the Gift Menu, set the given player actors as gifter and recipient.
+		// Setting to None/nullptr clears the gifter/giftee player.
+		void SetGiftMenuPlayerActors
+		(
+			RE::StaticFunctionTag*, RE::Actor* a_gifterActor, RE::Actor* a_gifteeActor
+		);
+
 		// Set the 'is summoning' flag, which indicates whether players 
 		// are summoning their characters for co-op.
 		void SetIsSummoningFlag(RE::StaticFunctionTag*, bool a_set);
@@ -191,6 +198,26 @@ namespace ALYSLC
 		{
 			// Copy base NPC's appearance to the player. 
 			// Set opposite gender animations if necessary.
+			void CopyBaseAppearanceToPlayer
+			(
+				RE::StaticFunctionTag*, 
+				int32_t a_playerID,
+				RE::TESNPC* a_baseToCopy, 
+				bool a_setOppositeGenderAnims
+			);
+
+			// Import default racial headparts, update gender, animations, skin tone,
+			// and refresh the player actor's 3D model when done.
+			void CopyDefaultRacialAppearanceToPlayer
+			(
+				RE::StaticFunctionTag*,
+				int32_t a_playerID,
+				bool a_setFemale,
+				bool a_setOppositeGenderAnims
+			);
+
+			// Copy base NPC's appearance to the player. 
+			// Set opposite gender animations if necessary.
 			void CopyNPCAppearanceToPlayer
 			(
 				RE::StaticFunctionTag*, 
@@ -230,11 +257,36 @@ namespace ALYSLC
 			// Save P1's name, race, and appearance as the given player's preset.
 			void SavePlayerCharacterPreset(RE::StaticFunctionTag*, RE::Actor* a_toPresetCharacter);
 			
+			// Save the given gender and opposite gender animations flag
+			// to the given player actor's serialized data.
+			void SavePlayerCharacterGenderChoice
+			(
+				RE::StaticFunctionTag*,
+				RE::Actor* a_playerActor,
+				bool a_isFemale,
+				bool a_usesOppositeGenderAnims
+			);
+
+			// Save the given actor base (or P1's default actor base for P1)
+			// as the given player's chosen 'appearance' (to import appearance features from) 
+			// actor base in their serialized data.
+			void SavePlayerCharacterNPCAppearancePreset
+			(
+				RE::StaticFunctionTag*, RE::Actor* a_playerActor, RE::TESNPC* a_npcPreset
+			);
+
 			// Save the given race (or P1's chargen race for P1)
 			// as the given player's chosen race in their serialized data.
 			void SavePlayerCharacterRace
 			(
 				RE::StaticFunctionTag*, RE::Actor* a_playerActor, RE::TESRace* a_race
+			);
+
+			// Save the given voice type as the given player's voice type in their serialized data.
+			// Voice type must be set upon loading a save as it isn't serialized.
+			void SavePlayerCharacterVoiceType
+			(
+				RE::StaticFunctionTag*, RE::Actor* a_playerActor, RE::BGSVoiceType* a_voiceType
 			);
 
 			// Import default racial headparts, update gender, animations, skin tone,

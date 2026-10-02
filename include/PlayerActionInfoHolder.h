@@ -525,8 +525,8 @@ namespace ALYSLC
 				},
 				// GrabObject
 				{ 
-					InputAction::kRShoulder, 
-					InputAction::kA 
+					InputAction::kA, 
+					InputAction::kRT 
 				},
 				// GrabRotateYZ
 				{ 
@@ -567,18 +567,15 @@ namespace ALYSLC
 				},
 				// PowerAttackDual
 				{ 
-					InputAction::kRShoulder, 
 					InputAction::kAttackRH, 
 					InputAction::kAttackLH 
 				},
 				// PowerAttackLH
 				{ 
-					InputAction::kRShoulder,
 					InputAction::kAttackLH
 				},
 				// PowerAttackRH
-				{ 
-					InputAction::kRShoulder,
+				{
 					InputAction::kAttackRH
 				},
 				// QuickSlotCast
@@ -811,11 +808,11 @@ namespace ALYSLC
 			// Pause
 			PerfType::kOnRelease,
 			// PowerAttackDual
-			PerfType::kOnRelease,
+			PerfType::kOnHold,
 			// PowerAttackLH
-			PerfType::kOnRelease,
+			PerfType::kOnHold,
 			// PowerAttackRH
-			PerfType::kOnRelease,
+			PerfType::kOnHold,
 			// QuickSlotCast
 			PerfType::kOnHold,
 			// QuickSlotItem
@@ -1109,17 +1106,22 @@ namespace ALYSLC
 			// PowerAttackDual
 			TriggerFlags
 			(
+				TriggerFlag::kBlockOnConditionFailure,
 				TriggerFlag::kDoNotUseCompActionsOrdering
 			),
 			// PowerAttackLH
 			TriggerFlags
 			(
-				TriggerFlag::kDefault
+				TriggerFlag::kMinHoldTime,
+				TriggerFlag::kIgnoreConflictingActions,
+				TriggerFlag::kBlockOnConditionFailure
 			),
 			// PowerAttackRH
 			TriggerFlags
 			(
-				TriggerFlag::kDefault
+				TriggerFlag::kMinHoldTime,
+				TriggerFlag::kIgnoreConflictingActions,
+				TriggerFlag::kBlockOnConditionFailure
 			),
 			// QuickSlotCast
 			TriggerFlags
@@ -1134,7 +1136,8 @@ namespace ALYSLC
 			// ResetAim
 			TriggerFlags
 			(
-				TriggerFlag::kMinHoldTime
+				TriggerFlag::kMinHoldTime,
+				TriggerFlag::kIgnoreConflictingActions
 			),
 			// ResetCamOrientation
 			TriggerFlags

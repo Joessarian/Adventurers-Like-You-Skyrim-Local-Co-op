@@ -26,7 +26,7 @@ Function RescaleAVsOnBaseSkillAVChange(Actor a_playerActor) Global Native
 Function SetCoopPlayerClass(Actor a_playerActor, Class a_class, Bool a_rescaleActorValues) Global Native
 Function SetCoopPlayerRace(Actor a_playerActor, Race a_race, Bool a_rescaleActorValues) Global Native
 Function SetFavoritedEmoteIdles(Int a_playerID, String[] a_emoteIdlesList) Global Native
-Function SetGifteePlayerActor(Actor a_playerActor) Global Native
+Function SetGiftMenuPlayerActors(Actor a_gifterActor, Actor a_gifteeActor) Global Native
 Function SetIsSummoningFlag(Bool a_set) Global Native
 Function SetPartyInvincibility(Bool a_shouldSet) Global Native
 Function StartCoopSession() Global Native
@@ -43,15 +43,18 @@ Function LogError(String a_message) Global Native
 ;================================================================
 ;==================[Character Customization]=====================
 ;================================================================
-Function CopyNPCAppearanceToPlayer(Int a_playerID, ActorBase a_baseToCopy, Bool a_setUseOppositeGenderAnims) Global Native
+Function CopyBaseAppearanceToPlayer(Int a_playerID, ActorBase a_baseToCopy, Bool a_setUseOppositeGenderAnims) Global Native
 Function ExportP1ActorBaseAppearanceData(Actor a_actor) Global Native
 Bool Function IsRaceMenuInstalled() Global Native
 Function LoadPlayerCharacterPreset(Actor a_fromPresetCharacter) Global Native
 Function LoadPlayerCharacterPresetWithName(Actor a_toCharacter, String a_presetName) Global Native
 Function OnPreRaceMenu(Race a_newRace, Bool a_setFemale) Global Native
+Function SavePlayerCharacterNPCAppearancePreset(Actor a_playerActor, ActorBase a_actorBase) Global Native
+Function SavePlayerCharacterGenderChoice(Actor a_playerActor, Bool a_isFemale, Bool a_usesOppositeGenderAnims) Global Native
 Function SavePlayerCharacterPreset(Actor a_toPresetCharacter) Global Native
 Function SavePlayerCharacterRace(Actor a_playerActor, Race a_race) Global Native
-Function SetDefaultRacialAppearance(Int a_playerID, Bool a_setFemale, Bool a_setUseOppositeGenderAnims) Global Native
+Function SavePlayerCharacterVoiceType(Actor a_playerActor, VoiceType a_voiceType) Global Native
+Function CopyDefaultRacialAppearanceToPlayer(Int a_playerID, Bool a_setFemale, Bool a_setUseOppositeGenderAnims) Global Native
 
 ;==============================================
 ;==================[Debug]=====================
@@ -187,6 +190,7 @@ Function SetInitialCustomizationOptions(Actor akPlayerActor) Global
     If (!CurrentVoiceType)
         ALYSLC.Log("[ALYSLC SCRIPT] SetInitialCustomizationOptions: Setting default voice type to " + Base.GetVoiceType())
         StorageUtil.SetFormValue(akPlayerActor, "ALYSLC_VoiceType", Base.GetVoiceType())
+        ALYSLC.SavePlayerCharacterVoiceType(akPlayerActor, Base.GetVoiceType())
     EndIf
 
     Float CurrentHeightMult = StorageUtil.GetFloatValue(akPlayerActor, "ALYSLC_HeightMultiplier", -1.0)

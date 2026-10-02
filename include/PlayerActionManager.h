@@ -326,6 +326,22 @@ namespace ALYSLC
 			);
 		}
 
+		// Get generic equipped-weight-based stamina cost. Used for silent roll and slide tackle.
+		inline const float GetEquippedWeightStaminaCost()
+		{
+			// Takes encumbrance into account.
+			// Wearing heavy armor will consume more stamina.
+			// The player will be able to perform an action with this stamina cost at most once
+			// with full stamina and worn weight equal to carryweight
+			// and at most 10 times with full stamina and no worn weight.
+			float carryWeightRatio = 
+			(
+				coopActor->GetEquippedWeight() / 
+				coopActor->GetActorValue(RE::ActorValue::kCarryWeight)
+			);
+			return baseStamina * (min(0.9f, sqrtf(carryWeightRatio)) + 0.1f);
+		}
+
 		// Seconds since all inputs for the given action were pressed or some inputs were released.
 		inline const float GetSecondsSinceLastInputStateChange
 		(
@@ -758,6 +774,7 @@ namespace ALYSLC
 			const bool& a_justStarted,
 			bool&& a_startCast, 
 			bool&& a_waitForCastingAnim, 
+			bool&& a_shouldDualCast,
 			const bool& a_shouldCastWithP1
 		);
 
@@ -1223,8 +1240,6 @@ namespace ALYSLC
 		bool boundWeapReqRH;
 		// Player can shout (cooldown expired).
 		bool canShout;
-		// Has the player requested to paraglide while activating?
-		bool requestedToParaglide;
 		// Are all queued P1 input events that toggle animation driven to false being sent?
 		bool sendingP1MotionDrivenEvents;
 		// Was hand spellcasting cancelled via the sheathing weapons/magic?

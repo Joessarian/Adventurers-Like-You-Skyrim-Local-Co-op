@@ -168,8 +168,12 @@ namespace ALYSLC
 						type != !SerializableDataType::kPlayerTakenSharedPerks &&
 						type != !SerializableDataType::kPlayerUnlockedPerksList &&
 						type != !SerializableDataType::kPlayerUsedPerkPoints &&
+						type != !SerializableDataType::kPlayerCharacterIsFemale &&
+						type != !SerializableDataType::kPlayerOppositeGenderAnims &&
 						type != !SerializableDataType::kPlayerRaceMenuPresetName &&
-						type != !SerializableDataType::kPlayerCharacterChosenRace)
+						type != !SerializableDataType::kPlayerNPCAppearancePreset &&
+						type != !SerializableDataType::kPlayerCharacterChosenRace &&
+						type != !SerializableDataType::kPlayerCharacterVoiceType)
 					{
 						DBG
 						(
@@ -645,6 +649,26 @@ namespace ALYSLC
 							// Set total.
 							data->prevTotalUnlockedPerks = numUnlockedPerks;
 						}
+						else if (type == !SerializableDataType::kPlayerCharacterIsFemale)
+						{
+							// Read in 'is female' flag.
+							RetrieveBoolData(a_intfc, data->isFemale, type);
+							DBG
+							(
+								"Player with FID 0x{:X} has female as their gender: {}.",
+								fid, data->isFemale
+							);
+						}
+						else if (type == !SerializableDataType::kPlayerOppositeGenderAnims)
+						{
+							// Read in opposite gender animations flag.
+							RetrieveBoolData(a_intfc, data->usesOppositeGenderAnims, type);
+							DBG
+							(
+								"Player with FID 0x{:X} has chosen opposite gender anims: {}.",
+								fid, data->usesOppositeGenderAnims
+							);
+						}
 						else if (type == !SerializableDataType::kPlayerRaceMenuPresetName)
 						{
 							// One '.jslot' preset file name.
@@ -673,6 +697,33 @@ namespace ALYSLC
 								);
 							}
 						}
+						else if (type == !SerializableDataType::kPlayerNPCAppearancePreset)
+						{
+							RE::TESForm* actorBaseForm = nullptr;
+							RE::FormID actorBaseFID = 0;
+							RetrieveUInt32Data(a_intfc, actorBaseFID, type);
+							actorBaseForm = GetFormFromRetrievedFID
+							(
+								a_intfc, actorBaseFID, dataHandler
+							);
+							data->chosenNPCAppearancePreset = 
+							(
+								actorBaseForm ? actorBaseForm->As<RE::TESNPC>() : nullptr
+							);
+							DBG
+							(
+								"Player with FID 0x{:X}'s "
+								"chosen NPC appearance preset is {} (0x{:X}, editor ID {}). ",
+								fid, 
+								data->chosenNPCAppearancePreset ? 
+								data->chosenNPCAppearancePreset->GetName() :
+								"NONE",
+								data->chosenNPCAppearancePreset ?
+								data->chosenNPCAppearancePreset->formID :
+								0xDEAD,
+								Util::GetEditorID(data->chosenNPCAppearancePreset)
+							);
+						}
 						else if (type == !SerializableDataType::kPlayerCharacterChosenRace)
 						{
 							RE::TESForm* raceForm = nullptr;
@@ -693,6 +744,29 @@ namespace ALYSLC
 								Util::GetEditorID(data->chosenRace)
 							);
 						}
+						else if (type == !SerializableDataType::kPlayerCharacterVoiceType)
+						{
+							RE::TESForm* voiceTypeForm = nullptr;
+							RE::FormID voiceTypeFID = 0;
+							RetrieveUInt32Data(a_intfc, voiceTypeFID, type);
+							voiceTypeForm = GetFormFromRetrievedFID
+							(
+								a_intfc, voiceTypeFID, dataHandler
+							);
+							data->chosenVoiceType = 
+							(
+								voiceTypeForm ? voiceTypeForm->As<RE::BGSVoiceType>() : nullptr
+							);
+							DBG
+							(
+								"Player with FID 0x{:X}'s "
+								"chosen voice type is {} (0x{:X}, editor ID {}). ",
+								fid, 
+								data->chosenVoiceType ? data->chosenVoiceType->GetName() : "NONE",
+								data->chosenVoiceType ? data->chosenVoiceType->formID : 0xDEAD,
+								Util::GetEditorID(data->chosenVoiceType)
+							);
+						}
 					}
 				}
 
@@ -711,6 +785,23 @@ namespace ALYSLC
 						ALYSLC_COMPANION_CHARACTERS_COUNT + 1
 					);
 				}
+			}
+		}
+
+		void RetrieveBoolData
+		(
+			SKSE::SerializationInterface* a_intfc, bool& a_data, const uint32_t& a_recordType
+		)
+		{
+			// Attempt to read a bool value.
+
+			if (!a_intfc->ReadRecordData(a_data))
+			{
+				ERR
+				(
+					"Could not read BOOL record data ({}), record type: {}.",
+					a_data, TypeToString(a_recordType)
+				);
 			}
 		}
 
@@ -814,17 +905,21 @@ namespace ALYSLC
 		void Revert(SKSE::SerializationInterface* a_intfc)
 		{
 			// Ensure no co-op session is active as the game reverts.
-
+			
 			if (glob.globalDataInit && glob.allPlayersInit) 
 			{
-				DBG("Stopping active co-op session.");
-				GlobalCoopData::StopCoopSession(false, true);
+				DBG("Stopping active co-op session. Is active: {}", glob.coopSessionActive);
+				//if (glob.coopSessionActive)
+				{
+					GlobalCoopData::StopCoopSession(false, true);
+				}
 			}
 		}
 
 		void Save(SKSE::SerializationInterface* a_intfc)
 		{
 			// Save all our co-op serializable data to the SKSE co-save.
+
 			DBG("Writing all serializable data to SKSE co-save.");
 			if (!a_intfc)
 			{
@@ -2047,6 +2142,77 @@ namespace ALYSLC
 					);
 				}
 
+				// IS FEMALE
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerCharacterIsFemale, 
+					!SerializableDataType::kSerializationVersion
+				))
+				{
+					for (auto& [fid, data] : glob.serializablePlayerData)
+					{
+						DBG
+						(
+							"Serialize 'is female' flag as {} for player with FID 0x{:X}.", 
+							fid, data->isFemale
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerCharacterIsFemale
+						);
+						SerializePlayerBoolData
+						(
+							a_intfc,
+							data->isFemale, 
+							!SerializableDataType::kPlayerCharacterIsFemale
+						);
+					}
+				}
+				else
+				{
+					ERR
+					(
+						"Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerCharacterIsFemale)
+					);
+				}
+				
+				// OPPOSITE GENDER ANIMATIONS
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerOppositeGenderAnims, 
+					!SerializableDataType::kSerializationVersion
+				))
+				{
+					for (auto& [fid, data] : glob.serializablePlayerData)
+					{
+						DBG
+						(
+							"Serialize uses opposite gender anims flag as {} "
+							"for player with FID 0x{:X}.", 
+							fid, data->usesOppositeGenderAnims
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerOppositeGenderAnims
+						);
+						SerializePlayerBoolData
+						(
+							a_intfc,
+							data->usesOppositeGenderAnims, 
+							!SerializableDataType::kPlayerOppositeGenderAnims
+						);
+					}
+				}
+				else
+				{
+					ERR
+					(
+						"Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerOppositeGenderAnims)
+					);
+				}
+
 				// RACE MENU PRESET NAME
 				if (a_intfc->OpenRecord
 				(
@@ -2098,6 +2264,51 @@ namespace ALYSLC
 					);
 				}
 
+				// CHARACTER NPC APPEARANCE PRESET
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerNPCAppearancePreset,
+					!SerializableDataType::kSerializationVersion
+				))
+				{
+					for (auto& [fid, data] : glob.serializablePlayerData)
+					{
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerNPCAppearancePreset
+						);
+						DBG
+						(
+							"Serialize NPC APPEARANCE PRESET {} (0x{:X}, editor ID {}) "
+							"for player with FID 0x{:X}.",
+							data->chosenNPCAppearancePreset ? 
+							data->chosenNPCAppearancePreset->GetName() :
+							"NONE", 
+							data->chosenNPCAppearancePreset ? 
+							data->chosenNPCAppearancePreset->formID :
+							0, 
+							Util::GetEditorID(data->chosenNPCAppearancePreset),
+							fid
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, 
+							data->chosenNPCAppearancePreset ?
+							data->chosenNPCAppearancePreset->formID :
+							0,
+							!SerializableDataType::kPlayerNPCAppearancePreset
+						);
+					}
+				}
+				else
+				{
+					ERR
+					(
+						"Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerNPCAppearancePreset)
+					);
+				}
+
 				// CHARACTER CHOSEN RACE
 				if (a_intfc->OpenRecord
 				(
@@ -2138,6 +2349,64 @@ namespace ALYSLC
 						TypeToString(!SerializableDataType::kPlayerCharacterChosenRace)
 					);
 				}
+
+				// CHARACTER VOICE TYPE
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerCharacterVoiceType,
+					!SerializableDataType::kSerializationVersion
+				))
+				{
+					for (auto& [fid, data] : glob.serializablePlayerData)
+					{
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerCharacterVoiceType
+						);
+						DBG
+						(
+							"Serialize CHOSEN VOICE TYPE {} (0x{:X}, editor ID {}) "
+							"for player with FID 0x{:X}.",
+							data->chosenVoiceType ? 
+							data->chosenVoiceType->GetName() :
+							"NONE", 
+							data->chosenVoiceType ? data->chosenVoiceType->formID : 0, 
+							Util::GetEditorID(data->chosenVoiceType),
+							fid
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, 
+							data->chosenVoiceType ? data->chosenVoiceType->formID : 0,
+							!SerializableDataType::kPlayerCharacterVoiceType
+						);
+					}
+				}
+				else
+				{
+					ERR
+					(
+						"Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerCharacterVoiceType)
+					);
+				}
+			}
+		}
+
+		void SerializePlayerBoolData
+		(
+			SKSE::SerializationInterface* a_intfc, const bool& a_data, const uint32_t& a_recordType
+		)
+		{
+			// Attempt to write bool value to SKSE co-save.
+
+			if (!a_intfc->WriteRecordData(a_data))
+			{
+				ERR
+				(
+					"Could not write BOOL record data ({}), record type: {}.",
+					a_data, TypeToString(a_recordType)
+				);
 			}
 		}
 
@@ -2361,8 +2630,18 @@ namespace ALYSLC
 						skillXPList, 
 						std::vector<RE::BGSPerk*>(),
 						std::vector<RE::BGSPerk*>(),
+						p1->GetActorBase() ? 
+						p1->GetActorBase()->IsFemale() : 
+						false,
+						p1->GetActorBase() ? 
+						p1->GetActorBase()->UsesOppositeGenderAnims() :
+						false,
 						"NONE",
-						p1->charGenRace
+						p1->GetActorBase(),
+						p1->charGenRace,
+						p1->GetActorBase() ? 
+						p1->GetActorBase()->voiceType :
+						nullptr
 					) 
 				}
 			);
@@ -2514,8 +2793,18 @@ namespace ALYSLC
 									skillXPList,
 									std::vector<RE::BGSPerk*>(),
 									std::vector<RE::BGSPerk*>(),
+									coopPlayers[i]->GetActorBase() ?
+									coopPlayers[i]->GetActorBase()->IsFemale() :
+									false,
+									coopPlayers[i]->GetActorBase() ?
+									coopPlayers[i]->GetActorBase()->UsesOppositeGenderAnims() :
+									false,
 									"NONE",
-									coopPlayers[i]->GetRace()
+									coopPlayers[i]->GetActorBase(),
+									coopPlayers[i]->GetRace(),
+									coopPlayers[i]->GetActorBase() ? 
+									coopPlayers[i]->GetActorBase()->voiceType :
+									nullptr
 								) 
 							}
 						);

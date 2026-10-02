@@ -19,13 +19,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	case SKSE::MessagingInterface::kDataLoaded:
 	{
 		INF("Data loaded.");
-
-		// Install all hooks.
-		ALYSLC::Hooks::Install();
-		// Add event sinks for all necessary events.
-		ALYSLC::Events::RegisterEvents();
-		// Register debug overlay menu.
-		ALYSLC::DebugOverlayMenu::Register();
+		
 		// Run compatibility checks and initialization.
 		ALYSLC::AlternateConversationCameraCompat::CheckForAlternateConversationCamera
 		(
@@ -38,7 +32,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		ALYSLC::NFFCompat::CheckForNFF(g_loadInterface);
 		ALYSLC::PersistentFavoritesCompat::CheckForPersistentFavorites();
 		ALYSLC::PrecisionCompat::RequestPrecisionAPIs(g_loadInterface);
-		ALYSLC::QuickLootCompat::CheckForQuickLoot(g_loadInterface);
+		ALYSLC::QuickLootCompat::RequestQuickLootAPIs(g_loadInterface);
 		ALYSLC::RaceMenuCompat::CheckForRaceMenu(g_loadInterface);
 		ALYSLC::RequiemCompat::CheckForRequiem(g_loadInterface);
 		ALYSLC::SandboxWhenIdleCompat::CheckForSandboxWhenIdle(g_loadInterface);
@@ -49,6 +43,14 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		ALYSLC::TrueHUDCompat::RequestTrueHUDAPIs(g_loadInterface);
 		ALYSLC::UseOrTakeCompat::CheckForUseOrTake();
 		ALYSLC::EnderalCompat::CheckForEnderalSSE();
+		
+		// Next, add event sinks for all necessary events, 
+		// some of which require the compatibility checks to execute first.
+		ALYSLC::Events::RegisterEvents();
+		// Register debug overlay menu.
+		ALYSLC::DebugOverlayMenu::Register();
+
+		ALYSLC::GlobalCoopData::SetGlobalCoopData();
 		break;
 	}
 	case SKSE::MessagingInterface::kNewGame:
@@ -77,6 +79,8 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	case SKSE::MessagingInterface::kPostLoad:
 	{
 		INF("Post load.");
+		// Install all hooks.
+		ALYSLC::Hooks::Install();
 		break;
 	}
 	case SKSE::MessagingInterface::kPostLoadGame:

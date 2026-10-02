@@ -16,6 +16,13 @@ namespace ALYSLC
 		// Called when a save is loaded. Load all of our serialized data.
 		void Load(SKSE::SerializationInterface* a_intfc);
 
+		// Attempt to retrieve a bool value with the given record type 
+		// and store in the data outparam.
+		void RetrieveBoolData
+		(
+			SKSE::SerializationInterface* a_intfc, bool& a_data, const uint32_t& a_recordType
+		);
+
 		// Attempt to retrieve a float value with the given record type 
 		// and store in the data outparam.
 		void RetrieveFloatData
@@ -60,6 +67,14 @@ namespace ALYSLC
 
 		// Called when the game is saved. Save all our serializable data.
 		void Save(SKSE::SerializationInterface* a_intfc);
+
+		// Attempt to serialize a bool value of the given record type.
+		void SerializePlayerBoolData
+		(
+			SKSE::SerializationInterface* a_intfc,
+			const bool& a_data, 
+			const uint32_t& a_recordType
+		);
 
 		// Attempt to serialize a float value of the given record type.
 		void SerializePlayerFloatData
