@@ -1207,19 +1207,23 @@ namespace ALYSLC
 		bool isRolling;
 		// Is shouting according to the player's animation graph variable.
 		bool isShouting;
-		// Is casting a power or shout from the voice slot (set when performing shout task).
-		bool isVoiceCasting;
+		// Is the player performing a SkyParkour slide?
+		bool isSliding;
 		// Is in sneak state (from graph var).
 		bool isSneaking;
 		// Is sprinting (set when sprint animation triggers).
 		bool isSprinting;
 		// Is attacking with a weapon.
 		bool isWeaponAttack;
+		// Is casting a power or shout from the voice slot (set when performing shout task).
+		bool isVoiceCasting;
 		// Is trying to perform a melee spellcast killmove,
 		// which requires special handling on cleanup.
 		bool reqMeleeSpellcastKillmove;
 		// Does the player want to sneak?
 		bool wantsToSneak;
+		// Was the player performing a SkyParkour slide last frame?
+		bool wasSliding;
 		// Was the player sprinting during the last frame?
 		bool wasSprinting;
 

@@ -9698,17 +9698,6 @@ namespace ALYSLC
 				);
 				// Attempting to move P1.
 				bool isMoveInput = idEvent->userEvent == ue->move;
-				// Attempting to start or stop paragliding.
-				bool isParaglidingInput = 
-				{
-					(
-						ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider && 
-						p1->GetCharController() && 
-						p1->GetCharController()->context.currentState ==
-						RE::hkpCharacterStateType::kInAir
-					) &&
-					(idEvent->userEvent == ue->activate || isMoveInput)
-				};
 				// Attempting to rotate the camera for P1.
 				bool isRotateInput = idEvent->userEvent == ue->rotate;
 				// Attempting to rotate the camera while mounted.
@@ -9743,36 +9732,33 @@ namespace ALYSLC
 					// and changing the camera's POV.
 					isBlockedP1Event =
 					(
-						(!isParaglidingInput) &&
+						(heldBeforeMenusClosed) ||
+						(isBlockedLootMenuEvent) ||
 						(
-							(heldBeforeMenusClosed) ||
-							(isBlockedLootMenuEvent) ||
+							(onlyAlwaysOpen) && 
 							(
-								(onlyAlwaysOpen) && 
-								(
-									isGroundedAttackInput || 
-									isMoveArmsInput || 
-									isMountedCamInputEvent
-								)
-							) ||
-							(isHotkeyAssignmentInput) ||
+								isGroundedAttackInput || 
+								isMoveArmsInput || 
+								isMountedCamInputEvent
+							)
+						) ||
+						(isHotkeyAssignmentInput) ||
+						(
+							(!p1ControllingMenus) &&
 							(
-								(!p1ControllingMenus) &&
-								(
-									idEvent->userEvent == ue->activate ||
-									idEvent->userEvent == ue->favorites ||
-									idEvent->userEvent == ue->hotkey1 ||
-									idEvent->userEvent == ue->hotkey2 ||
-									idEvent->userEvent == ue->journal ||
-									idEvent->userEvent == ue->pause ||
-									idEvent->userEvent == ue->readyWeapon ||
-									idEvent->userEvent == ue->shout ||
-									idEvent->userEvent == ue->sneak ||
-									idEvent->userEvent == ue->sprint ||
-									idEvent->userEvent == ue->togglePOV ||
-									idEvent->userEvent == ue->tweenMenu || 
-									idEvent->userEvent == ue->wait
-								)
+								idEvent->userEvent == ue->activate ||
+								idEvent->userEvent == ue->favorites ||
+								idEvent->userEvent == ue->hotkey1 ||
+								idEvent->userEvent == ue->hotkey2 ||
+								idEvent->userEvent == ue->journal ||
+								idEvent->userEvent == ue->pause ||
+								idEvent->userEvent == ue->readyWeapon ||
+								idEvent->userEvent == ue->shout ||
+								idEvent->userEvent == ue->sneak ||
+								idEvent->userEvent == ue->sprint ||
+								idEvent->userEvent == ue->togglePOV ||
+								idEvent->userEvent == ue->tweenMenu || 
+								idEvent->userEvent == ue->wait
 							)
 						)
 					);
@@ -10046,6 +10032,11 @@ namespace ALYSLC
 			// Return early and minimize calculation time in this func.
 			const auto strings = RE::FixedStrings::GetSingleton();
 			if (!strings)
+			{
+				return _UpdateDownwardPass(a_this, a_data, a_arg2);
+			}
+
+			if (!ALYSLC::PrecisionCompat::g_installed)
 			{
 				return _UpdateDownwardPass(a_this, a_data, a_arg2);
 			}
@@ -13256,18 +13247,38 @@ namespace ALYSLC
 					hkpRigidBodyPtr ? hkpRigidBodyPtr->motion.GetMass() : 0.0f,
 					releasedRefrInfo->fallHeight,
 					(
-						hkpRigidBodyPtr ? 
+						/*hkpRigidBodyPtr ? 
 						ToNiPoint3
 						(
 							hkpRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME
-						) :
+						) :*/
 						a_this->linearVelocity
 					), 
 					actorHitPosPair.second
 				);
 
-				// Update fall height to the projectile's position after handling the collision.
-				releasedRefrInfo->fallHeight = a_this->data.location.z;
+				DBG
+				(
+					"{}'s speed on hit relative to release speed: {}.",
+					a_this->GetName(), 
+					a_this->linearVelocity.Length() / releasedRefrInfo->releaseSpeed
+				);
+				// Update fall height to the refr's position after handling the collision.
+				// Only do so if the refr has slowed down enough since release 
+				// because we don't want to reduce the damage of different collisions 
+				// that occur within the span of a few frames 
+				// while the refr is still moving quickly.
+				if (a_this->linearVelocity.Length() / releasedRefrInfo->releaseSpeed < 0.5f)
+				{
+					DBG
+					(
+						"{}'s fall height changed from {} to {}.",
+						a_this->GetName(), 
+						releasedRefrInfo->fallHeight,
+						a_this->data.location.z
+					);
+					releasedRefrInfo->fallHeight = a_this->data.location.z;
+				}
 			}
 		}
 
@@ -14808,16 +14819,7 @@ namespace ALYSLC
 				// Modify the current speed by the distance-slowdown factor, 
 				// but set a lower bound to avoid instances where the projectile
 				// does 0 damage when hitting the target at too low of a speed.
-				RE::NiPoint3 targetLinVel{ };
-				if (targetActorValidity)
-				{
-					targetLinVel = Util::GetActorLinearVelocity(targetActorPtr.get());
-				}
-				else if (targetRefrValidity)
-				{
-					targetRefrPtr->GetLinearVelocity(targetLinVel);
-				}
-
+				RE::NiPoint3 targetLinVel = Util::GetLinearVelocity(targetRefrPtr.get());
 				speedToSet = max
 				(
 					speedToSet * distSlowdownFactor, 

@@ -1899,6 +1899,26 @@ namespace ALYSLC
 			const float a_range
 		);
 		
+		// Get damage to apply from a flop attack.
+		float GetDamageForBonk
+		(
+			RE::TESObjectREFR* a_releasedRefr, 
+			RE::Actor* a_hitActor,
+			const float& a_havokImpactSpeed,
+			const float& a_collidingMass,
+			const float& a_fallHeight
+		);
+
+		// Get damage to apply from splat collision.
+		float GetDamageForSplat
+		(
+			RE::Actor* a_releasedActor, 
+			const RE::hkVector4& a_havokHitVelocity,
+			const RE::NiPoint3& a_hitNormal,
+			const double& a_fallHeight,
+			const uint32_t& a_hitCount
+		);
+
 		// Get detection-level-modified gradient RGB value.
 		// NOTE: 
 		// The raw detection level ranges from -1000 to 1000,
@@ -2147,6 +2167,9 @@ namespace ALYSLC
 		// Set the lock on crosshair target, if aiming while in 'Lock On' mode, 
 		// and update the lock on activation target, which should be cleared when out of range.
 		void UpdateLockOnTargets();
+
+		// Update motion state data for the player and targeted refr.
+		void UpdateMotionStates();
 		
 		// Update activation target each frame the targeting manager is active.
 		// Choose a proximity refr in the player's facing/moving direction.
@@ -2159,9 +2182,6 @@ namespace ALYSLC
 		// Update closest hostile actor, their distance to the player, 
 		// and the player's detection percent.
 		void UpdateStealthDetectionState();
-
-		// Update motion state data for the targeted refr.
-		void UpdateTargetedRefrMotionState();
 
 		// Check if UI elements should be drawn 
 		// and then update the player's crosshair position and selected refr. 
@@ -2244,7 +2264,8 @@ namespace ALYSLC
 		std::set<RE::FormID> bumpDamagedActorFIDs;
 		// This player's crosshair text entry to display when the full crosshair message updates.
 		std::string crosshairTextEntry;
-		// Selected target refr's motion info.
+		// Player and selected target refr's motion info.
+		std::unique_ptr<RefrTargetMotionState> playerMotionState;
 		std::unique_ptr<RefrTargetMotionState> targetMotionState;
 		// Interpolation data for fading drawn UI elements and for crosshair size adjustments.
 		std::unique_ptr<TwoWayInterpData> activationIndicatorOscillationData;

@@ -89,9 +89,9 @@ namespace ALYSLC
 		UpdateQuickActivationTarget(false);
 		// Validate the activation refr, if any.
 		ValidateActivationRefr();
-		// Update target motion state next once a crosshair target or aim correction target
-		// have been selected or cleared.
-		UpdateTargetedRefrMotionState();
+		// Update player and target motion states next once a crosshair target
+		// or aim correction target have been selected or cleared.
+		UpdateMotionStates();
 		// Update the player's detection state and award Sneak skill XP as necessary.
 		UpdateSneakState();
 		// Update the player's crosshair text entry with externally-requested
@@ -232,6 +232,15 @@ namespace ALYSLC
 		}
 
 		// Motion state.
+		if (playerMotionState)
+		{
+			playerMotionState->Refresh();
+		}
+		else
+		{
+			playerMotionState = std::make_unique<RefrTargetMotionState>();
+		}
+
 		if (targetMotionState)
 		{
 			targetMotionState->Refresh();
@@ -2045,177 +2054,7 @@ namespace ALYSLC
 			};
 		}
 		
-		// Retract arrows when not facing target.
-		/*
-		radius *= rotationRatio;
-		if (radius != 0.0f)
-		{
-			// Outer.
-			auto newCenter = center + gapDelta * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f),
-				Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID],
-				thickness * 2.0f,
-				thickness * 4.0f,
-				0.0f
-			);
-			newCenter = center + gapDelta * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f),
-				Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID],
-				thickness * 2.0f,
-				thickness * 4.0f,
-				0.0f
-			);
-			newCenter = 
-			(
-				center + gapDelta * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f)
-			);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f),
-				Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID],
-				thickness * 2.0f,
-				thickness * 4.0f,
-				0.0f
-			);
-			newCenter = center + gapDelta * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f),
-				Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID],
-				thickness * 2.0f,
-				thickness * 4.0f,
-				0.0f
-			);
-
-			// Middle.
-			newCenter = center + gapDelta * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f),
-				Settings::vuOverlayRGBAValues[p->playerID],
-				thickness * 1.5f,
-				thickness * 2.0f,
-				0.0f
-			);
-			newCenter = center + gapDelta * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f),
-				Settings::vuOverlayRGBAValues[p->playerID],
-				thickness * 1.5f,
-				thickness * 2.0f,
-				0.0f
-			);
-			newCenter = center + gapDelta * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f),
-				Settings::vuOverlayRGBAValues[p->playerID],
-				thickness * 1.5f,
-				thickness * 2.0f,
-				0.0f
-			);
-			newCenter = center + gapDelta * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + radius * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f),
-				Settings::vuOverlayRGBAValues[p->playerID],
-				thickness * 1.5f,
-				thickness * 2.0f,
-				0.0f
-			);
-
-			// Inner.
-			newCenter = center + gapDelta * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + 
-				0.75f * radius * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f),
-				Settings::vuCrosshairInnerOutlineRGBAValues[p->playerID],
-				thickness,
-				thickness,
-				0.0f
-			);
-			newCenter = center + gapDelta * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + 0.75f * radius * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f),
-				Settings::vuCrosshairInnerOutlineRGBAValues[p->playerID],
-				thickness,
-				thickness,
-				0.0f
-			);
-			newCenter = center + gapDelta * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + 0.75f * radius * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f),
-				Settings::vuCrosshairInnerOutlineRGBAValues[p->playerID],
-				thickness,
-				thickness,
-				0.0f
-			);
-			newCenter = center + gapDelta * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f);
-			DebugAPI::QueueArrow2D
-			(
-				newCenter,
-				newCenter + 0.75f * radius * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f),
-				Settings::vuCrosshairInnerOutlineRGBAValues[p->playerID],
-				thickness,
-				thickness,
-				0.0f
-			);
-		}
-		*/
-
-		auto velocity = RE::NiPoint3();
-		if (aimCorrectionTargetPtr)
-		{
-			velocity = Util::GetActorLinearVelocity(aimCorrectionTargetPtr.get());
-		}
-		else
-		{
-			aimCorrectionTargetPtr->GetLinearVelocity(velocity);
-		}
-
-		auto screenLateralMovementOffset = 
-		(
-			DebugAPI::WorldToScreenPoint
-			(
-				ToVec3(aimCorrectionTargetPtr->data.location + velocity)
-			) - 
-			DebugAPI::WorldToScreenPoint(ToVec3(aimCorrectionTargetPtr->data.location))
-		).x;
 		crosshairRotationAngle = 0.0f;
-		/*Util::NormalizeAng0To2Pi
-		(
-			crosshairRotationAngle +
-			(
-				(
-					(2.0f * PI * *g_deltaTimeRealTime) * 
-					std::clamp
-					(
-						5.0f * screenLateralMovementOffset / DebugAPI::screenResX, -1.0f, 1.0f
-					)
-				) / 
-				crosshairRotationData->secsUpdateInterval
-			)
-		);*/
-
 		const float oscRatio = aimCorrectionIndicatorOscillationData->value;
 		// Fewer segments to draw when the gap is small (no readily apparent loss in quality).
 		uint32_t numSegments = std::clamp(static_cast<int>(gapDelta * 3), 16, 32); //3; 
@@ -2843,53 +2682,7 @@ namespace ALYSLC
 			)
 		);
 
-		// Rotate in the direction of the chosen refr, if any.
-		/*auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(crosshairRefrHandle);
-		if (crosshairRefrPtr)
-		{
-			auto asActor = crosshairRefrPtr ? crosshairRefrPtr->As<RE::Actor>() : nullptr;
-			auto velocity = RE::NiPoint3();
-			if (asActor)
-			{
-				velocity = Util::GetActorLinearVelocity(asActor);
-			}
-			else
-			{
-				crosshairRefrPtr->GetLinearVelocity(velocity);
-			}
-
-			auto screenLateralMovementOffset = 
-			(
-				DebugAPI::WorldToScreenPoint(ToVec3(crosshairRefrPtr->data.location + velocity)) - 
-				DebugAPI::WorldToScreenPoint(ToVec3(crosshairRefrPtr->data.location))
-			).x;
-			crosshairRotationAngle = Util::NormalizeAng0To2Pi
-			(
-				crosshairRotationAngle +
-				(
-					(
-						(2.0f * PI * *g_deltaTimeRealTime) * 
-						std::clamp
-						(
-							5.0f * screenLateralMovementOffset / DebugAPI::screenResX, -1.0f, 1.0f
-						)
-					) / 
-					crosshairRotationData->secsUpdateInterval
-				)
-			);
-		}
-		else
-		{
-			crosshairRotationAngle = Util::InterpolateSmootherStep
-			(
-				Util::NormalizeAngToPi(crosshairRotationAngle), 
-				0.0f,
-				0.2f
-			);
-		}
-		
-		crosshairRotationAngle = 0.0f;*/
-		uint32_t numSegments = 4; // std::clamp(static_cast<int>(gapDelta * 3), 8, 48);
+		uint32_t numSegments = 4;
 		uint8_t alpha = 
 		(
 			static_cast<uint8_t>
@@ -3036,7 +2829,8 @@ namespace ALYSLC
 
 		const auto& visibilityType = Settings::vuPlayerIndicatorVisibilityType[playerID];
 		// If the indicator is disabled, no need to draw. Bye.
-		if (visibilityType == !PlayerIndicatorVisibilityType::kDisabled) 
+		if (visibilityType == !PlayerIndicatorVisibilityType::kDisabled &&
+			glob.cam->softFocalPID == -1) 
 		{
 			return;
 		}
@@ -3050,89 +2844,6 @@ namespace ALYSLC
 		{
 			return;
 		}
-
-		// Draw the player indicator only if an actor info bar is not drawn for this player.
-		bool hasTrueHUDInfoBar = false;
-		// TODO:
-		// PR for TrueHUD to allow for continuous display of actor info/boss bars 
-		// for players even when not in combat.
-		// Draw the TrueHUD actor info bar while in combat and draw a boss bar for the player 
-		// when not in combat and if the player's HMS AVs have changed.
-		// Commented out for now.
-		// TrueHUD API to request addition/removal of actor info or boss bars for this player.
-		/*
-		auto trueHUDAPI3 = ALYSLC::TrueHUDCompat::g_trueHUDAPI3; 
-		if (trueHUDAPI3)
-		{
-			const bool atFullHMS = 
-			(
-				p->pam->currentHealth == p->pam->fullHealth &&
-				p->pam->currentMagicka == p->pam->fullMagicka &&
-				p->pam->currentStamina == p->pam->fullStamina
-			);
-			float secsSinceHMSFullyRestored = Util::GetElapsedSeconds(p->lastHMSFullRestorationTP);
-			const float secsBeforeHidingBar = 
-			(
-				Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
-			);
-			const auto handle = coopActor->GetHandle();
-			const bool hasInfoBar = trueHUDAPI3->HasInfoBar(handle, true);
-			const bool hasBossBar = !hasInfoBar && trueHUDAPI3->HasInfoBar(handle);
-			// Show the info/boss bar when in/out of combat or if downed
-			// and if the player's HMS AVs are not at their full values 
-			// for a certain amount of time.
-			if (glob.isInCoopCombat || p->isDowned)
-			{
-				if (hasBossBar)
-				{
-					trueHUDAPI3->RemoveBoss
-					(
-						handle, TRUEHUD_API::WidgetRemovalMode::Normal
-					);
-				}
-					
-				if ((!hasInfoBar) && 
-					(!atFullHMS || secsSinceHMSFullyRestored < secsBeforeHidingBar))
-				{
-					trueHUDAPI3->AddActorInfoBar(handle);
-				}
-				else if ((hasInfoBar) && 
-						 (atFullHMS && secsSinceHMSFullyRestored >= secsBeforeHidingBar))
-				{
-					trueHUDAPI3->RemoveActorInfoBar
-					(
-						handle, TRUEHUD_API::WidgetRemovalMode::Normal
-					);
-				}
-			}
-			else
-			{
-				if (hasInfoBar)
-				{
-					trueHUDAPI3->RemoveActorInfoBar
-					(
-						handle, TRUEHUD_API::WidgetRemovalMode::Normal
-					);
-				}
-
-				if ((!hasBossBar) &&
-					(!atFullHMS || secsSinceHMSFullyRestored < secsBeforeHidingBar))
-				{
-					trueHUDAPI3->AddBoss(handle);
-				}
-				else if ((hasBossBar) &&
-						 (atFullHMS && secsSinceHMSFullyRestored >= secsBeforeHidingBar))
-				{
-					trueHUDAPI3->RemoveBoss
-					(
-						handle, TRUEHUD_API::WidgetRemovalMode::Normal
-					);
-				}
-			}
-
-			hasTrueHUDInfoBar = trueHUDAPI3->HasInfoBar(handle, true);
-		}
-		*/
 
 		// If the player is not on screen, 
 		// draw the player indicator pointed at the player's position.
@@ -3168,6 +2879,30 @@ namespace ALYSLC
 				playerPixelHeight / 4.0f
 			)
 		);
+			
+		bool isSoftFocalPlayer = playerID == glob.cam->softFocalPID;
+		float alphaMult = 1.0f;
+
+		// Commented out for now unless using automatic soft focal player switching code.
+		/*const float secsSinceLeadingPlayerChange = Util::GetElapsedSeconds
+		(
+			glob.cam->leadingCamPIDChangeTP
+		);
+		if (isSoftFocalPlayer)
+		{
+			if (playerID != glob.cam->leadingCamPID)
+			{
+				alphaMult = max(0.0f, 1.0f - secsSinceLeadingPlayerChange);
+			}
+		}
+		else
+		{
+			if (playerID == glob.cam->leadingCamPID)
+			{
+				alphaMult = min(1.0f, secsSinceLeadingPlayerChange);
+			}
+		}*/
+
 		// Scaling factor used to scale up/down hardcoded point offsets for the indicator's shape.
 		float scalingFactor = indicatorBaseLength / GlobalCoopData::PLAYER_INDICATOR_DEF_LENGTH;
 		float indicatorLength = indicatorBaseLength * scalingFactor;
@@ -3177,7 +2912,6 @@ namespace ALYSLC
 			auto playerCam = RE::PlayerCamera::GetSingleton();
 			bool shouldDraw = 
 			(
-				(!hasTrueHUDInfoBar) &&
 				(baseCanDrawOverlayElements && playerCam && playerCam->cameraRoot)
 			);
 			if (shouldDraw) 
@@ -3196,6 +2930,8 @@ namespace ALYSLC
 					bool shouldRaycastForLOS = 
 					{ 
 						visibilityType == !PlayerIndicatorVisibilityType::kLowVisibility && 
+						playerID != glob.cam->softFocalPID &&
+						//playerID != glob.cam->leadingCamPID &&
 						!p->isDowned &&						 
 						Util::GetBoundPixelDist(coopActor.get(), true) >= 
 						DebugAPI::screenResY / 10.0f &&
@@ -3289,13 +3025,17 @@ namespace ALYSLC
 					playerIndicatorFadeInterpData->value *
 					static_cast<float>
 					(
+						isSoftFocalPlayer ? 
+						Settings::vuOverlayRGBAValues[playerID] & 0xFF :
 						Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF
-					)
+					) * alphaMult
 				);
 				DebugAPI::QueueShape2D
 				(
 					playerIndicatorScaleformPos,
 					upperPortionOffsets,
+					isSoftFocalPlayer ? 
+					(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha :
 					(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
 					false,
 					1.5f * indicatorThickness
@@ -3307,13 +3047,17 @@ namespace ALYSLC
 					playerIndicatorFadeInterpData->value * 
 					static_cast<float>
 					(
+						isSoftFocalPlayer ? 
+						Settings::vuOverlayRGBAValues[playerID] & 0xFF :
 						Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF
-					)
+					) * alphaMult
 				);
 				DebugAPI::QueueShape2D
 				(
 					playerIndicatorScaleformPos, 
 					lowerPortionOffsets, 
+					isSoftFocalPlayer ? 
+					(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha :
 					(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
 					false, 
 					1.5f * indicatorThickness
@@ -3324,12 +3068,12 @@ namespace ALYSLC
 					static_cast<float>
 					(
 						Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFF
-					)
+					) * alphaMult
 				);
 				DebugAPI::QueueShape2D
 				(
 					playerIndicatorScaleformPos, 
-					lowerPortionOffsets, 
+					lowerPortionOffsets,
 					(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
 					false, 
 					indicatorThickness
@@ -3337,12 +3081,19 @@ namespace ALYSLC
 				alpha = static_cast<uint8_t>
 				(
 					playerIndicatorFadeInterpData->value * 
-					static_cast<float>(Settings::vuOverlayRGBAValues[playerID] & 0xFF)
+					static_cast<float>
+					(
+						isSoftFocalPlayer ? 
+						Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF :
+						Settings::vuOverlayRGBAValues[playerID] & 0xFF
+					) * alphaMult
 				);
 				DebugAPI::QueueShape2D
 				(
 					playerIndicatorScaleformPos, 
 					lowerPortionOffsets, 
+					isSoftFocalPlayer ? 
+					(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha :
 					(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha
 				);
 
@@ -3353,7 +3104,7 @@ namespace ALYSLC
 					static_cast<float>
 					(
 						Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFF
-					)
+					) * alphaMult
 				);
 				DebugAPI::QueueShape2D
 				(
@@ -3366,12 +3117,19 @@ namespace ALYSLC
 				alpha = static_cast<uint8_t>
 				(
 					playerIndicatorFadeInterpData->value *
-					static_cast<float>(Settings::vuOverlayRGBAValues[playerID] & 0xFF)
+					static_cast<float>
+					(
+						isSoftFocalPlayer ? 
+						Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF :
+						Settings::vuOverlayRGBAValues[playerID] & 0xFF
+					) * alphaMult
 				);
 				DebugAPI::QueueShape2D
 				(
 					playerIndicatorScaleformPos,
 					upperPortionOffsets, 
+					isSoftFocalPlayer ? 
+					(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha :
 					(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha
 				);
 			}
@@ -3470,12 +3228,19 @@ namespace ALYSLC
 			uint8_t alpha = static_cast<uint8_t>
 			(
 				playerIndicatorFadeInterpData->value * 
-				static_cast<float>(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF)
+				static_cast<float>
+				(
+					isSoftFocalPlayer ? 
+					Settings::vuOverlayRGBAValues[playerID] & 0xFF :
+					Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF
+				) * alphaMult
 			);
 			DebugAPI::QueueShape2D
 			(
 				origin, 
 				upperPortionOffsets, 
+				isSoftFocalPlayer ? 
+				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha :
 				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
 				false, 
 				1.5f * indicatorThickness
@@ -3485,20 +3250,28 @@ namespace ALYSLC
 			alpha = static_cast<uint8_t>
 			(
 				playerIndicatorFadeInterpData->value * 
-				static_cast<float>(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF)
+				static_cast<float>
+				(
+					isSoftFocalPlayer ? 
+					Settings::vuOverlayRGBAValues[playerID] & 0xFF :
+					Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF
+				) * alphaMult
 			);
 			DebugAPI::QueueShape2D
 			(
 				origin, 
 				lowerPortionOffsets, 
-				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
+				isSoftFocalPlayer ? 
+				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha :
+				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
 				false, 
 				1.5f * indicatorThickness
 			);
 			alpha = static_cast<uint8_t>
 			(
 				playerIndicatorFadeInterpData->value * 
-				static_cast<float>(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFF)
+				static_cast<float>(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFF) * 
+				alphaMult
 			);
 			DebugAPI::QueueShape2D
 			(
@@ -3511,12 +3284,19 @@ namespace ALYSLC
 			alpha = static_cast<uint8_t>
 			(
 				playerIndicatorFadeInterpData->value * 
-				static_cast<float>(Settings::vuOverlayRGBAValues[playerID] & 0xFF)
+				static_cast<float>
+				(
+					isSoftFocalPlayer ? 
+					Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF :
+					Settings::vuOverlayRGBAValues[playerID] & 0xFF
+				) * alphaMult
 			);
 			DebugAPI::QueueShape2D
 			(
 				origin, 
 				lowerPortionOffsets, 
+				isSoftFocalPlayer ? 
+				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha :
 				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha
 			);
 
@@ -3524,7 +3304,8 @@ namespace ALYSLC
 			alpha = static_cast<uint8_t>
 			(
 				playerIndicatorFadeInterpData->value * 
-				static_cast<float>(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFF)
+				static_cast<float>(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFF) * 
+				alphaMult
 			);
 			DebugAPI::QueueShape2D
 			(
@@ -3537,12 +3318,19 @@ namespace ALYSLC
 			alpha = static_cast<uint8_t>
 			(
 				playerIndicatorFadeInterpData->value * 
-				static_cast<float>(Settings::vuOverlayRGBAValues[playerID] & 0xFF)
+				static_cast<float>
+				(
+					isSoftFocalPlayer ? 
+					Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF :
+					Settings::vuOverlayRGBAValues[playerID] & 0xFF
+				) * alphaMult
 			);
 			DebugAPI::QueueShape2D
 			(
 				origin, 
 				upperPortionOffsets, 
+				isSoftFocalPlayer ? 
+				(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha :
 				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha
 			);
 		}
@@ -3806,7 +3594,7 @@ namespace ALYSLC
 	{
 		// Draw trajectories for projectiles that the player is attempting to release.
 
-		if (!Settings::vbEnablePredictedProjectileTrajectoryCurves[p->playerID])
+		if (!Settings::vbEnablePredictedProjectileTrajectoryCurves[playerID])
 		{
 			return;
 		}
@@ -3818,7 +3606,7 @@ namespace ALYSLC
 		// Get potential trajectory type first.
 		ProjectileTrajType trajType = static_cast<ProjectileTrajType>
 		(
-			Settings::vuProjectileTrajectoryType[p->playerID]
+			Settings::vuProjectileTrajectoryType[playerID]
 		);
 		auto targetActorHandle = GetRangedTargetActor();
 		auto targetActorPtr = Util::GetRefrPtrFromHandle(targetActorHandle);
@@ -4508,23 +4296,23 @@ namespace ALYSLC
 		const float startingAlphaRatio = 0.2f;
 		const float endingAlphaRatio = 0.7f;
 		// RBG values at the start and end.
-		const float rStart = (Settings::vuOverlayRGBAValues[p->playerID] & 0xFF000000) >> 24;
-		const float gStart = (Settings::vuOverlayRGBAValues[p->playerID] & 0x00FF0000) >> 16;
-		const float bStart = (Settings::vuOverlayRGBAValues[p->playerID] & 0x0000FF00) >> 8;
+		const float rStart = (Settings::vuOverlayRGBAValues[playerID] & 0xFF000000) >> 24;
+		const float gStart = (Settings::vuOverlayRGBAValues[playerID] & 0x00FF0000) >> 16;
+		const float bStart = (Settings::vuOverlayRGBAValues[playerID] & 0x0000FF00) >> 8;
 		const float rEnd = 
 		(
-			(Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID] & 0xFF000000) >> 24
+			(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFF000000) >> 24
 		);
 		const float gEnd = 
 		(
-			(Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID] & 0x00FF0000) >> 16
+			(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0x00FF0000) >> 16
 		);
 		const float bEnd = 
 		(
-			(Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID] & 0x0000FF00) >> 8
+			(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0x0000FF00) >> 8
 		);
 		// Current RGBA and alpha values to set when drawing a line segment.
-		uint32_t rgba = Settings::vuOverlayRGBAValues[p->playerID];
+		uint32_t rgba = Settings::vuOverlayRGBAValues[playerID];
 		uint32_t alpha = static_cast<uint32_t>(0xFF * startingAlphaRatio);
 		
 		// Get the expected lifetime for the projectile before it potentially despawns.
@@ -4794,19 +4582,10 @@ namespace ALYSLC
 					);
 					if (a_isWeapMagProj)
 					{
-						RE::NiPoint3 targetLinVel{ };
-						if (rangedTargetActorValidity)
-						{
-							targetLinVel = Util::GetActorLinearVelocity
-							(
-								rangedTargetActorHandle.get().get()
-							);
-						}
-						else if (crosshairRefrPtr)
-						{
-							crosshairRefrPtr->GetLinearVelocity(targetLinVel);
-						}
-
+						RE::NiPoint3 targetLinVel = Util::GetLinearVelocity
+						(
+							crosshairRefrPtr ? crosshairRefrPtr.get() : nullptr
+						);
 						speed = max
 						(
 							speed * distSlowdownFactor, 
@@ -4985,7 +4764,7 @@ namespace ALYSLC
 						ToVec3(start),
 						ToVec3(end),
 						rgba,
-						Settings::vfPredictedProjectileTrajectoryCurveThickness[p->playerID] /
+						Settings::vfPredictedProjectileTrajectoryCurveThickness[playerID] /
 						(1.0f + powf(distanceFromReleasePos / 1000.0f, 5.0f))
 					);
 					++drawnSegments;
@@ -5012,7 +4791,7 @@ namespace ALYSLC
 						ToVec3(start),
 						ToVec3(end),
 						rgba,
-						Settings::vfPredictedProjectileTrajectoryCurveThickness[p->playerID] /
+						Settings::vfPredictedProjectileTrajectoryCurveThickness[playerID] /
 						(1.0f + powf(distanceFromReleasePos / 1000.0f, 5.0f))
 					);
 					++drawnSegments;
@@ -5080,7 +4859,7 @@ namespace ALYSLC
 							ToVec3(start),
 							ToVec3(end),
 							rgba,
-							Settings::vfPredictedProjectileTrajectoryCurveThickness[p->playerID] /
+							Settings::vfPredictedProjectileTrajectoryCurveThickness[playerID] /
 							(1.0f + powf(distanceFromReleasePos / 1000.0f, 5.0f))
 						);
 						++drawnSegments;
@@ -5102,7 +4881,7 @@ namespace ALYSLC
 						ToVec3(start),
 						ToVec3(end),
 						rgba,
-						Settings::vfPredictedProjectileTrajectoryCurveThickness[p->playerID] /
+						Settings::vfPredictedProjectileTrajectoryCurveThickness[playerID] /
 						(1.0f + powf(distanceFromReleasePos / 1000.0f, 5.0f))
 					);
 					++drawnSegments;
@@ -5124,8 +4903,8 @@ namespace ALYSLC
 			0.5f * 
 			max
 			(
-				Settings::vfPredictedProjectileTrajectoryCurveThickness[p->playerID],
-				0.125f * Settings::vfCrosshairGapRadius[p->playerID]
+				Settings::vfPredictedProjectileTrajectoryCurveThickness[playerID],
+				0.125f * Settings::vfCrosshairGapRadius[playerID]
 			) / 
 			(1.0f + powf(distanceFromReleasePos / 1000.0f, 5.0f))
 		);
@@ -5161,14 +4940,14 @@ namespace ALYSLC
 						ToVec3(start),
 						ToVec3(end),
 						rgba,
-						Settings::vfPredictedProjectileTrajectoryCurveThickness[p->playerID] /
+						Settings::vfPredictedProjectileTrajectoryCurveThickness[playerID] /
 						(1.0f + powf(distanceFromReleasePos / 1000.0f, 5.0f))
 					);
 					++drawnSegments;
 				}
 			}
 			
-			if (Util::PointIsOnScreen(end, Settings::vfCrosshairGapRadius[p->playerID]))
+			if (Util::PointIsOnScreen(end, Settings::vfCrosshairGapRadius[playerID]))
 			{
 				// Also hit the target if one is selected and there was no collision 
 				// along the trajectory to the crosshair world position.
@@ -5189,11 +4968,11 @@ namespace ALYSLC
 					(
 						ToVec3(end),
 						glm::normalize(tangent),
-						(Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID] & 0xFFFFFF00) + 
+						(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + 
 						static_cast<uint32_t>(endingAlphaRatio * 0xFF),
 						16,
 						false,
-						Settings::vfCrosshairGapRadius[p->playerID],
+						Settings::vfCrosshairGapRadius[playerID],
 						trajectoryCapThickness,
 						true,
 						true,
@@ -5210,7 +4989,7 @@ namespace ALYSLC
 						0xFF000000 + static_cast<uint32_t>(endingAlphaRatio * 0xFF),
 						16,
 						false,
-						Settings::vfCrosshairGapRadius[p->playerID],
+						Settings::vfCrosshairGapRadius[playerID],
 						trajectoryCapThickness,
 						true,
 						true,
@@ -5248,14 +5027,14 @@ namespace ALYSLC
 							ToVec3(start),
 							ToVec3(end),
 							rgba,
-							Settings::vfPredictedProjectileTrajectoryCurveThickness[p->playerID] /
+							Settings::vfPredictedProjectileTrajectoryCurveThickness[playerID] /
 							(1.0f + powf(distanceFromReleasePos / 1000.0f, 5.0f))
 						);
 						++drawnSegments;
 					}
 				}
 
-				if (Util::PointIsOnScreen(end, Settings::vfCrosshairGapRadius[p->playerID]))
+				if (Util::PointIsOnScreen(end, Settings::vfCrosshairGapRadius[playerID]))
 				{
 					if (a_canReachTarget && inRange)
 					{
@@ -5266,12 +5045,12 @@ namespace ALYSLC
 							ToVec3(end),
 							glm::normalize(tangent),
 							(
-								Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID] & 
+								Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 
 								0xFFFFFF00
 							) + static_cast<uint32_t>(endingAlphaRatio * 0xFF),
 							16,
 							false,
-							Settings::vfCrosshairGapRadius[p->playerID],
+							Settings::vfCrosshairGapRadius[playerID],
 							trajectoryCapThickness,
 							true,
 							true,
@@ -5288,7 +5067,7 @@ namespace ALYSLC
 							0xFF000000 + static_cast<uint32_t>(endingAlphaRatio * 0xFF),
 							16,
 							false,
-							Settings::vfCrosshairGapRadius[p->playerID],
+							Settings::vfCrosshairGapRadius[playerID],
 							trajectoryCapThickness,
 							true,
 							true,
@@ -5297,7 +5076,7 @@ namespace ALYSLC
 					}
 				}
 			}
-			else if (Util::PointIsOnScreen(end, Settings::vfCrosshairGapRadius[p->playerID]))
+			else if (Util::PointIsOnScreen(end, Settings::vfCrosshairGapRadius[playerID]))
 			{
 				// Red circle when beyond the projectile's range, 
 				// or colliding and failing to reach the target position.
@@ -5308,7 +5087,7 @@ namespace ALYSLC
 					0xFF000000 + static_cast<uint32_t>(endingAlphaRatio * 0xFF),
 					16,
 					false,
-					Settings::vfCrosshairGapRadius[p->playerID],
+					Settings::vfCrosshairGapRadius[playerID],
 					trajectoryCapThickness,
 					true,
 					true,
@@ -6202,6 +5981,338 @@ namespace ALYSLC
 		return closestActorInFOVHandle;
 	}
 
+	float TargetingManager::GetDamageForBonk
+	(
+		RE::TESObjectREFR* a_releasedRefr, 
+		RE::Actor* a_hitActor,
+		const float& a_havokImpactSpeed,
+		const float& a_collidingMass,
+		const float& a_fallHeight
+	)
+	{
+		// Get damage to apply from a flop attack.
+
+		auto asActor = a_releasedRefr->As<RE::Actor>();
+		float actorWeight = 0.0f;
+		float releasedRefrWeight = max(0.1f, a_releasedRefr->GetWeight());
+		const auto releasedPIndex = GlobalCoopData::GetCoopPlayerIndex(a_releasedRefr);
+		float inventoryWeight = 
+		(
+			releasedPIndex <= 0 ?
+			a_releasedRefr->GetWeightInContainer() :
+			glob.coopPlayers[releasedPIndex]->em->inventoryChest->GetWeightInContainer()
+		);
+
+		// Criteria for damageable actors:
+		// Not a ghost or invulnerable.
+		float damage = 0.0f;
+		if (a_hitActor->IsGhost() || a_hitActor->IsInvulnerable())
+		{
+			return damage;
+		}
+
+		// 4x damage at player level 100.
+		float levelDamageFactor = 
+		(
+			1.0f + 3.0f * max(coopActor->GetLevel() - 1.0f, 0.0f) / 99.0f
+		);
+		// Higher armor rating -> less damage taken.
+		// 1 / 4 the damage at an armor rating of 100.
+		float armorRatingFactor = std::clamp
+		(
+			-0.0075f * a_hitActor->CalcArmorRating() + 1.0f,
+			0.25f,
+			1.0f
+		);
+		// Scale up damage if the flopping actor is close to 
+		// or exceeding their base carryweight.
+		float equipmentWeightFactor = 1.0f;
+		// Scale up actor-actor collision damage based on the released actor's base, 
+		// equipped, and potentially inventory weight.
+		if (asActor) 
+		{
+			float equippedWeight = asActor->GetEquippedWeight();
+			// Scale up damage based on the player's inventory weight
+			// relative to their base carryweight. 
+			// The more over-encumbered the merrier.
+			// 2x damage at full encumberance.
+			float baseCarryWeight = coopActor->GetBaseActorValue
+			(
+				RE::ActorValue::kCarryWeight
+			);
+			equipmentWeightFactor = 
+			(
+				1.0f +
+				(
+					(inventoryWeight / max(baseCarryWeight, 1.0f))
+				)
+			);
+
+			// 1x damage at 0 equip weight,
+			// 2x/3x damage at 0/100 actor weight, 100 equip weight, 
+			// approaching 3x at infinite weight.
+			// Multiplying the inventory and equipped weight factors together 
+			// gives 4x/6x at full encumbrance and 100 equip weight.
+			equipmentWeightFactor *= 
+			(
+				1.0f + 
+				((actorWeight + 100.0f) / 50.0f) / 
+				(1 + expf((100.0f - equippedWeight) / 10.0f))
+			);
+		}
+			
+		// Gravity considerations. Needs balancing and is subject to change.
+		const float weightFactor = 
+		(
+			asActor || a_releasedRefr->As<RE::Projectile>() ?
+			1.0f: 
+			sqrtf(releasedRefrWeight / 100.0f)
+		);
+		const float fallHeightDiff = max
+		(
+			0.0f, a_fallHeight - Util::Get3DCenterPos(a_releasedRefr).z
+		);
+		float gravDamageMult = 
+		(
+			3.42f + 
+			(
+				(2.5f) *
+				(
+					expf(0.025f * fallHeightDiff - 2.0f) - 
+					expf(-0.025f * fallHeightDiff + 2.0f)
+				) / 
+				(
+					expf(0.025f * fallHeightDiff - 2.0f) + 
+					expf(-0.025f * fallHeightDiff + 2.0f)
+				)
+			)
+		);
+		damage = 
+		(
+			gravDamageMult *
+			weightFactor * 
+			a_havokImpactSpeed *
+			levelDamageFactor *
+			armorRatingFactor *
+			equipmentWeightFactor
+		);
+
+		// Handle health damage.
+		// Ignore damage to friendly actors if friendly fire is off.
+		if (damage != 0.0f)
+		{
+			// Damage will not be modified in either HandleHealthDamage() hook 
+			// because the damage will not be attributed to the player
+			// (attacker param is nullptr) since we are directly modifying the health AV here.
+			// Therefore, to get the same damage modifications here, 
+			// we tack on the thrown object damage mult, 
+			// or flop damage mult if the released refr is the player themselves,
+			// and multiply the result by the damage received mult if the target is a player.
+			if (a_releasedRefr == coopActor.get())
+			{
+				// Dive bomb for extra damage.
+				// Otherwise if not drop-kicking or ragdolled, halve the damage.
+				damage *= 
+				(
+					Settings::vfFlopDamageMult[playerID] * 
+					(
+						(p->mm->floppedFromParaglide) ?
+						2.0f : 
+						(
+							(coopActor->IsInRagdollState()) || 
+							(p->mm->isAirborneWhileJumping && p->pam->isSliding)
+						) ? 
+						1.0f :
+						0.5f 
+					)
+				);
+			}
+			else
+			{
+				damage *= Settings::vfThrownObjectDamageMult[playerID];
+			}
+		}
+		
+		// REMOVE when done debugging.
+		DBG
+		(
+			"{}: Hit actor {}. Thrown object {}'s mass: {}, weight: {}, equipped weight: {}, "
+			"impact speed: {}, equipped weight factor: {}, armor rating and factor: {}, {},"
+			"level damage factor: {} (player level: {}). "
+			"Base carryweight: {}. "
+			"Fall height: {}, current: {}, diff: {}, weight factor: {}, grav damage mult: {}, "
+			"FINAL base damage: {}.", 
+			coopActor->GetName(), 
+			a_hitActor->GetName(),
+			a_releasedRefr->GetName(),
+			a_collidingMass,
+			releasedRefrWeight,
+			asActor ? asActor->GetEquippedWeight() : -1.0f,
+			a_havokImpactSpeed,
+			equipmentWeightFactor,
+			a_hitActor->CalcArmorRating(),
+			armorRatingFactor,
+			levelDamageFactor, 
+			coopActor->GetLevel(),
+			coopActor->GetBaseActorValue(RE::ActorValue::kCarryWeight),
+			a_fallHeight,
+			Util::Get3DCenterPos(a_releasedRefr).z,
+			fallHeightDiff,
+			weightFactor,
+			gravDamageMult,
+			damage
+		);
+
+		return damage;
+	}
+
+	float TargetingManager::GetDamageForSplat
+	(
+		RE::Actor* a_releasedActor, 
+		const RE::hkVector4& a_havokHitVelocity,
+		const RE::NiPoint3& a_hitNormal,
+		const double& a_fallHeight,
+		const uint32_t& a_hitCount
+	)
+	{ 
+		// Get damage to apply from splat collision.
+
+		float damage = 0.0f;
+		// Not a ghost or invulnerable.
+		bool damageable = 
+		(
+			!a_releasedActor->IsGhost() &&
+			!a_releasedActor->IsInvulnerable() && 
+			!a_releasedActor->IsInWater()
+		);
+		if (!damageable)
+		{
+			return 0.0f;
+		}
+		
+		// More damage when the hit surface is oriented perpendicular to the actor's motion.
+		auto velDir = ToNiPoint3(a_havokHitVelocity, true);
+		float havokImpactSpeed = a_havokHitVelocity.Length3();
+		float normOpposingVelocityFactor = 0.5f * (1.0f - velDir.Dot(a_hitNormal));
+		// Higher armor rating -> less damage taken.
+		// 1 / 4 the damage at an armor rating of 100.
+		float armorRatingFactor = std::clamp
+		(
+			-0.0075f * a_releasedActor->CalcArmorRating() + 1.0f,
+			0.25f,
+			1.0f
+		);
+		// Take 1 / 2 the damage at level 100.
+		float levelDamageFactor = 
+		(
+			1.0f / 
+			(1.0f + max(a_releasedActor->GetLevel() - 1.0f, 0.0f) / 99.0f)
+		);
+		const auto releasedPIndex = GlobalCoopData::GetCoopPlayerIndex(a_releasedActor);
+		float inventoryWeight = 
+		(
+			releasedPIndex <= 0 ?
+			a_releasedActor->GetWeightInContainer() :
+			glob.coopPlayers[releasedPIndex]->em->inventoryChest->GetWeightInContainer()
+		);
+		const auto invChanges = 
+		(
+			releasedPIndex <= 0 ?
+			a_releasedActor->GetInventoryChanges() :
+			glob.coopPlayers[releasedPIndex]->em->inventoryChest->GetInventoryChanges()
+		);
+		if (invChanges)
+		{
+			inventoryWeight = invChanges->totalWeight;
+		}
+
+		// Actors that are nearly or over-encumbered take more damage.
+		float inventoryWeightFactor = 
+		(
+			1.0f + 
+			(
+				inventoryWeight / 
+				max(coopActor->GetBaseActorValue(RE::ActorValue::kCarryWeight), 1.0f)
+			)
+		);
+				
+		// Gravity considerations. Needs balancing and is subject to change.
+		const float fallHeightDiff = max
+		(
+			0.0f, a_fallHeight - Util::Get3DCenterPos(a_releasedActor).z
+		);
+		float gravDamageMult = 
+		(
+			3.42f + 
+			(
+				(2.5f) *
+				(
+					expf(0.01f * fallHeightDiff - 2.0f) - 
+					expf(-0.01f * fallHeightDiff + 2.0f)
+				) / 
+				(
+					expf(0.01f * fallHeightDiff - 2.0f) + 
+					expf(-0.01f * fallHeightDiff + 2.0f)
+				)
+			)
+		);
+		float flopSelfDamageMult = 
+		(
+			a_releasedActor == coopActor.get() ? 
+			Settings::vfFlopHealthCostMult[playerID] :
+			1.0f
+		);
+		damage = 
+		(
+			(flopSelfDamageMult) * 
+			(
+				normOpposingVelocityFactor * 
+				gravDamageMult * 
+				havokImpactSpeed * 
+				levelDamageFactor * 
+				armorRatingFactor * 
+				inventoryWeightFactor *
+				(1.0f / static_cast<float>(max(1, a_hitCount)))
+			) 
+		);
+
+		// Apply thrown object damage mult.
+		if (damage != 0.0f)
+		{
+			damage *= Settings::vfThrownObjectDamageMult[playerID];
+		}
+		
+		// REMOVE when done debugging.
+		DBG
+		(
+			"{}: Thrown actor: {}. Impact speed: {}, actor linear speed: {}, "
+			"armor rating and factor: {}, {}, inventory weight factor: {}, "
+			"level damage factor: {}, flop self-damage mult: {}, "
+			"fall height: {}, current: {}, diff: {}, grav damage mult: {}, "
+			"normal opposing velocity factor: {}, knock state: {}. "
+			"FINAL base damage: {}. Hit #{}",
+			coopActor->GetName(),
+			a_releasedActor->GetName(),
+			havokImpactSpeed,
+			Util::GetActorLinearVelocity(a_releasedActor).Length() * GAME_TO_HAVOK,
+			a_releasedActor->CalcArmorRating(),
+			armorRatingFactor,
+			inventoryWeightFactor,
+			levelDamageFactor,
+			flopSelfDamageMult,
+			a_fallHeight,
+			Util::Get3DCenterPos(a_releasedActor).z,
+			fallHeightDiff,
+			gravDamageMult,
+			normOpposingVelocityFactor,
+			a_releasedActor->GetKnockState(),
+			damage, 
+			a_hitCount
+		);
+
+		return damage;
+	}
+
 	uint32_t TargetingManager::GetDetectionLvlRGB
 	(
 		const float& a_detectionLvl, bool&& a_fromRawLevel
@@ -6424,30 +6535,30 @@ namespace ALYSLC
 			return RE::ObjectRefHandle();
 		}
 		
+		const auto& stickState = glob.cdh->GetAnalogStickState(deviceID, a_useLeftStickAngle);
 		bool canSelect = 
 		(
+			(!a_fromCurrentTarget || !a_selectOnHold || stickState.MovedFromCenter()) ||
 			(
-				!a_fromCurrentTarget ||
-				!a_selectOnHold || 
-				glob.cdh->GetAnalogStickState(deviceID, a_useLeftStickAngle).MovedFromCenter()
-			) ||
-			(
-				Util::GetElapsedSeconds
+				(stickState.MaxDisplacement()) &&
 				(
-					a_setAimTarget ? 
-					p->lastLockOnAimTargetChangeTP :
-					p->lastActivationTargetChangeTP
-				) > 
-				(
-					a_setAimTarget ?
-					Settings::fSecsBetweenSelectingLockOnTargets : 
-					Settings::fSecsBetweenSelectingActivationTargets
+					Util::GetElapsedSeconds
+					(
+						a_setAimTarget ? 
+						p->lastLockOnAimTargetChangeTP :
+						p->lastActivationTargetChangeTP
+					) > 
+					(
+						a_setAimTarget ?
+						Settings::fSecsBetweenSelectingLockOnTargets : 
+						Settings::fSecsBetweenSelectingActivationTargets
+					)
 				)
 			)
 		);
-		DBG
+		/*DBG
 		(
-			"{}: {}, {} <? {}, from center: {}.", 
+			"{}: {}, {} <? {}, from center: {}, max disp: {}.", 
 			coopActor->GetName(),
 			canSelect ? "YEA" : "NAY",
 			Util::GetElapsedSeconds
@@ -6459,8 +6570,9 @@ namespace ALYSLC
 			a_setAimTarget ?
 			Settings::fSecsBetweenSelectingLockOnTargets : 
 			Settings::fSecsBetweenSelectingActivationTargets,
-			glob.cdh->GetAnalogStickState(deviceID, a_useLeftStickAngle).MovedFromCenter()
-		);
+			stickState.MovedFromCenter(),
+			stickState.MaxDisplacement()
+		);*/
 		// Closest object refr within FOV window.
 		const auto& playerTorsoPos = p->mm->playerTorsoPosition;
 		// Check for a new target if the current target
@@ -6500,14 +6612,10 @@ namespace ALYSLC
 		if ((!a_selectFromAnalogStickFlick) && 
 			((p->lsMoved && a_useLeftStickAngle) || (p->rsMoved && !a_useLeftStickAngle)))
 		{
-			const auto& stickData = glob.cdh->GetAnalogStickState
-			(
-				deviceID, a_useLeftStickAngle
-			);
 			// Flip LS Y comp sign to conform with Scaleform convention.
 			screenTargetingAngle = Util::NormalizeAng0To2Pi
 			(
-				atan2f(-stickData.yComp, stickData.xComp)
+				atan2f(-stickState.yComp, stickState.xComp)
 			);
 		}
 		else
@@ -8141,33 +8249,7 @@ namespace ALYSLC
 		{
 			return;
 		}
-
-		// Set minimum mass to 1.
-		if (a_collidingMass == 0.0f)
-		{
-			a_collidingMass = 1.0f;
-		}
-
-		// Get havok impact speed from the given colliding velocity, 
-		// with refr linear speed as a fallback.
-		float havokImpactSpeed = a_collidingVelocity.Length() * GAME_TO_HAVOK;
-		if (havokImpactSpeed == 0.0f) 
-		{
-			RE::NiPoint3 linVel{ };
-			releasedRefrPtr->GetLinearVelocity(linVel);
-			havokImpactSpeed = linVel.Length() * GAME_TO_HAVOK;
-		}
-
-		auto asActor = releasedRefrPtr->As<RE::Actor>();
-		float actorWeight = 0.0f;
-		float releasedRefrWeight = max(0.1f, releasedRefrPtr->GetWeight());
-		const auto releasedPIndex = GlobalCoopData::GetCoopPlayerIndex(releasedRefrPtr);
-		float inventoryWeight = 
-		(
-			releasedPIndex <= 0 ?
-			releasedRefrPtr->GetWeightInContainer() :
-			glob.coopPlayers[releasedPIndex]->em->inventoryChest->GetWeightInContainer()
-		);
+		
 		// Set power attack, bonk, and potentially the sneak attack flags
 		// before sending a hit event.
 		RE::stl::enumeration<RE::TESHitEvent::Flag, std::uint8_t> hitFlags{ };
@@ -8187,202 +8269,51 @@ namespace ALYSLC
 		{
 			hitFlags.set(RE::TESHitEvent::Flag::kSneakAttack);
 		}
-
-		// Criteria for damageable actors:
-		// Not a ghost or invulnerable.
-		float damage = 0.0f;
-		if (!hitActorPtr->IsGhost() && !hitActorPtr->IsInvulnerable())
+		
+		// Get havok impact speed from the given colliding velocity, 
+		// with refr linear speed as a fallback.
+		float havokImpactSpeed = a_collidingVelocity.Length() * GAME_TO_HAVOK;
+		if (havokImpactSpeed == 0.0f) 
 		{
-			// 4x damage at player level 100.
-			float levelDamageFactor = 
-			(
-				1.0f + 3.0f * max(coopActor->GetLevel() - 1.0f, 0.0f) / 99.0f
-			);
-			// Higher armor rating -> less damage taken.
-			// 1 / 10 the damage at an armor rating of 100.
-			float armorRatingFactor = std::clamp
-			(
-				-0.009f * hitActorPtr->CalcArmorRating() + 1.0f,
-				0.1f,
-				1.0f
-			);
-			// Scale up damage if the flopping actor is close to 
-			// or exceeding their base carryweight.
-			float equipmentWeightFactor = 1.0f;
-			// Scale up actor-actor collision damage based on the released actor's base, 
-			// equipped, and potentially inventory weight.
-			if (asActor) 
-			{
-				float equippedWeight = asActor->GetEquippedWeight();
-				// Scale up damage based on the player's inventory weight
-				// relative to their base carryweight. 
-				// The more over-encumbered the merrier.
-				// sqrtf(2)x damage at full encumberance.
-				float baseCarryWeight = coopActor->GetBaseActorValue
-				(
-					RE::ActorValue::kCarryWeight
-				);
-				equipmentWeightFactor = 
-				(
-					1.0f +
-					(
-						(sqrtf(2.0f) - 1.0f) * 
-						(inventoryWeight / max(baseCarryWeight, 1.0f))
-					)
-				);
+			RE::NiPoint3 linVel = Util::GetLinearVelocity(releasedRefrPtr.get());
+			havokImpactSpeed = linVel.Length() * GAME_TO_HAVOK;
+		}
 
-				// 1x damage at 0 equip weight,
-				// ~sqrtf(2) damage at 100 equip weight, 
-				// approaching 2x at infinite weight.
-				// Multiplying the inventory and equipped weight factors together 
-				// gives 2 at full encumbrance and 100 equip weight.
-				equipmentWeightFactor *= 
-				(
-					1.0f + 
-					((actorWeight + 100.0f) / 50.0f) / 
-					(1 + expf((103.465736f - equippedWeight) / 10.0f))
-				);
-			}
-			
-			// Gravity considerations. Needs balancing and is subject to change.
-			const float weightFactor = 
+		const float damage = 
+		(
+			sneakMult * 
+			GetDamageForBonk
 			(
-				asActor || releasedRefrPtr->As<RE::Projectile>() ?
-				1.0f: 
-				sqrtf(releasedRefrWeight / 100.0f)
-			);
-			const float fallHeightDiff = max
-			(
-				0.0f, a_fallHeight - Util::Get3DCenterPos(releasedRefrPtr.get()).z
-			);
-			float gravDamageMult = 
-			(
-				2.5f + 
-				(
-					(1.5f) *
-					(
-						expf(0.004f * fallHeightDiff - 4.0f) - 
-						expf(-0.004f * fallHeightDiff + 4.0f)
-					) / 
-					(
-						expf(0.004f * fallHeightDiff - 4.0f) + 
-						expf(-0.004f * fallHeightDiff + 4.0f)
-					)
-				)
-			);
-			damage = 
-			(
-				gravDamageMult *
-				weightFactor * 
-				havokImpactSpeed *
-				levelDamageFactor *
-				armorRatingFactor *
-				equipmentWeightFactor *
-				sneakMult
-			);
-
-			// REMOVE when done debugging.
-			DBG
-			(
-				"{}: Hit actor {}. Thrown object {}'s mass: {}, weight: {}, equipped weight: {}, "
-				"impact speed: {}, equipped weight factor: {}, armor rating and factor: {}, {},"
-				"level damage factor: {} (player level: {}). "
-				"Sneak mult: {}. Base carryweight: {}. "
-				"Fall height: {}, current: {}, diff: {}, weight factor: {}, grav damage mult: {}, "
-				"FINAL base damage: {}.", 
-				coopActor->GetName(), 
-				hitActorPtr->GetName(),
-				releasedRefrPtr->GetName(),
-				a_collidingMass,
-				releasedRefrWeight,
-				asActor ? asActor->GetEquippedWeight() : -1.0f,
+				releasedRefrPtr.get(),
+				hitActorPtr.get(), 
 				havokImpactSpeed,
-				equipmentWeightFactor,
-				hitActorPtr->CalcArmorRating(),
-				armorRatingFactor,
-				levelDamageFactor, 
-				coopActor->GetLevel(),
-				sneakMult,
-				coopActor->GetBaseActorValue(RE::ActorValue::kCarryWeight),
-				a_fallHeight,
-				releasedRefrPtr->data.location.z,
-				fallHeightDiff,
-				weightFactor,
-				gravDamageMult,
-				damage
-			);
-		}
-
-		// Handle health damage.
-		// Ignore damage to friendly actors if friendly fire is off.
-		if (damage != 0.0f)
-		{
-			// Damage will not be modified in either HandleHealthDamage() hook 
-			// because the damage will not be attributed to the player
-			// (attacker param is nullptr) since we are directly modifying the health AV here.
-			// Therefore, to get the same damage modifications here, 
-			// we tack on the thrown object damage mult, 
-			// or flop damage mult if the released refr is the player themselves,
-			// and multiply the result by the damage received mult if the target is a player.
-			if (releasedRefrPtr == coopActor)
-			{
-				// Divebomb for extra damage.
-				damage *= 
-				(
-					Settings::vfFlopDamageMult[playerID] * 
-					(p->mm->floppedFromParaglide ? 2.0f : 1.0f)
-				);
-			}
-			else
-			{
-				damage *= Settings::vfThrownObjectDamageMult[playerID];
-			}
-		}
-
-		const bool triggerCombat = 
-		(
-			(!Util::IsDialogueTarget(hitActorPtr.get())) &&
-			(
-				Settings::vbFriendlyFire[playerID] || 
-				!Util::IsPartyFriendlyActor(hitActorPtr.get())
+				a_collidingMass,
+				a_fallHeight
 			)
-		);
-		// First, apply stagger to actors that do not ragdoll while alive.
-		Util::ApplyHit
-		(
-			coopActor.get(),
-			hitActorPtr.get(),
-			damage,
-			triggerCombat,
-			true,
-			damage, 
-			damage,
-			coopActor->GetHandle(),
-			releasedRefrPtr->formID,
-			hitFlags
 		);
 
 		// Ragdoll the hit actor with a force dependent on the colliding body's impact speed.
-		if (a_shouldRagdoll)
+		
+		auto hitActorRigidBodyPtr = Util::GethkpRigidBody(hitActorPtr.get()); 
+		if (hitActorRigidBodyPtr)
 		{
-			auto hitActorRigidBodyPtr = Util::GethkpRigidBody(hitActorPtr.get()); 
-			if (hitActorRigidBodyPtr)
+			// TODO: 
+			// Add impulse without knockdown setting for less-impactful collisions.
+			if (auto precisionAPI4 = ALYSLC::PrecisionCompat::g_precisionAPI4; precisionAPI4)
 			{
-				// TODO: 
-				// Add impulse without knockdown setting for less-impactful collisions.
-				if (auto precisionAPI4 = ALYSLC::PrecisionCompat::g_precisionAPI4; precisionAPI4)
-				{
-					precisionAPI4->ApplyHitImpulse2
-					(
-						a_hitActorHandle, 
-						coopActor->GetHandle(), 
-						hitActorRigidBodyPtr.get(), 
-						ToNiPoint3(a_collidingVelocity), 
-						TohkVector4(a_contactPos) * GAME_TO_HAVOK, 
-						1.0f
-					);
-				}
+				precisionAPI4->ApplyHitImpulse2
+				(
+					a_hitActorHandle, 
+					coopActor->GetHandle(), 
+					hitActorRigidBodyPtr.get(), 
+					ToNiPoint3(a_collidingVelocity), 
+					TohkVector4(a_contactPos) * GAME_TO_HAVOK, 
+					1.0f
+				);
+			}
 
+			if (a_shouldRagdoll)
+			{
 				// Knockout!
 				Util::PushActorAway(hitActorPtr.get(), a_contactPos, -1.0f);
 
@@ -8431,8 +8362,32 @@ namespace ALYSLC
 				}
 			}
 		}
+		
+		const bool triggerCombat = 
+		(
+			(!GlobalCoopData::IsCoopPlayer(hitActorPtr)) &&
+			(!Util::IsDialogueTarget(hitActorPtr.get())) &&
+			(
+				Settings::vbFriendlyFire[playerID] || 
+				!Util::IsPartyFriendlyActor(hitActorPtr.get())
+			)
+		);
+		// Apply stagger to actors that do not ragdoll while alive.
+		Util::ApplyHit
+		(
+			coopActor.get(),
+			hitActorPtr.get(),
+			damage,
+			triggerCombat,
+			true,
+			hitActorPtr->IsInRagdollState() ? 0.0f : damage, 
+			hitActorPtr->IsInRagdollState() ? 0.0f : damage,
+			coopActor->GetHandle(),
+			releasedRefrPtr->formID,
+			hitFlags
+		);
 
-		if (canSMORF && wantsToSMORF && asActor == coopActor.get())
+		if (canSMORF && wantsToSMORF && releasedRefrPtr == coopActor)
 		{
 			isSMORFing = true;
 			wantsToSMORF = false;
@@ -8510,217 +8465,356 @@ namespace ALYSLC
 		{
 			return;
 		}
-
+		
 		// Need to have stamina to stagger/knock down.
-		bool isSliding = false;
-		bool succ = coopActor->GetGraphVariableBool("SkyParkourSliding", isSliding);
-		bool isCharging = 
-		(
-			!p->coopActor->IsWeaponDrawn() &&
-			p->pam->isSprinting &&
-			p->mm->aimPitch > PI / 4.0f
-		);
-		if (p->pam->currentStamina <= 0.0f || p->pam->secsTotalStaminaRegenCooldown != 0.0f)
+		if ((p->pam->currentStamina <= 0.0f || p->pam->secsTotalStaminaRegenCooldown != 0.0f) &&
+			(!p->mm->isLungingRecklessly && !p->pam->isSliding))
 		{
 			return;
 		}
 		
-		auto bumpedRigidBody = 
-		(
-			charController->bumpedCharCollisionObject ? 
-			charController->bumpedCharCollisionObject : 
-			charController->bumpedBody
-		);
-		if (bumpedRigidBody)
+		auto strings = RE::FixedStrings::GetSingleton();
+		if (strings)
 		{
-			auto bumpedRefr = RE::TESHavokUtilities::FindCollidableRef(bumpedRigidBody->collidable);
-			if (!bumpedRefr)
+			auto getHitResults = 
+			[this, charController](const RE::NiPointer<RE::NiAVObject>& a_nodePtr)
 			{
-				return;
-			}
+				if (!a_nodePtr)
+				{
+					return std::vector<Raycast::RayResult>();
+				}
 
-			auto bumpedActor = bumpedRefr->As<RE::Actor>();
-			// Player 1 is never reported as the bumped body for NPCs/other players,
-			// so don't allow player-to-player collisions until a solution is found 
-			// that works for all players.
-			if (!bumpedActor || 
-				GlobalCoopData::IsCoopPlayer(bumpedActor) || 
-				p->tm->bumpDamagedActorFIDs.contains(bumpedActor->formID))
-			{
-				return;
-			}
+				auto rigidBodyPtr = Util::GethkpRigidBody(a_nodePtr.get()); 
+				if (!rigidBodyPtr ||
+					!rigidBodyPtr->GetShape() || 
+					rigidBodyPtr->GetShape()->type != RE::hkpShapeType::kCapsule)
+				{
+					return std::vector<Raycast::RayResult>();
+				}
 
-			const float playerHavokSpeed = coopActor->DoGetMovementSpeed() * GAME_TO_HAVOK;
-			const auto& knockState = bumpedActor->GetKnockState();
-			if (isSliding || isCharging)
+				auto hkpCapsuleShape = static_cast<const RE::hkpCapsuleShape*>
+				(
+					rigidBodyPtr->GetShape()
+				);
+				RE::NiPoint3 vertexA{ };
+				RE::NiPoint3 vertexB{ };
+				RE::NiPoint3 zAxisDir{ };
+				const float& capsuleRadius = hkpCapsuleShape->radius;
+				const auto& hkTransform = rigidBodyPtr->motion.motionState.transform;
+				RE::NiPoint3 vertAOffset = 
+				(
+					ToNiPoint3(hkpCapsuleShape->vertexA) * HAVOK_TO_GAME
+				);
+				RE::NiPoint3 vertBOffset = 
+				(
+					ToNiPoint3(hkpCapsuleShape->vertexB) * HAVOK_TO_GAME
+				);
+				RE::NiTransform niTransform;
+				niTransform.scale = 1.0f;
+				niTransform.translate = 
+				(
+					ToNiPoint3(hkTransform.translation) * HAVOK_TO_GAME
+				);
+				// Set each corresponding column from the havok rotation matrix.
+				niTransform.rotate.entry[0][0] =  hkTransform.rotation.col0.quad.m128_f32[0];
+				niTransform.rotate.entry[1][0] =  hkTransform.rotation.col0.quad.m128_f32[1];
+				niTransform.rotate.entry[2][0] =  hkTransform.rotation.col0.quad.m128_f32[2];
+
+				niTransform.rotate.entry[0][1] =  hkTransform.rotation.col1.quad.m128_f32[0];
+				niTransform.rotate.entry[1][1] =  hkTransform.rotation.col1.quad.m128_f32[1];
+				niTransform.rotate.entry[2][1] =  hkTransform.rotation.col1.quad.m128_f32[2];
+
+				niTransform.rotate.entry[0][2] =  hkTransform.rotation.col2.quad.m128_f32[0];
+				niTransform.rotate.entry[1][2] =  hkTransform.rotation.col2.quad.m128_f32[1];
+				niTransform.rotate.entry[2][2] =  hkTransform.rotation.col2.quad.m128_f32[2];
+
+				vertexA = niTransform * vertAOffset;
+				vertexB = niTransform * vertBOffset;
+				RE::NiPoint3 temp = 
+				(
+					vertexA.z > vertexB.z ? 
+					vertexA - vertexB : 
+					vertexB - vertexA
+				);
+				temp.Unitize();
+				zAxisDir = { temp.x, temp.y, temp.z };
+
+				const glm::vec4 zAxisDirVec = ToVec4(zAxisDir);
+				float capsuleLength = 
+				(
+					(vertexB - vertexA).Length() + 
+					2.0f * hkpCapsuleShape->radius * HAVOK_TO_GAME
+				);
+				// Node position to offset casts from.
+				// At one end of the capsule.
+				glm::vec4 originPos =
+				(
+					vertexA.z > vertexB.z ?
+					ToVec4
+					(
+						vertexB - zAxisDir * hkpCapsuleShape->radius * HAVOK_TO_GAME
+					) :
+					ToVec4
+					(
+						vertexA - zAxisDir * hkpCapsuleShape->radius * HAVOK_TO_GAME
+					)
+				);
+				auto velDir = glm::normalize(ToVec4(charController->outVelocity * HAVOK_TO_GAME));
+				float havokSpeed = glm::length(velDir);
+				// Cast further out when the starting point is moving fast.
+				const float framerateDepMult = std::clamp
+				(
+					(*g_deltaTimeRealTime / (1.0f / 60.0f)),
+					1.0f,
+					2.0f
+				);
+				float frameDepHavokSpeedFactor = std::lerp
+				(
+					1.5f, 
+					4.0f * framerateDepMult, 
+					std::clamp(havokSpeed / 20.0f, 0.0f, 1.0f)
+				);
+				velDir = 
+				(
+					havokSpeed <= 1e-5f ? 
+					glm::vec4(0.0f, 0.0f, 0.0f, 0.0f) : 
+					glm::normalize(velDir)
+				);
+
+				return
+				(
+					Raycast::ClusterCast
+					(
+						originPos,
+						originPos + 
+						velDir * capsuleLength * frameDepHavokSpeedFactor,
+						capsuleLength,
+						2
+					)
+				);
+			};
+
+			auto applyBumpHit =
+			[this, charController]
+			(
+				const Raycast::RayResult& a_result, 
+				const RE::hkVector4& a_bumpVelocity, 
+				bool a_isSliding, 
+				bool a_isLunging,
+				bool a_bumpApplied
+			)
 			{
+				if (!a_result.hitObjectPtr)
+				{
+					return false;
+				}
+
+				auto bumpedRefr = Util::GetRefrPtrFromHandle(a_result.hitRefrHandle);
+				if (!bumpedRefr)
+				{
+					return false;
+				}
+
+				auto bumpedActor = bumpedRefr->As<RE::Actor>();
+				// Player 1 is never reported as the bumped body for NPCs/other players,
+				// so don't allow player-to-player collisions until a solution is found 
+				// that works for all players.
+				if (!bumpedActor || 
+					p->tm->bumpDamagedActorFIDs.contains(bumpedActor->formID))
+				{
+					return false;
+				}
+				
+				bool isPlayer = GlobalCoopData::IsCoopPlayer(bumpedActor);
+				const auto& knockState = bumpedActor->GetKnockState();
 				auto exOwner = bumpedActor->extraList.GetByType<RE::ExtraOwnership>(); 
 				auto owner = exOwner ? exOwner->owner : nullptr;
 				const bool shouldStagger = 
 				(
-					!bumpedActor->IsStaggered() && 
+					!p->mm->isAirborneWhileJumping &&
+					!p->mm->isParagliding &&
+					!bumpedActor->IsStaggered() &&
 					!bumpedActor->IsStaggering() && 
 					!bumpedActor->IsBleedingOut() &&
 					!bumpedActor->IsAttacking()
 				);
+
 				// Knock down if hitting a staggered target that was staggered by another player
 				// (hooray, a bit of cooperative play required!), 
-				// or if the target is attacking (caught by surprise) or bleeding out.
+				// or if the target is attacking (caught by surprise), 
+				// bleeding out, drop kicked, or lunged at while paragliding.
 				const bool shouldKnockDown = 
 				(
-					(!shouldStagger && bumpedActor->currentProcess) && 
+					(!shouldStagger) && 
 					(
 						owner != coopActor.get() || 
 						bumpedActor->IsBleedingOut() ||
-						bumpedActor->IsAttacking()
+						bumpedActor->IsAttacking() ||
+						bumpedActor->IsStaggered() ||
+						bumpedActor->IsStaggering() ||
+						p->mm->isAirborneWhileJumping ||
+						p->mm->isParagliding
 					)
 				);
-				if (shouldStagger || shouldKnockDown)
+				const auto linVel = Util::GetLinearVelocity(coopActor.get());
+				const auto playerRigidBodyPtr = Util::GethkpRigidBody(coopActor.get());
+				const float playerMass = 
+				(
+					playerRigidBodyPtr ? playerRigidBodyPtr->motion.GetMass() : 0.0f
+				);
+				const float havokImpactSpeed = linVel.Length() * GAME_TO_HAVOK;
+				HandleBonk
+				(
+					bumpedActor->GetHandle(), 
+					coopActor->GetHandle(), 
+					playerMass,
+					Util::Get3DCenterPos(coopActor.get()).z,
+					linVel,
+					ToNiPoint3(a_result.hitPos),
+					shouldKnockDown
+				);
+				DBG("{}: Bumped {}. Should stagger: {}, should knock down: {}.",
+					coopActor->GetName(), bumpedActor->GetName(), shouldStagger, shouldKnockDown);
+				if (shouldStagger && !shouldKnockDown)
 				{
 					// Update stagger 'owner'.
-					bumpedActor->SetOwner(coopActor.get());
-					if (shouldKnockDown)
+					if (!isPlayer)
 					{
-						// Grab and release to ragdoll and/or set trajectory.
-						// Damage scales with 'Thrown Object Damage'.
-						if (!p->tm->rmm->IsManaged(bumpedActor->GetHandle(), false))
-						{
-							const auto releaseAngleFactor = std::lerp
-							(
-								0.5f,
-								0.85f,
-								min
-								(
-									1.0f, bumpedRigidBody->motion.linearVelocity.Length3() / 15.0f
-								)
-							);
-							p->tm->rmm->InstantlyAddReleasedRefr
-							(
-								p, bumpedActor->GetHandle(), releaseAngleFactor
-							);
-						}
+						bumpedActor->SetOwner(coopActor.get());
 					}
-					
-					const float equippedWeight = coopActor->GetEquippedWeight();
-					const float equipmentWeightFactor = 1.0f + equippedWeight / 50.0f;
-					const float slidingFactor = isSliding ? 1.0f : 0.1f;
-					DBG
-					(
-						"{}: {}! Equipped weight: {}, factor: {}. "
-						"Should stagger: {}, should knock down: {}. "
-						"Owner: {}, staggered, bleeding out: {}, {}. DAMAGE: {}",
-						shouldStagger ? "OOF" : "KO",
-						bumpedActor->GetName(), 
-						equippedWeight,
-						equipmentWeightFactor,
-						shouldStagger,
-						shouldKnockDown,
-						owner && owner->As<RE::Actor>() ?
-						owner->As<RE::Actor>()->GetName() : 
-						"NONE",
-						bumpedActor->IsStaggered() || bumpedActor->IsStaggering(),
-						bumpedActor->IsBleedingOut(),
-						playerHavokSpeed * 
-						equipmentWeightFactor *
-						slidingFactor
-					);
+
 					// Apply stagger and damage.
 					bumpedActor->NotifyAnimationGraph("staggerStart");
 					Util::ApplyHit
 					(
 						coopActor.get(), 
 						bumpedActor, 
-						playerHavokSpeed * 
-						equipmentWeightFactor * 
-						slidingFactor,
-						true, 
-						true,
-						playerHavokSpeed * 300.0f,
-						playerHavokSpeed * 300.0f,
-						coopActor->GetHandle()
-					);
-
-					if (isCharging)
-					{
-						// Expend stamina on collision if charging.
-						p->pam->ExpendStamina(p->pam->GetEquippedWeightStaminaCost());
-					}
-				}
-				else
-				{
-					DBG
-					(
-						"{}: BOOP! "
-						"Should stagger: {}, should knock down: {}. "
-						"Owner: {}, staggered, bleeding out: {}, {}. DAMAGE: {}",
-						bumpedActor->GetName(),
-						shouldStagger,
-						shouldKnockDown,
-						owner && owner->As<RE::Actor>() ?
-						owner->As<RE::Actor>()->GetName() : 
-						"NONE",
-						bumpedActor->IsStaggered() || bumpedActor->IsStaggering(),
-						bumpedActor->IsBleedingOut(),
-						playerHavokSpeed
-					);
-					// Apply stagger and damage.
-					bumpedActor->NotifyAnimationGraph("staggerStart");
-					// Scale down damage on already-staggered targets.
-					Util::ApplyHit
-					(
-						coopActor.get(), 
-						bumpedActor, 
-						playerHavokSpeed * 0.25f,
-						true, 
-						true,
-						playerHavokSpeed * 300.0f,
-						playerHavokSpeed * 300.0f,
+						0.0f,
+						!isPlayer, 
+						!isPlayer,
+						isPlayer ? 0.0f : havokImpactSpeed * 300.0f,
+						isPlayer ? 0.0f : havokImpactSpeed * 300.0f,
 						coopActor->GetHandle()
 					);
 				}
-
-				// Play sound.
-				auto audioManager = RE::BSAudioManager::GetSingleton(); 
-				if (!audioManager)
-				{
-					return;
-				}
-				
-				RE::BSSoundHandle handle{ };
-				RE::BGSSoundDescriptorForm* flopSFX =
-				(
-					RE::TESForm::LookupByID<RE::BGSSoundDescriptorForm>(0xAF664)
-				);
-				if (!flopSFX)
-				{	
-					return;
-				}
-
-				bool succ = audioManager->BuildSoundDataFromDescriptor(handle, flopSFX);
-				if (succ)
-				{
-					handle.SetPosition(bumpedActor->data.location);
-					auto actor3DPtr = Util::GetRefr3D(bumpedActor);
-					if (actor3DPtr)
-					{
-						handle.SetObjectToFollow(actor3DPtr.get());
-						handle.SetVolume(min(1.0f, playerHavokSpeed / 5.0f));
-						handle.Play();
-					}
-				}
-
-				// Send detection event for the aggressor player.
-				Util::SetActorsDetectionEvent
-				(
-					coopActor.get(), 
-					bumpedActor, 
-					bumpedActor->GetWeight(),
-					bumpedActor->data.location
-				);
 
 				// Insert as hit to prevent applying a hit each frame the bumper
 				// is in contact with a target (wayyy to many hits).
 				p->tm->bumpDamagedActorFIDs.insert(bumpedActor->formID);
+				
+				// Expend additional stamina on collision if charging.
+				// Large chunk to prevent knockdown-lock cheese.
+				// Can knockdown/stagger 2/4 times max from full stamina.
+				p->pam->ExpendStamina
+				(
+					shouldKnockDown ? 
+					0.5f * Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kStamina) :
+					0.25f * Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kStamina)
+				);
+				return true;
+			};
+
+			bool bumpApplied = false;
+			const auto playerHandle = coopActor->GetHandle();
+			if (p->pam->isSliding)
+			{
+				const auto lFootPtr = Util::GetActorNodeByName
+				(
+					coopActor.get(), strings->npcLFoot
+				);
+				if (lFootPtr)
+				{
+					for (const auto& result : getHitResults(lFootPtr))
+					{
+						if (!result.hit || result.hitRefrHandle == playerHandle)
+						{
+							continue;
+						}
+
+						bumpApplied |= applyBumpHit
+						(
+							result, 
+							charController->outVelocity,
+							p->pam->isSliding, 
+							p->mm->isLungingRecklessly, 
+							bumpApplied
+						);
+					}
+				}
+				
+				const auto rFootPtr = Util::GetActorNodeByName
+				(
+					coopActor.get(), strings->npcRFoot
+				);
+				if (rFootPtr)
+				{
+					for (const auto& result : getHitResults(rFootPtr))
+					{
+						if (!result.hit || result.hitRefrHandle == playerHandle)
+						{
+							continue;
+						}
+
+						bumpApplied |= applyBumpHit
+						(
+							result, 
+							charController->outVelocity,
+							p->pam->isSliding, 
+							p->mm->isLungingRecklessly, 
+							bumpApplied
+						);
+					}
+				}
+			}
+			else if (p->mm->isLungingRecklessly)
+			{
+				const auto spineUpperPtr = Util::GetActorNodeByName
+				(
+					coopActor.get(), strings->npcSpine2
+				);
+				if (spineUpperPtr)
+				{
+					for (const auto& result : getHitResults(spineUpperPtr))
+					{
+						if (!result.hit || result.hitRefrHandle == playerHandle)
+						{
+							continue;
+						}
+
+						bumpApplied |= applyBumpHit
+						(
+							result, 
+							charController->outVelocity,
+							p->pam->isSliding, 
+							p->mm->isLungingRecklessly, 
+							bumpApplied
+						);
+					}
+				}
+
+				const auto spineLowerPtr = Util::GetActorNodeByName
+				(
+					coopActor.get(), strings->npcSpine
+				);
+				if (spineLowerPtr)
+				{
+					for (const auto& result : getHitResults(spineLowerPtr))
+					{
+						if (!result.hit || result.hitRefrHandle == playerHandle)
+						{
+							continue;
+						}
+
+						bumpApplied |= applyBumpHit
+						(
+							result, 
+							charController->outVelocity,
+							p->pam->isSliding, 
+							p->mm->isLungingRecklessly,
+							bumpApplied
+						);
+					}
+				}
 			}
 		}
 	}
@@ -9911,14 +10005,10 @@ namespace ALYSLC
 					// Set fall height at the apex of the trajectory to properly apply fall damage 
 					// once the dropped actor hits a surface.
 					auto asActor = releasedRefrPtr->As<RE::Actor>(); 
-					auto hkpRigidBodyPtr = Util::GethkpRigidBody(asActor);
 					auto charController = asActor ? asActor->GetCharController() : nullptr;
-					if (charController && hkpRigidBodyPtr)
+					if (charController)
 					{
-						auto currentVelocity = ToNiPoint3
-						(
-							hkpRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME
-						);
+						auto currentVelocity = Util::GetLinearVelocity(releasedRefrPtr.get());
 						float previousVelPitch = Util::GetPitchBetweenPositions
 						(
 							RE::NiPoint3(), releasedRefrInfo->lastSetVelocity
@@ -10117,17 +10207,11 @@ namespace ALYSLC
 					// Cast length equals the distance the node travels per frame 
 					// at the current velocity plus a small increment 
 					// equal to half the refr's height or equal to its radius.
-							
-					velDir = ToNiPoint3
-					(
-						releasedRefrRigidBodyPtr->motion.linearVelocity, true
-					);
-					float distPerFrame = 
-					(
-						releasedRefrRigidBodyPtr->motion.linearVelocity.Length3() *
-						*g_deltaTimeRealTime *
-						HAVOK_TO_GAME
-					);
+						
+					auto linVel = Util::GetLinearVelocity(releasedRefrPtr.get());
+					velDir = linVel;
+					velDir.Unitize();
+					float distPerFrame = linVel.Length() * *g_deltaTimeRealTime;
 					float incThrownRefrRadius = 0.0f;
 					if (releasedActor)
 					{
@@ -10266,6 +10350,7 @@ namespace ALYSLC
 						hitRefrPtr != coopActor && 
 						!hasAlreadyHitRefr
 					);
+					auto linVel = Util::GetLinearVelocity(releasedRefrPtr.get());
 					if (shouldBonk)
 					{
 						HandleBonk
@@ -10274,11 +10359,7 @@ namespace ALYSLC
 							releasedRefrPtr->GetHandle(), 
 							releasedRefrRigidBodyPtr->motion.GetMass(),
 							releasedRefrInfo->fallHeight,
-							ToNiPoint3
-							(
-								releasedRefrRigidBodyPtr->motion.linearVelocity *
-								HAVOK_TO_GAME
-							),
+							linVel,
 							hitPos
 						);
 					}
@@ -10311,8 +10392,7 @@ namespace ALYSLC
 								min
 								(
 									1.0f,
-									releasedRefrRigidBodyPtr->motion.linearVelocity.Length3() / 
-									15.0f
+									linVel.Length() * GAME_TO_HAVOK / 15.0f
 								)
 							)
 						);
@@ -10343,14 +10423,31 @@ namespace ALYSLC
 
 					if (canSplat || shouldBonk)
 					{
-						// Update fall height to the refr's position after handling the collision.
-						releasedRefrInfo->fallHeight = 
+						DBG
 						(
-							Util::Get3DCenterPos
+							"{}'s speed on hit relative to release speed: {}.",
+							releasedRefrPtr->GetName(), 
+							linVel.Length() / releasedRefrInfo->releaseSpeed
+						);
+						// Update fall height to the refr's position after handling the collision.
+						// Only do so if the refr has slowed down enough since release 
+						// because we don't want to reduce the damage of different collisions 
+						// that occur within the span of a few frames 
+						// while the refr is still moving quickly.
+						if (linVel.Length() / releasedRefrInfo->releaseSpeed < 0.5f)
+						{
+							DBG
+							(
+								"{}'s fall height changed from {} to {}.",
+								releasedRefrPtr->GetName(), 
+								releasedRefrInfo->fallHeight,
+								Util::Get3DCenterPos(releasedRefrPtr.get()).z
+							);
+							releasedRefrInfo->fallHeight = Util::Get3DCenterPos
 							(
 								releasedRefrPtr.get()
-							).z
-						);
+							).z;
+						}
 					}
 				}
 			}
@@ -10444,154 +10541,29 @@ namespace ALYSLC
 			return;
 		}
 		
-		auto releasedRefrRigidBodyPtr = Util::GethkpRigidBody(releasedActorPtr.get()); 
-		float havokImpactSpeed = 0.0f;
-		float damage = 0.0f;
-		// More damage when the hit surface is oriented perpendicular to the actor's motion.
-		float normOpposingVelocityFactor = 1.0f;
-		// Not a ghost or invulnerable.
-		bool damageable = 
-		(
-			!releasedActorPtr->IsGhost() &&
-			!releasedActorPtr->IsInvulnerable() && 
-			!releasedActorPtr->IsInWater()
-		);
 		const bool isFlopping = releasedActorPtr == coopActor;
-		if (damageable)
+		float damage = 0.0f;
+		float havokImpactSpeed = 0.0f;
+		float mass = 0.f;
+		auto releasedRefrRigidBodyPtr = Util::GethkpRigidBody(releasedActorPtr.get());
+		if (releasedRefrRigidBodyPtr)
 		{
-			if (releasedRefrRigidBodyPtr) 
-			{
-				auto velDir = ToNiPoint3(releasedRefrRigidBodyPtr->motion.linearVelocity, true);
-				normOpposingVelocityFactor = 0.5f * (1.0f - velDir.Dot(a_hitNormal));
-				havokImpactSpeed = releasedRefrRigidBodyPtr->motion.linearVelocity.Length3();
-				// Get refr linear speed if rigidbody speed is 0.
-				if (havokImpactSpeed == 0.0f)
-				{
-					RE::NiPoint3 linVel{ };
-					releasedActorPtr->GetLinearVelocity(linVel);
-					havokImpactSpeed = linVel.Length() * GAME_TO_HAVOK;
-				}
-
-				// Higher armor rating -> less damage taken.
-				// 1 / 10 the damage at an armor rating of 100.
-				float armorRatingFactor = std::clamp
-				(
-					-0.009f * releasedActorPtr->CalcArmorRating() + 1.0f,
-					0.1f,
-					1.0f
-				);
-				// Take 1 / 2 the damage at level 100.
-				float levelDamageFactor = 
-				(
-					1.0f / 
-					(1.0f + max(releasedActorPtr->GetLevel() - 1.0f, 0.0f) / 99.0f)
-				);
-				const auto releasedPIndex = GlobalCoopData::GetCoopPlayerIndex(releasedActorPtr);
-				float inventoryWeight = 
-				(
-					releasedPIndex <= 0 ?
-					releasedActorPtr->GetWeightInContainer() :
-					glob.coopPlayers[releasedPIndex]->em->inventoryChest->GetWeightInContainer()
-				);
-				const auto invChanges = 
-				(
-					releasedPIndex <= 0 ?
-					releasedActorPtr->GetInventoryChanges() :
-					glob.coopPlayers[releasedPIndex]->em->inventoryChest->GetInventoryChanges()
-				);
-				if (invChanges)
-				{
-					inventoryWeight = invChanges->totalWeight;
-				}
-
-				// Actors that are nearly or over-encumbered take more damage.
-				float inventoryWeightFactor = 
-				(
-					1.0f + 
-					(
-						inventoryWeight / 
-						max(coopActor->GetBaseActorValue(RE::ActorValue::kCarryWeight), 1.0f)
-					)
-				);
-				
-				// Gravity considerations. Needs balancing and is subject to change.
-				const float fallHeightDiff = max
-				(
-					0.0f, a_fallHeight - releasedActorPtr->data.location.z
-				);
-				float gravDamageMult = 
-				(
-					2.5f + 
-					(
-						(1.5f) *
-						(
-							expf(0.004f * fallHeightDiff - 4.0f) - 
-							expf(-0.004f * fallHeightDiff + 4.0f)
-						) / 
-						(
-							expf(0.004f * fallHeightDiff - 4.0f) + 
-							expf(-0.004f * fallHeightDiff + 4.0f)
-						)
-					)
-				);
-				float flopSelfDamageMult = 
-				(
-					releasedActorPtr == coopActor ? 
-					Settings::vfFlopHealthCostMult[playerID] :
-					1.0f
-				);
-				damage = 
-				(
-					(flopSelfDamageMult) * 
-					(
-						normOpposingVelocityFactor * 
-						gravDamageMult * 
-						havokImpactSpeed * 
-						levelDamageFactor * 
-						armorRatingFactor * 
-						inventoryWeightFactor *
-						(1.0f / static_cast<float>(max(1, a_hitCount)))
-					) 
-				);
-
-				// REMOVE when done debugging.
-				DBG
-				(
-					"{}: Thrown actor: {}. Mass: {}, impact speed: {}, actor linear speed: {}, "
-					"armor rating and factor: {}, {}, inventory weight factor: {}, "
-					"level damage factor: {}, flop self-damage mult: {}, "
-					"fall height: {}, current: {}, diff: {}, grav damage mult: {}, "
-					"normal opposing velocity factor: {}, knock state: {}. "
-					"FINAL base damage: {}. Hit #{}",
-					coopActor->GetName(),
-					releasedActorPtr->GetName(),
-					releasedRefrRigidBodyPtr->motion.GetMass(),
-					havokImpactSpeed,
-					Util::GetActorLinearVelocity(releasedActorPtr.get()).Length() * GAME_TO_HAVOK,
-					releasedActorPtr->CalcArmorRating(),
-					armorRatingFactor,
-					inventoryWeightFactor,
-					levelDamageFactor,
-					flopSelfDamageMult,
-					a_fallHeight,
-					releasedActorPtr->data.location.z,
-					fallHeightDiff,
-					gravDamageMult,
-					normOpposingVelocityFactor,
-					releasedActorPtr->GetKnockState(),
-					damage, 
-					a_hitCount
-				);
-			}
-
-			// Apply thrown object damage mult.
-			if (damage != 0.0f)
-			{
-				damage *= Settings::vfThrownObjectDamageMult[playerID];
-			}
+			RE::hkVector4 havokHitVelocity =
+			(
+				Util::GetLinearVelocity(releasedActorPtr.get()) * GAME_TO_HAVOK
+			);
+			havokImpactSpeed = havokHitVelocity.Length3();
+			mass = releasedRefrRigidBodyPtr->motion.GetMass();
+			damage = GetDamageForSplat
+			(
+				releasedActorPtr.get(), 
+				havokHitVelocity,
+				a_hitNormal, 
+				a_fallHeight,
+				a_hitCount
+			);
 		}
 
-		
 		// Inflict damage for each hit if thrown or if flopping,
 		// but only on the first hit if dropped,
 		// since we'll allow the game to apply fall damage for subsequent hits,
@@ -10734,9 +10706,7 @@ namespace ALYSLC
 		(
 			coopActor.get(), 
 			releasedActorPtr.get(), 
-			releasedRefrRigidBodyPtr ? 
-			releasedRefrRigidBodyPtr->motion.GetMass() : 
-			0.0f,
+			mass,
 			releasedActorPtr->data.location
 		);
 	}
@@ -13617,7 +13587,7 @@ namespace ALYSLC
 							{
 								text = fmt::format
 								(
-									"P{}: Sneak to {}", p->playerID + 1, text
+									"P{}: Sneak to {}", playerID + 1, text
 								);
 							}
 						}
@@ -13646,7 +13616,7 @@ namespace ALYSLC
 							{
 								text = fmt::format
 								(
-									"P{}: {}", p->playerID + 1, text
+									"P{}: {}", playerID + 1, text
 								);
 							}
 						}
@@ -13659,7 +13629,7 @@ namespace ALYSLC
 							(
 								"P{}: Sneak to "
 								"<font color=\"#FF0000\">Interact</font> with {}",
-								p->playerID + 1, text
+								playerID + 1, text
 							);
 						}
 						else
@@ -13669,14 +13639,14 @@ namespace ALYSLC
 								text = fmt::format
 								(
 									"P{}: <font color=\"#FF0000\">Interact</font> with {}", 
-									p->playerID + 1, text
+									playerID + 1, text
 								);
 							}
 							else
 							{
 								text = fmt::format
 								(
-									"P{}: Interact with {}", p->playerID + 1, text
+									"P{}: Interact with {}", playerID + 1, text
 								);
 							}
 						}
@@ -15537,6 +15507,7 @@ namespace ALYSLC
 		RE::NiPoint3 boundMin{ };
 		RE::NiPoint3 boundCenter{ };
 		RE::NiMatrix3 rotMat{ }; 
+		Util::GetWorldBoundData(hitRefrPtr.get(), boundMin, boundMax, boundCenter, rotMat);
 		
 		// NOTE:
 		// Wanted to allow for more granular selection, so the idea was to slow down
@@ -15598,103 +15569,6 @@ namespace ALYSLC
 			);
 		}*/
 
-		boundMax = hitRefrPtr->GetBoundMax();
-		boundMin = hitRefrPtr->GetBoundMin();
-		boundCenter = hitRefrPtr->data.location;
-		auto refrHkpRigidBodyPtr = Util::GethkpRigidBody(hitRefrPtr.get());
-		bool isDead = hitRefrPtr->IsDead();
-		bool isKnocked = asActor && asActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal;
-		bool isRagdolled = asActor && asActor->IsInRagdollState();
-		bool isUprightActor = asActor && !isDead && !isKnocked && !isRagdolled;
-		if (isUprightActor)
-		{
-			// Half up upright actor.
-			boundCenter = 
-			(
-				asActor->data.location + 
-				RE::NiPoint3(0.0f, 0.0f, 0.5f * asActor->GetHeight())
-			);
-		}
-		else if (refrHkpRigidBodyPtr)
-		{
-			// Use rigidbody translation when ragdolled.
-			if ((asActor) && (isDead || isKnocked || isRagdolled))
-			{
-				boundCenter = ToNiPoint3
-				(
-					refrHkpRigidBodyPtr->motion.motionState.transform.translation *
-					HAVOK_TO_GAME
-				);
-			}
-			else
-			{
-				boundCenter = Util::Get3DCenterPos(hitRefrPtr.get());
-			}
-
-			// Get bounds from collidable.
-			if (refrHkpRigidBodyPtr->collidable.GetShape() &&
-				refrHkpRigidBodyPtr->collidable.GetShape()->type == 
-				RE::hkpShapeType::kBox)
-			{
-				auto shape = refrHkpRigidBodyPtr->collidable.GetShape();
-				RE::hkTransform hkTrans{ };
-				hkTrans.rotation.col0 = { 1.0f, 0.0f, 0.0f, 0.0f };
-				hkTrans.rotation.col1 = { 0.0f, 1.0f, 0.0f, 0.0f };
-				hkTrans.rotation.col2 = { 0.0f, 0.0f, 1.0f, 0.0f };
-				RE::hkAabb aabb{ };
-				shape->GetAabbImpl(hkTrans, 0.0f, aabb);
-				boundMax = ToNiPoint3(aabb.max) * HAVOK_TO_GAME;
-				boundMin = ToNiPoint3(aabb.min) * HAVOK_TO_GAME;
-			}
-		}
-			
-		auto hit3DPtr = Util::GetRefr3D(hitRefrPtr.get()); 
-		if (hit3DPtr)
-		{
-			// Rotation from hit refr's 3D object.
-			rotMat = hit3DPtr->world.rotate;
-			// Fall back to 3D object's radius for the bounds,
-			// if not found from the collidable above.
-			if (boundMin == boundMax && boundMax.Length() == 0.0f)
-			{
-				boundMax = 
-				(
-					RE::NiPoint3(0.0f, 1.0f, 0.0f) * hit3DPtr->worldBound.radius
-				);
-				boundMin = -boundMax;
-			}
-		}
-		else
-		{
-			// Fall back to refr reported angles if the refr's 3D is unavailable.
-			Util::SetRotationMatrixPYR
-			(
-				rotMat,
-				hitRefrPtr->data.angle.x,
-				hitRefrPtr->data.angle.z,
-				hitRefrPtr->data.angle.y
-			);
-		}
-
-		// Fall back to half up the refr if the bound center is unavailable.
-		if (boundCenter.Length() == 0.0f)
-		{
-			boundCenter = 
-			(
-				hitRefrPtr->data.location + 
-				RE::NiPoint3(0.0f, 0.0f, 0.5f * hitRefrPtr->GetHeight())
-			);
-		}
-
-		// Finally, one more fallback to using half the object's height as the bounds.
-		if (boundMin == boundMax && boundMax.Length() == 0.0f)
-		{
-			boundMax = 
-			(
-				RE::NiPoint3(0.0f, 1.0f, 0.0f) * 0.5f * hitRefrPtr->GetHeight()
-			);
-			boundMin = -boundMax;
-		}
 		
 		//
 		// Get the edges of the bounding box.
@@ -16080,9 +15954,9 @@ namespace ALYSLC
 
 			// Do not step over other temporary binds' toes:
 			// 1. Crosshair snap.
-			// 2. Object cycle selection.
-			// 3. Use selected item.
-			if ((!tempInterruptedBind1) && (p->rsMoved || p->lsMoved))
+			// 2. Open nearby loot menu.
+			if ((!tempInterruptedBind1) && 
+				((p->rsMoved) || (noAnalogStickMask & (1 << !InputAction::kA)) != 0))
 			{
 				tempInterruptedBind1 = true;
 			}
@@ -16208,31 +16082,36 @@ namespace ALYSLC
 		);
 		if (canSelect)
 		{
-			if (glob.cam->IsRunning() && glob.cam->camCollisions)
+			if (glob.cam->IsRunning() && 
+				glob.cam->isLockedOn && 
+				Util::HandleIsValid(glob.cam->camLockOnTargetHandle))
 			{
-				if ((glob.cam->softFocalPID == -1) || 
-					(
-						!glob.cam->AllPlayersOnScreenAtCamOrientation(true) && 
-						glob.cam->softFocalPID != playerID
-					))
+				if (!glob.cam->IsAdjustingRotation())
 				{
-					glob.cam->setSoftFocalTargetPosTP = SteadyClock::now();
-					glob.cam->softFocalPID = p->playerID;
-					SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Has soft camera focus", playerID + 1)
-					);
+					// Switch facing direction if lock on auto rotation is active,
+					// meaning no player has manually adjusted the camera's rotation.
+					bool shouldSwitchFacingDirection = glob.cam->lockOnShouldAutoRotate;
+					if (glob.cam->lockOnShouldAutoRotate)
+					{
+						glob.cam->facingLockOnTarget = !glob.cam->facingLockOnTarget;
+					}
+
+					// Update the camera position.
+					glob.cam->FaceLockOnTarget(playerID);
+					// Turn auto rotation on after the facing direction change.
+					glob.cam->lockOnShouldAutoRotate = true;
 				}
-				else
-				{
-					glob.cam->softFocalPID = -1;
-					SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Removed soft camera focus", playerID + 1)
-					);
-				}
+
+			}
+			else if (glob.cam->focalPID == -1)
+			{
+				// Toggle soft focal player control when there is no lock on target or focal player.
+				glob.cam->ToggleSoftFocalPlayerTracking(playerID);
+			}
+			else
+			{
+				// Shoulder swap.
+				glob.cam->SwapShoulders(playerID);
 			}
 		}
 		
@@ -16360,6 +16239,35 @@ namespace ALYSLC
 					);
 				}
 			}
+		}
+	}
+	
+	void TargetingManager::UpdateMotionStates()
+	{
+		// Update motion state data for the player and targeted refr.
+
+		playerMotionState->UpdateMotionState
+		(
+			Util::HandleIsValid(p->currentMountHandle) ? 
+			p->currentMountHandle :
+			coopActor->GetHandle()
+		);
+
+		auto targetedActorHandle = GetRangedTargetActor();
+		if (Util::HandleIsValid(targetedActorHandle))
+		{
+			// Prioritize targeting the selected/aim correction/linked target actor.
+			targetMotionState->UpdateMotionState(targetedActorHandle);
+		}
+		else if (Util::HandleIsValid(crosshairRefrHandle))
+		{
+			// Target the crosshair refr, which is NOT an actor.
+			targetMotionState->UpdateMotionState(crosshairRefrHandle);
+		}
+		else
+		{
+			// Clear current motion state data.
+			targetMotionState->UpdateMotionState(RE::ObjectRefHandle());
 		}
 	}
 
@@ -16687,28 +16595,6 @@ namespace ALYSLC
 
 		// Get detection percent RGB value after updating the player's detection percent.
 		detectionPctRGB = GetDetectionLvlRGB(detectionPct, false);
-	}
-
-	void TargetingManager::UpdateTargetedRefrMotionState()
-	{
-		// Update motion state data for the targeted refr.
-
-		auto targetedActorHandle = GetRangedTargetActor();
-		if (Util::HandleIsValid(targetedActorHandle))
-		{
-			// Prioritize targeting the selected/aim correction/linked target actor.
-			targetMotionState->UpdateMotionState(targetedActorHandle);
-		}
-		else if (Util::HandleIsValid(crosshairRefrHandle))
-		{
-			// Target the crosshair refr, which is NOT an actor.
-			targetMotionState->UpdateMotionState(crosshairRefrHandle);
-		}
-		else
-		{
-			// Clear current motion state data.
-			targetMotionState->UpdateMotionState(RE::ObjectRefHandle());
-		}
 	}
 
 	void TargetingManager::UpdateTargetingOverlay()
@@ -18317,32 +18203,14 @@ namespace ALYSLC
 		float pitchToTarget = Util::GetPitchBetweenPositions(objectPos, aimTargetPos);
 		float yawToTarget = Util::GetYawBetweenPositions(objectPos, aimTargetPos);
 		// Get the released refr's current velocity.
-		RE::NiPoint3 currentVelocity{ };
+		RE::NiPoint3 currentVelocity = Util::GetLinearVelocity(objectPtr.get());
 		// Use the havok velocity here or, if there is no valid rigid body,
 		// still set the velocity to apply regardless.
 		// Our projectile UpdateImpl() hook can still update active projectiles' velocity 
 		// even if they do not have a rigid body.
-		if (isActiveProjectile)
+		if (isActiveProjectile && objectPtr->As<RE::Projectile>())
 		{
-			auto asProjectile = objectPtr->As<RE::Projectile>();
-			if (asProjectile)
-			{
-				currentVelocity = asProjectile->linearVelocity;
-			}
-			else
-			{
-				objectPtr->GetLinearVelocity(currentVelocity);
-			}
-		}
-		else
-		{
-			auto hkpRigidBodyPtr = Util::GethkpRigidBody(objectPtr.get());
-			if (!hkpRigidBodyPtr)
-			{
-				return velToSet;
-			}
-
-			currentVelocity = ToNiPoint3(hkpRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME);
+			currentVelocity = objectPtr->As<RE::Projectile>()->linearVelocity;
 		}
 
 		// Set speed to the corresponding speed along the fixed trajectory.
@@ -18922,18 +18790,13 @@ namespace ALYSLC
 		auto hkpRigidBodyPtr = Util::GethkpRigidBody(objectPtr.get());
 		// Release velocity to apply.
 		// Set to the current velocity initially.
-		if (hkpRigidBodyPtr)
+		if (auto asProj = objectPtr->As<RE::Projectile>(); asProj && isActiveProjectile)
 		{
-			releaseVelocity = ToNiPoint3(hkpRigidBodyPtr->motion.linearVelocity) * HAVOK_TO_GAME;
-		}
-		else if (auto asProjectile = objectPtr->As<RE::Projectile>(); 
-				 asProjectile && isActiveProjectile)
-		{
-			releaseVelocity = asProjectile->linearVelocity;
+			releaseVelocity = asProj->linearVelocity;
 		}
 		else
 		{
-			objectPtr->GetLinearVelocity(releaseVelocity);
+			releaseVelocity = Util::GetLinearVelocity(objectPtr.get());
 		}
 		
 		// Throw the refr if facing the crosshair position,
@@ -18992,9 +18855,9 @@ namespace ALYSLC
 			a_p->tm->canSMORF,
 			a_p->tm->wantsToSMORF
 		);
+		auto asActor = objectPtr->As<RE::Actor>();
 		if (shouldThrow)
 		{
-			auto asActor = objectPtr->As<RE::Actor>();
 			// Throw refr telekinetically.
 			// Zero out velocity first.
 			if (!isActiveProjectile && hkpRigidBodyPtr)
@@ -19187,6 +19050,9 @@ namespace ALYSLC
 		}
 		else
 		{
+			// Record release velocity/speed.
+			releaseVelocity = Util::GetLinearVelocity(objectPtr.get());
+			releaseSpeed = releaseVelocity.Length();
 			// Drop object.
 			isThrown = false;
 		}
@@ -20027,7 +19893,7 @@ namespace ALYSLC
 			RE::TESObjectREFRPtr collidedWithRefrPtr = nullptr;
 			// Rigid bodies for the hit refr and released refr, if any.
 			RE::hkRefPtr<RE::hkpRigidBody> hitRigidBodyPtr{ nullptr };
-			RE::hkRefPtr<RE::hkpRigidBody> releasedRigidBodyPtr{ nullptr };
+			RE::hkRefPtr<RE::hkpRigidBody> releasedRefrRigidBodyPtr{ nullptr };
 			// Flopped-on refrs to add as released to propagate the initial collision.
 			// Pairs of (refr handle, released angle factor).
 			std::vector<std::pair<RE::ObjectRefHandle, float>> flopRedirectedRefrs{ };
@@ -20101,38 +19967,50 @@ namespace ALYSLC
 					
 					// Increment total hits count.
 					releasedRefrInfo->totalHitsCount++;
-					// Do not apply splat damage if this refr is not an actor 
-					// or is a not flopping player and is not a thrown.
+					// Do not apply splat damage if this refr is not an actor.
 					auto releasedActor = releasedRefrPtr->As<RE::Actor>();
-					if (!releasedActor)
+					if (releasedActor)
 					{
-						// Update fall height to the actor's position
-						// even when skipping the collision.
-						releasedRefrInfo->fallHeight = 
+						auto releasedActorHandle = releasedActor->GetHandle();
+						// Hit 3D object without an associated refr.
+						// eg. Navmesh or terrain block.
+						a_p->tm->HandleSplat
 						(
+							releasedActorHandle, 
+							ToNiPoint3(contactEvent->contactNormal),
+							max(1, releasedRefrInfo->totalHitsCount),
+							releasedRefrInfo->fallHeight,
+							releasedRefrInfo->isThrown
+						);
+					}
+					
+					auto linVel = Util::GetLinearVelocity(releasedRefrPtr.get());
+					DBG
+					(
+						"{}'s speed on hit relative to release speed: {}.",
+						releasedRefrPtr->GetName(), 
+						linVel.Length() / releasedRefrInfo->releaseSpeed
+					);
+					// Update fall height to the refr's position after handling the collision.
+					// Only do so if the refr has slowed down enough since release 
+					// because we don't want to reduce the damage of different collisions 
+					// that occur within the span of a few frames 
+					// while the refr is still moving quickly.
+					if (linVel.Length() / releasedRefrInfo->releaseSpeed < 0.5f)
+					{
+						DBG
+						(
+							"{}'s fall height changed from {} to {}.",
+							releasedRefrPtr->GetName(), 
+							releasedRefrInfo->fallHeight,
 							Util::Get3DCenterPos(releasedRefrPtr.get()).z
 						);
-						continue;
+						releasedRefrInfo->fallHeight = Util::Get3DCenterPos
+						(
+							releasedRefrPtr.get()
+						).z;
 					}
-						
-					auto releasedActorHandle = releasedActor->GetHandle();
-					// Hit 3D object without an associated refr.
-					// eg. Navmesh or terrain block.
-					a_p->tm->HandleSplat
-					(
-						releasedActorHandle, 
-						ToNiPoint3(contactEvent->contactNormal),
-						max(1, releasedRefrInfo->totalHitsCount),
-						releasedRefrInfo->fallHeight,
-						releasedRefrInfo->isThrown
-					);
-					// Update fall height to the actor's position after handling the collision.
-					releasedRefrInfo->fallHeight = Util::Get3DCenterPos
-					(
-						releasedRefrPtr.get()
-					).z;
 
-					// We're done here.
 					continue;
 				}
 				
@@ -20155,7 +20033,7 @@ namespace ALYSLC
 					collidedWithRefrPtr = refrPtrB;
 					collidingReleasedRefrIndex = iterA->second;
 					hitRigidBodyPtr = contactEvent->rigidBodyB;
-					releasedRigidBodyPtr = contactEvent->rigidBodyA;
+					releasedRefrRigidBodyPtr = contactEvent->rigidBodyA;
 				}
 
 				if (iterB != releasedRefrIndicesMap.end() && iterA == releasedRefrIndicesMap.end())
@@ -20163,11 +20041,11 @@ namespace ALYSLC
 					collidedWithRefrPtr = refrPtrA;
 					collidingReleasedRefrIndex = iterB->second;
 					hitRigidBodyPtr = contactEvent->rigidBodyA;
-					releasedRigidBodyPtr = contactEvent->rigidBodyB;
+					releasedRefrRigidBodyPtr = contactEvent->rigidBodyB;
 				}
 				
 				// No released refr rigid body.
-				if (!releasedRigidBodyPtr)
+				if (!releasedRefrRigidBodyPtr)
 				{
 					continue;
 				}
@@ -20273,6 +20151,7 @@ namespace ALYSLC
 				// Add hit.
 				releasedRefrInfo->AddHitRefr(collidedWithRefrPtr.get());
 				auto hitActor = collidedWithRefrPtr->As<RE::Actor>(); 
+				auto linVel = Util::GetLinearVelocity(releasedRefrPtr.get());
 				// Managed refr hit a new actor that isn't itself. Bonk.
 				bool shouldBonk = 
 				(
@@ -20287,9 +20166,9 @@ namespace ALYSLC
 					(
 						hitActor->GetHandle(), 
 						releasedRefrPtr->GetHandle(),
-						releasedRigidBodyPtr->motion.GetMass(),
+						releasedRefrRigidBodyPtr->motion.GetMass(),
 						releasedRefrInfo->fallHeight,
-						ToNiPoint3(releasedRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME),
+						linVel,
 						ToNiPoint3(contactEvent->contactPosition * HAVOK_TO_GAME)
 					);
 				}
@@ -20321,7 +20200,8 @@ namespace ALYSLC
 							0.85f,
 							min
 							(
-								1.0f, releasedRigidBodyPtr->motion.linearVelocity.Length3() / 15.0f
+								1.0f, 
+								linVel.Length() * GAME_TO_HAVOK / 15.0f
 							)
 						)
 					);
@@ -20345,11 +20225,34 @@ namespace ALYSLC
 						releasedRefrInfo->isThrown
 					);
 				}
-
+				
 				if (canSplat || shouldBonk)
 				{
+					DBG
+					(
+						"{}'s speed on hit relative to release speed: {}.",
+						releasedRefrPtr->GetName(), 
+						linVel.Length() / releasedRefrInfo->releaseSpeed
+					);
 					// Update fall height to the refr's position after handling the collision.
-					releasedRefrInfo->fallHeight = Util::Get3DCenterPos(releasedRefrPtr.get()).z;
+					// Only do so if the refr has slowed down enough since release 
+					// because we don't want to reduce the damage of different collisions 
+					// that occur within the span of a few frames 
+					// while the refr is still moving quickly.
+					if (linVel.Length() / releasedRefrInfo->releaseSpeed < 0.5f)
+					{
+						DBG
+						(
+							"{}'s fall height changed from {} to {}.",
+							releasedRefrPtr->GetName(), 
+							releasedRefrInfo->fallHeight,
+							Util::Get3DCenterPos(releasedRefrPtr.get()).z
+						);
+						releasedRefrInfo->fallHeight = Util::Get3DCenterPos
+						(
+							releasedRefrPtr.get()
+						).z;
+					}
 				}
 
 				// Only damage destructible objects on the first hit.
@@ -20371,7 +20274,7 @@ namespace ALYSLC
 						{
 							havokHitSpeed = 
 							(
-								releasedRigidBodyPtr->motion.linearVelocity.Length3()
+								releasedRefrRigidBodyPtr->motion.linearVelocity.Length3()
 							);
 						}
 					}
@@ -20843,32 +20746,15 @@ namespace ALYSLC
 		{
 			// Need to set both current and previous positions/velocities/angles
 			// to their corresponding initial values on the first update.
-			if (asActorPtr)
-			{
-				RE::hkVector4 pos{ };
-				asActorPtr->GetCharController()->GetPosition(pos, false);
-				pPos = cPos = ToNiPoint3(pos) * HAVOK_TO_GAME;
-				pVel = cVel = Util::GetActorLinearVelocity(asActorPtr.get());
-				pYaw = cYaw = 
-				(
-					cVel.Length() == 0.0f ? 
-					asActorPtr->GetHeading(false) : 
-					Util::GetYawBetweenPositions(RE::NiPoint3(), cVel)
-				);
-			}
-			else
-			{
-				pPos = cPos = targetRefrPtr->data.location;
-				RE::NiPoint3 linVel{ };
-				targetRefrPtr->GetLinearVelocity(linVel);
-				pVel = cVel = linVel;
-				pYaw = cYaw = 
-				(
-					cVel.Length() == 0.0f ? 
-					targetRefrPtr->data.angle.z : 
-					Util::GetYawBetweenPositions(RE::NiPoint3(), cVel)
-				);
-			}
+			pPos = cPos = targetRefrPtr->data.location;
+			RE::NiPoint3 linVel = Util::GetLinearVelocity(targetRefrPtr.get());
+			pVel = cVel = linVel;
+			pYaw = cYaw = 
+			(
+				cVel.Length() == 0.0f ? 
+				asActorPtr ? asActorPtr->GetHeading(false) : targetRefrPtr->data.angle.z : 
+				Util::GetYawBetweenPositions(RE::NiPoint3(), cVel)
+			);
 			
 			apiAccel =
 			apiVel = RE::NiPoint3();
@@ -20899,9 +20785,7 @@ namespace ALYSLC
 				// However, the character controller position delta-derived speed
 				// is noisier and prone to sudden changes, 
 				// which leads to uglier predicted trajectory arcs when drawing trajectories.
-				RE::hkVector4 pos{ };
-				asActorPtr->GetCharController()->GetPosition(pos, false);
-				cPos = ToNiPoint3(pos) * HAVOK_TO_GAME;
+				cPos = asActorPtr->data.location;
 				cPos = pPos + RE::NiPoint3
 				(
 					std::lerp(0.0f, (cPos - pPos).x, 0.25f),

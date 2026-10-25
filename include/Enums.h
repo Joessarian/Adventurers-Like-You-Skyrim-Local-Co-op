@@ -47,6 +47,113 @@ namespace fmt
 			return fmt::format_to(a_ctx.out(), "{}", a_string.c_str());
 		}
 	};
+
+	// Took me way too long to add this custom format for coordinate types. Ugh.
+	template <>
+	struct formatter<RE::NiPoint2>
+	{
+		template <class ParseContext>
+		constexpr auto parse(ParseContext& a_ctx)
+		{
+			return a_ctx.begin();
+		}
+
+		template <class FormatContext>
+		auto format(const RE::NiPoint2& a_point, FormatContext& a_ctx) const
+		{
+			return fmt::format_to(a_ctx.out(), "({}, {})", a_point.x, a_point.y);
+		}
+	};
+
+	template <>
+	struct formatter<RE::NiPoint3>
+	{
+		template <class ParseContext>
+		constexpr auto parse(ParseContext& a_ctx)
+		{
+			return a_ctx.begin();
+		}
+
+		template <class FormatContext>
+		auto format(const RE::NiPoint3& a_point, FormatContext& a_ctx) const
+		{
+			return fmt::format_to(a_ctx.out(), "({}, {}, {})", a_point.x, a_point.y, a_point.z);
+		}
+	};
+
+	template <>
+	struct formatter<RE::hkVector4>
+	{
+		template <class ParseContext>
+		constexpr auto parse(ParseContext& a_ctx)
+		{
+			return a_ctx.begin();
+		}
+
+		template <class FormatContext>
+		auto format(const RE::hkVector4& a_vec4, FormatContext& a_ctx) const
+		{
+			return fmt::format_to
+			(
+				a_ctx.out(), "({}, {}, {}, {})", 
+				a_vec4.quad.m128_f32[0],
+				a_vec4.quad.m128_f32[1],
+				a_vec4.quad.m128_f32[2],
+				a_vec4.quad.m128_f32[3]
+			);
+		}
+	};
+
+	template <>
+	struct formatter<glm::vec2>
+	{
+		template <class ParseContext>
+		constexpr auto parse(ParseContext& a_ctx)
+		{
+			return a_ctx.begin();
+		}
+
+		template <class FormatContext>
+		auto format(const glm::vec2& a_vec2, FormatContext& a_ctx) const
+		{
+			return fmt::format_to(a_ctx.out(), "({}, {})", a_vec2.x, a_vec2.y);
+		}
+	};
+
+	template <>
+	struct formatter<glm::vec3>
+	{
+		template <class ParseContext>
+		constexpr auto parse(ParseContext& a_ctx)
+		{
+			return a_ctx.begin();
+		}
+
+		template <class FormatContext>
+		auto format(const glm::vec3& a_vec3, FormatContext& a_ctx) const
+		{
+			return fmt::format_to(a_ctx.out(), "({}, {}, {})", a_vec3.x, a_vec3.y, a_vec3.z);
+		}
+	};
+
+	template <>
+	struct formatter<glm::vec4>
+	{
+		template <class ParseContext>
+		constexpr auto parse(ParseContext& a_ctx)
+		{
+			return a_ctx.begin();
+		}
+
+		template <class FormatContext>
+		auto format(const glm::vec4& a_vec4, FormatContext& a_ctx) const
+		{
+			return fmt::format_to
+			(
+				a_ctx.out(), "({}, {}, {}, {})", a_vec4.x, a_vec4.y, a_vec4.z, a_vec4.w
+			);
+		}
+	};
 }
 #endif
 
@@ -98,7 +205,7 @@ namespace ALYSLC
 		kRotation,	// Camera rotates to keep the lock on target on screen. 
 					// Can zoom in/out normally.
 		kZoom,		// Camera zooms out to keep all players and the lock on target in frame. 
-					//Can adjust rotation manually.
+					// Can zoom out further and adjust rotation manually.
 		kTotal
 	};
 
@@ -577,6 +684,19 @@ namespace ALYSLC
 										// Camera angle added on to the game angle.
 
 		kTotal
+	};
+
+	// 8 movement directions.
+	enum class MovementDirection : std::uint8_t
+	{
+		kForward,
+		kForwardLeft,
+		kForwardRight,
+		kLeft,
+		kRight,
+		kBackward,
+		kBackwardLeft,
+		kBackwardRight
 	};
 
 	// Precision collider annotation request type.

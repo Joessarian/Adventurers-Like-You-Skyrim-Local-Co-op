@@ -732,7 +732,7 @@ namespace ALYSLC
 			// Bash
 			PerfType::kOnHold,
 			// Block
-			PerfType::kOnPressAndRelease,
+			PerfType::kOnHold,
 			// CamLockOn
 			PerfType::kOnRelease,
 			// CamManualPos

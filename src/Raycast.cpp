@@ -380,6 +380,107 @@ namespace Raycast
 		return res;
 	}
 
+	std::vector<RayResult> ClusterCast
+	(
+		const glm::vec4& a_start, 
+		const glm::vec4& a_end, 
+		const float& a_radius, 
+		const uint32_t& a_ringsOfCasts
+	)
+	{
+		/*ALYSLC::DebugAPI::QueueArrow3D
+		(
+			a_start, 
+			a_end,
+			0xFFFFFFFF, 
+			3.0f, 
+			2.0f
+		);*/
+		std::vector<RayResult> results = GetAllHavokCastHitResults(a_start, a_end);
+		// If there's a hit from the initial cast position,
+		// or if there are no requested additional casts,
+		// or if the start and end positions for the cast are the same,
+		// we can just return the first result.
+		if (a_ringsOfCasts == 0 || a_start == a_end)
+		{
+			return results;
+		}
+
+		// Cast in concentric clusters of 4 about the initial cast start point,
+		// shrinking the radius with each additional ring.
+		// 
+		// Visualization:
+		// 
+		// For one ring:
+		// 
+		//						1
+		// 
+		// 
+		//				4		X		2
+		// 
+		// 
+		//						3
+		//
+		// For two rings:
+		//
+		//						1
+		// 
+		//					5		6
+		//				4		X		2
+		//					8		7
+		// 
+		//						3
+		// 
+		// Offset distance from the initial cast is equal to the given radius.
+
+		const float castsAngleOffset = PI / 2.0f;
+		RE::NiPoint3 dir = ALYSLC::ToNiPoint3(a_end - a_start);
+		dir.Unitize();
+		const RE::NiPoint3 worldUp
+		{
+			dir == RE::NiPoint3(0.0f, 0.0f, 1.0f) ?
+			RE::NiPoint3(0.0f, 1.0f, 0.0f) :
+			RE::NiPoint3(0.0f, 0.0f, 1.0f)
+		};
+		RE::NiPoint3 initialOffset{ dir.UnitCross(worldUp) }; 
+		ALYSLC::Util::RotateVectorAboutAxis(initialOffset, dir, -PI / 4.0f);
+		RE::NiPoint3 offset{ initialOffset }; 
+
+		uint32_t numCasts = 0;
+		uint32_t currentRing = 1;
+		float minDistFromStart = FLT_MAX;
+		float distFromStart = 0.0f;
+		float radius = a_radius;
+		float radiusDelta = a_radius / a_ringsOfCasts;
+		glm::vec4 newStart = a_start;
+		glm::vec4 newEnd = a_end;
+		Raycast::RayResult additionalResult{ };
+		while (numCasts < a_ringsOfCasts * 4)
+		{
+			if (numCasts % 4 == 0)
+			{
+				ALYSLC::Util::RotateVectorAboutAxis(initialOffset, dir, -PI / 4.0f);
+				offset = initialOffset;
+				radius = a_radius - static_cast<float>(currentRing - 1) * radiusDelta;
+				currentRing++;
+			}
+
+			newStart = a_start + ALYSLC::ToVec4(offset * radius);
+			newEnd = a_end + ALYSLC::ToVec4(offset * radius);
+			/*ALYSLC::DebugAPI::QueueArrow3D
+			(
+				newStart, newEnd, 0xFFFFFFFF, 3.0f, 2.0f
+			);*/
+			const auto newResults =  GetAllHavokCastHitResults(newStart, a_end);
+			results.insert(results.begin(), newResults.begin(), newResults.end());
+			// Update the offset for the next cast.
+			ALYSLC::Util::RotateVectorAboutAxis(offset, dir, castsAngleOffset);
+			numCasts++;
+		}
+
+		return results;
+	}
+
 	RayResult hkpCastRay
 	(
 		const glm::vec4& a_start, 

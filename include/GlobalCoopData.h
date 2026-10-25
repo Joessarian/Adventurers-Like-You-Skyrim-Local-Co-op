@@ -2263,6 +2263,7 @@ namespace ALYSLC
 		RE::TESEffectShader* dragonHolesShader;
 		RE::TESEffectShader* dragonSoulAbsorbShader;
 		RE::TESEffectShader* ghostFXShader;
+		RE::TESEffectShader* recklessLungeShader;
 		// Current and potential follower factions.
 		RE::TESFaction* currentFollowerFaction;
 		RE::TESFaction* nwsFollowerFaction;

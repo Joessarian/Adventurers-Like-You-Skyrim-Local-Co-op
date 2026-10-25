@@ -1748,7 +1748,7 @@ namespace ALYSLC
 		// get the user event name corresponding to the given button ID, device, and context.
 
 		assert(a_device < RE::INPUT_DEVICE::kTotal);
-		assert(a_context < RE::InputContextID::kTotal);
+		assert(a_context < RE::ControlMap::InputContextID::kTotal);
 
 		if (!glob.globalDataInit)
 		{

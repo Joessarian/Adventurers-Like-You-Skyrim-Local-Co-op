@@ -308,6 +308,13 @@ namespace ALYSLC
 			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action
 		);
 
+		// Get the player's movement direction relative to the direction they're facing.
+		// Choose whether or not to consider only the cardinal 4 directions or all 8.
+		MovementDirection GetRelativeMovementDirection
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, bool a_onlyMainFourDirections
+		);
+
 		// Get the currently selected hotkey slot based on the player's RS orientation.
 		int32_t GetSelectedHotkeySlot(const std::shared_ptr<CoopPlayer>& a_p);
 
@@ -435,6 +442,7 @@ namespace ALYSLC
 		void AttackLH(const std::shared_ptr<CoopPlayer>& a_p);
 		void AttackRH(const std::shared_ptr<CoopPlayer>& a_p);
 		void Bash(const std::shared_ptr<CoopPlayer>& a_p);
+		void Block(const std::shared_ptr<CoopPlayer>& a_p);
 		void CastLH(const std::shared_ptr<CoopPlayer>& a_p);
 		void CastRH(const std::shared_ptr<CoopPlayer>& a_p);
 		void CycleAmmo(const std::shared_ptr<CoopPlayer>& a_p);
@@ -461,7 +469,6 @@ namespace ALYSLC
 	{
 		void ActivateAllOfType(const std::shared_ptr<CoopPlayer>& a_p);
 		void ActivateCancel(const std::shared_ptr<CoopPlayer>& a_p);
-		void Block(const std::shared_ptr<CoopPlayer>& a_p);
 		void CamLockOn(const std::shared_ptr<CoopPlayer>& a_p);
 		void CamManualPos(const std::shared_ptr<CoopPlayer>& a_p);
 		void ChangeDialoguePlayer(const std::shared_ptr<CoopPlayer>& a_p);

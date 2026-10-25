@@ -448,6 +448,9 @@ namespace ALYSLC
 		//
 		// Member funcs
 		//
+		
+		// Attempt to start/stop paragliding.
+		void AttemptParaglidingToggle();
 
 		// Clear movement offset for player actor/mount.
 		void ClearKeepOffsetFromActor();
@@ -585,6 +588,9 @@ namespace ALYSLC
 		RE::NiPoint3 playerTorsoAxisOfRotation;
 		// Torso position for the player.
 		RE::NiPoint3 playerTorsoPosition;
+		// Current havok character state type and surface supported state.
+		RE::hkpCharacterStateType characterStateType;
+		RE::hkpSurfaceInfo::SupportedState supportedState;
 		// Manages saved orientation data for this player's nodes.
 		std::unique_ptr<NodeOrientationManager> nom;
 
@@ -627,6 +633,8 @@ namespace ALYSLC
 		bool isFallingWhileJumping;
 		// Is the player getting up?
 		bool isGettingUp;
+		// I'm gonna use my head!
+		bool isLungingRecklessly;
 		// Is the player attempting to mount?
 		bool isMounting;
 		// Is the player walking, running, sprinting, or swimming?
@@ -678,10 +686,16 @@ namespace ALYSLC
 		bool turnToTarget;
 		// Does the player want to mount a targeted mount?
 		bool wantsToMount;
+		// Was the player paragliding last frame? Needed to update fall height and time 
+		// when true for companion players.
+		bool wasParagliding;
 		// Was the player submerged in water (not necessarily swimming) last frame?
 		bool wasSubmerged;
 		// Was the player swimming last frame?
 		bool wasSwimming;
+		// Was the player paragliding at any point while they were last airborne?
+		// Reset when the player lands,
+		bool wasUsingParaglider;
 		// Aim pitch for torso rotation and projectile calculations.
 		float aimPitch;
 		// Height factor relative to base height.
@@ -705,6 +719,13 @@ namespace ALYSLC
 		// Indicates how encumbered the player is:
 		// >= 1.0f = overencumbered.
 		float encumbranceFactor;
+		// Initial havok Z velocity recorded before starting to dash dodge.
+		float havokInitialDashDodgeZVelocity;
+		// Initial jump vertical velocity when springing up after gather (havok units).
+		// Takes into account player scale to prevent tall players from
+		// having the vertical of a two year old reaching for an object on a shelf,
+		// and short players from springing around like a frog on nose candy.
+		const float havokInitialJumpZVelocity = 5.0f;
 		// Pseudo-paraglide interp factor. [0.0, 1.0]
 		float magicParaglideVelInterpFactor;
 		// Starting and ending upward vertical speed while pseudo-paragliding.
@@ -714,18 +735,13 @@ namespace ALYSLC
 		float oldLSAngle;
 		// Pitch to set for this player.
 		float playerPitch;
+		// Interpolation factor for rotating the player.
+		float playerRotInterpFactor;
 		// Yaw to set for this player.
 		float playerYaw;
 		// Speedmult to set for the player in their (Player)CharacterHooks::Update() hook.
 		float speedMult;
-
-		// Initial jump vertical velocity when springing up after gather (havok units).
-		// Takes into account player scale to prevent tall players from
-		// having the vertical of a two year old reaching for an object on a shelf,
-		// and short players from springing around like a frog on nose candy.
-		const float havokInitialJumpZVelocity = 5.0f;
-		// Interpolation factor for rotating the player.
-		const float playerRotInterpFactor = 0.15f;
+		
 		
 		// Input device ID for this player.
 		// Controller IDs fall in the range [0, 3] and keyboard + mouse IDs are >= 4.

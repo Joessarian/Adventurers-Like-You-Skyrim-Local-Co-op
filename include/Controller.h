@@ -209,7 +209,7 @@ namespace ALYSLC
 			// Analog stick is displaced fully from center.
 			inline constexpr bool MaxDisplacement() const
 			{
-				return normMag == 1.0f;
+				return normMag >= 1.0f - 1E-3f;;
 			}
 
 			// Analog stick was moved.

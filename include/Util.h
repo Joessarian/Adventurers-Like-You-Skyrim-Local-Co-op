@@ -2062,20 +2062,62 @@ namespace ALYSLC
 			}
 		}
 
-		// Get the given actor's character controller-reported linear velocity.
-		inline RE::NiPoint3 GetActorLinearVelocity(RE::Actor* a_actor)
+		// Same as the above, but base the focus point at the X/Y coordinates of the given position.
+		inline RE::NiPoint3 GetActorFocusPoint(RE::Actor* a_actor, const RE::NiPoint3& a_basePos)
 		{
 			if (!a_actor)
 			{
 				return RE::NiPoint3();
 			}
 
-			if (const auto charController = a_actor->GetCharController(); charController)
+			if (a_actor->IsInRagdollState())
 			{
-				return ToNiPoint3(charController->outVelocity) * HAVOK_TO_GAME;
+				return a_basePos;
+			}
+			else
+			{
+				return RE::NiPoint3
+				(
+					a_basePos.x,
+					a_basePos.y,
+					a_actor->data.location.z +
+					(
+						a_actor->IsSneaking() ?
+						0.5f * a_actor->GetHeight() :
+						0.75f * a_actor->GetHeight()
+					)
+				);
+			}
+		}
+		
+		// Get a smart pointer to the actor node with the given name.
+		inline RE::NiPointer<RE::NiAVObject> GetActorNodeByName
+		(
+			RE::Actor* a_actor, const RE::BSFixedString& a_name
+		)
+		{
+			// Continue early if the fixed strings are not available.
+			const auto strings = RE::FixedStrings::GetSingleton();
+			if (!strings)
+			{
+				return nullptr;
 			}
 
-			return RE::NiPoint3();
+			// Continue early if the player's loaded 3D data is invalid.
+			auto loadedData = a_actor->loadedData;
+			if (!loadedData)
+			{
+				return nullptr;
+			}
+
+			// Continue early if the player's 3D is invalid.
+			auto data3DPtr = loadedData->data3D;
+			if (!data3DPtr || !data3DPtr->parent)
+			{
+				return nullptr;
+			}
+
+			return RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(a_name));
 		}
 
 		// Get the actor smart pointer from the given handle.
@@ -3231,11 +3273,11 @@ namespace ALYSLC
 			return std::lerp
 			(
 				a_lower, 
-				a_upper, 
+				a_upper,
 				(a_t * a_t * a_t * (6.0f * a_t * a_t - 15.0f * a_t + 10.0f))
 			);
 		}
-
+		
 		// Return true if the given form is a consumable item.
 		inline bool IsConsumable(RE::TESForm* a_form)
 		{
@@ -4934,6 +4976,12 @@ namespace ALYSLC
 			const bool& a_use3DDist, 
 			std::function<RE::BSContainer::ForEachResult(RE::TESObjectREFR* a_refr)> a_callback
 		);
+		
+		// Get the given actor's character controller-reported linear velocity.
+		// Prefer char controller out velocity, unless ragdolled, 
+		// then use rigidbody linear velocity, which is more accurate.
+		// Fall back to refr reported velocity if there is no char controller available.
+		RE::NiPoint3 GetActorLinearVelocity(RE::Actor* a_actor);
 
 		// Get all skill levels for the given actor.
 		SkillList GetActorSkillLevels(RE::Actor* a_actor);
@@ -5057,6 +5105,12 @@ namespace ALYSLC
 			RE::ExtraDataList* a_exDataList
 		);
 
+		// Get the given refr's linear valocity (game units, not havok).
+		// For actors, use the char controller reported velocity, or the rigidbody linear velocity 
+		// if ragdolled, since it is more accurate.
+		// For refrs, prefer rigidbody linear velocity, fall back to refr reported linear velocity.
+		RE::NiPoint3 GetLinearVelocity(RE::TESObjectREFR* a_refr);
+
 		// Get a smart pointer to the game's NiCamera.
 		RE::NiPointer<RE::NiCamera> GetNiCamera();
 
@@ -5121,6 +5175,17 @@ namespace ALYSLC
 			int32_t& a_value
 		);
 		
+		// Return the given refr's world bound min/max extents, center, 
+		// and rotation matrix through the outparams.
+		void GetWorldBoundData
+		(
+			RE::TESObjectREFR* a_refr,
+			RE::NiPoint3& a_boundMinOut,
+			RE::NiPoint3& a_boundMaxOut,
+			RE::NiPoint3& a_boundCenterOut,
+			RE::NiMatrix3& a_rotMatOut
+		);
+
 		// Get the (left/right) worn rank extra data list from the given refr's inventory
 		// corresponding to the given item.
 		// Will return nullptr if not found or if checking for LH worn rank extra data

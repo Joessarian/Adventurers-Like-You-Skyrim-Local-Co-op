@@ -628,6 +628,21 @@ namespace ALYSLC
 		// Clear lock on target-related data.
 		inline void ClearLockOnData()
 		{
+			// Reset fade prevention too.
+			if (Util::HandleIsValid(camLockOnTargetHandle))
+			{
+				auto refr3DPtr = Util::GetRefr3D(camLockOnTargetHandle.get().get()); 
+				if (refr3DPtr)
+				{
+					refr3DPtr->flags.reset
+					(
+						RE::NiAVObject::Flag::kAlwaysDraw, RE::NiAVObject::Flag::kIgnoreFade
+					);
+					RE::NiUpdateData updateData{ };
+					refr3DPtr->UpdateDownwardPass(updateData, 0);
+				}
+			}
+
 			camLockOnTargetHandle.reset();
 			camLockOnFocusPoint = camFocusPoint;
 			lockOnTargetInSight = false;
@@ -767,20 +782,26 @@ namespace ALYSLC
 			// to approach the target camera orientation endpoint faster.
 			// Obviously will not make it framerate independent due to the non-linear interp we do
 			// to smooth out movement and rotation of the camera.
+
+			// Framerate independent.
 			if (camState == CamState::kManualPositioning)
 			{
 				camInterpFactor = 
 				(
-					Settings::fCamManualPosInterpFactor * 
-					std::clamp((60.0f * *g_deltaTimeRealTime), 1.0f, 2.0f)
+					1.0f - powf
+					(
+						1.0f - Settings::fCamManualPosInterpFactor, 60.0f * *g_deltaTimeRealTime
+					)
 				);
 			}
 			else
 			{
 				camInterpFactor = 
 				(
-					Settings::fCamInterpFactor * 
-					std::clamp((60.0f * *g_deltaTimeRealTime), 1.0f, 2.0f)
+					1.0f - powf
+					(
+						1.0f - Settings::fCamInterpFactor, 60.0f * *g_deltaTimeRealTime
+					)
 				);
 			}
 		}
@@ -829,6 +850,7 @@ namespace ALYSLC
 			);
 			return 
 			(
+				(focalPID == -1) &&
 				(camTargetPtr) && 
 				(
 					(inDialogueCamState) || 
@@ -848,9 +870,12 @@ namespace ALYSLC
 			deathCameraTP						= 
 			dialogueCameraTP					= 
 			dialogueSpeakerChangedTP			= 
+			leadingCamPIDChangeTP				=
 			lockOnLOSCheckTP					=
 			lockOnLOSLostTP						= 
 			noPlayersUnderExteriorRoofTP		= 
+			originPointPIDChangeTP				= 
+			playerInViewTP						=
 			setSoftFocalTargetPosTP				= 
 			shoulderOffsetChangedTP				=
 			shoulderOffsetMaintainedTP			= 
@@ -859,22 +884,25 @@ namespace ALYSLC
 			secsSinceLockOnTargetLOSLost		=	0.0f;
 		}
 
-		// Check if at least one node (or the player's refr position) 
+		// Check if the players's entire bounding box (bounding diamond approximation) 
 		// is on screen at the current/given camera orientation.
+		// Will check if at least one node is on screen if not checking the players' bounding boxes.
 		bool AllPlayersOnScreenAtCamOrientation
 		(
-			bool&& a_usePlayerPos,
-			const std::vector<RE::BSFixedString>&& a_nodeNamesToCheck = { }
+			bool a_checkBoundingBox,
+			const std::vector<RE::BSFixedString>& a_nodeNamesToCheck = { }
 		);
 
 		bool AllPlayersOnScreenAtCamOrientation
 		(
 			const RE::NiPoint3& a_camPos,
 			const RE::NiPoint2& a_rotation,
-			bool&& a_usePlayerPos,
-			const std::vector<RE::BSFixedString>&& a_nodeNamesToCheck = { }
+			bool a_checkBoundingBox,
+			const std::vector<RE::BSFixedString>& a_nodeNamesToCheck = { }
 		);
-		
+
+		bool AllPlayersVisibleAtPoint(const RE::NiPoint3& a_point, bool&& a_checkAllNodes);
+	
 		// Calculate the next camera focus points: current, base, and collision.
 		void CalcNextFocusPoint();
 		
@@ -884,27 +912,17 @@ namespace ALYSLC
 		// Calculate the next camera target points: current, base, and collision.
 		void CalcNextTargetPosition();
 		
-		// Unused for now. Serves as a more performance-friendly, 
-		// less precise alternative to the spherical hull cast.
-		// Cast from the given start point to the given end point,
-		// and if a hit is recorded, return the result.
-		// Otherwise, cast the requested number of times 
-		// in concentric clusters of 4 about the initial raycast
-		// and return the hit result whose hit position is closest to its starting position.
-		Raycast::RayResult ClusterCast
-		(
-			const glm::vec4& a_start, 
-			const glm::vec4& a_end, 
-			const float& a_radius, 
-			const uint32_t& a_additionalRingsOfCasts
-		);
-
 		// Handle lock on requests, check for lock on or dialogue target validity, 
 		// and enable/disable cam lock on.
 		void CheckLockOnTarget();
 		
 		// Draw a lock on indicator above the current lock on target.
 		void DrawLockOnIndicator(const float& a_centerX, const float& a_centerY);
+
+		// NOTE: 
+		// Called externally.
+		// Adjust rotation to instantly face the lock on target.
+		void FaceLockOnTarget(const int32_t& a_playerID);
 		
 		// Fade objects that obscure players from the camera's LOS.
 		void FadeObstructions();
@@ -912,6 +930,7 @@ namespace ALYSLC
 		// Calculate and return the camera's current average movement pitch or yaw-to-cam angle.
 		float GetAutoRotateAngle(bool&& a_computePitch);
 		
+
 		// Check if any player is visible via raycast
 		// (hit one or all actor nodes) from the given point.
 		bool NoPlayersVisibleAtPoint(const RE::NiPoint3& a_point, bool&& a_checkAllNodes = true);
@@ -985,9 +1004,23 @@ namespace ALYSLC
 		// Signal the camera manager to wait for toggle 
 		// (co-op camera is only re-enabled by P1 and if at least two controllers are connected).
 		void SetWaitForToggle(bool a_set);
+		
+		// NOTE: 
+		// Called externally.
+		// Swap shoulder offset position.
+		// Only takes effect when the offset is applicable 
+		// (dialogue or focal player crosshair target).
+		void SwapShoulders(const int32_t& a_playerID);
 
 		// Toggle the co-op camera on or off.
 		void ToggleCoopCamera(bool a_enable);
+		
+		// NOTE: 
+		// Called externally.
+		// Set the camera to track the player given by the player ID, 
+		// or switch back to following the party.
+		// Return true if now tracking the soft focal player, or false if now tracking the party.
+		bool ToggleSoftFocalPlayerTracking(const int32_t& a_playerID);
 
 		// Transition the camera back into third person.
 		// Used when the game automatically switches to a different camera state.
@@ -1042,6 +1075,8 @@ namespace ALYSLC
 		RE::NiPoint3 camBaseTargetPos;
 		// Point equidistant to all players.
 		RE::NiPoint3 camCentroidPoint;
+		// Current centroid point movement delta this frame (ignoring collisions).
+		RE::NiPoint3 camCentroidPointDelta;
 		// Position at which the cam collides with geometry (if there are obstructions).
 		// Equal to the base position when there are no obstructions.
 		RE::NiPoint3 camCollisionTargetPos;
@@ -1051,8 +1086,6 @@ namespace ALYSLC
 		RE::NiPoint3 camLockOnFocusPoint;
 		// Current origin point.
 		RE::NiPoint3 camOriginPoint;
-		// Current origin point movement direction.
-		RE::NiPoint3 camOriginPointDirection;
 		// Current focal player or dialogue target's focus point.
 		RE::NiPoint3 camRefrFocusPoint;
 		// Current world position of the camera to set.
@@ -1088,12 +1121,19 @@ namespace ALYSLC
 		SteadyClock::time_point dialogueCameraTP;
 		// Last time at which the speaker changed while in dialogue.
 		SteadyClock::time_point dialogueSpeakerChangedTP;
+		// Last time at which the PID for the player leading the camera was changed.
+		SteadyClock::time_point leadingCamPIDChangeTP;
 		// Last time an LOS check for the cam lock on target was made.
 		SteadyClock::time_point lockOnLOSCheckTP;
 		// Last time at which LOS was lost on the cam lock on target.
 		SteadyClock::time_point lockOnLOSLostTP;
 		// Last time at which no players were under an exterior roof.
 		SteadyClock::time_point noPlayersUnderExteriorRoofTP;
+		// Last time at which the PID for the player determining the cam origin point was changed.
+		SteadyClock::time_point originPointPIDChangeTP;
+		// Last time at which at least one player was in view of the camera 
+		// (not blocked by an obstacle).
+		SteadyClock::time_point playerInViewTP;
 		// Last time at which at least one player was not on screen or the camera was adjusted.
 		SteadyClock::time_point setSoftFocalTargetPosTP;
 		// Last time at which the camera shoulder offset direction was set 
@@ -1106,19 +1146,9 @@ namespace ALYSLC
 		SteadyClock::time_point underExteriorRoofZoomInTP;
 		// Toggle camera POV mutex.
 		std::mutex camTogglePOVMutex;
-		// Requested lock on target.
-		// Nullptr: clear,
-		// Valid actor pointer: set to actor,
-		// Nullopt: no request.
-		std::optional<RE::ActorHandle> lockOnActorReq;
 		// Maps handled faded objects to their fade data.
 		std::unordered_map<RE::NiPointer<RE::NiAVObject>, std::unique_ptr<ObjectFadeData>> 
 		obstructionFadeDataMap;
-		// Linear interpolation data set for the party's aggregate movement pitch.
-		std::unique_ptr<InterpolationData<float>> movementPitchInterpData;
-		// Linear interpolation data set 
-		// for the party's aggregate movement yaw relative to the camera.
-		std::unique_ptr<InterpolationData<float>> movementYawInterpData;
 		// Linear interpolation data set for oscillating the lock on indicator.
 		std::unique_ptr<TwoWayInterpData> lockOnIndicatorOscillationInterpData;
 		// Interpolated multiplier for auto-rotation angles.
@@ -1139,6 +1169,9 @@ namespace ALYSLC
 		bool delayedZoomOutUnderExteriorRoof;
 		// Current cell is an exterior cell.
 		bool exteriorCell;
+		// True if the camera is rotated to face the lock on target.
+		// False if facing the party focus point.
+		bool facingLockOnTarget;
 		// Is the camera in the death camera state?
 		bool inDeathCamState;
 		// Is the camera in the dialogue camera state?
@@ -1163,10 +1196,16 @@ namespace ALYSLC
 		// Set to false once the players are past a distance equal to the minimum trailing
 		// distance from the door.
 		bool lockInteriorOrientationOnInit;
+		// Should the camera automatically rotate to face the lock on target or party focus point
+		// when in lock on zoom assistance mode?
+		// Always true when in rotate or full assistance mode.
+		bool lockOnShouldAutoRotate;
 		// Was time frozen when toggling on manual positioning?
 		bool manualPositioningTimeFrozen;
 		// Is the camera moving to the dialogue starting target position?
 		bool movingToDialogueStartPos;
+		// Did a player manually pitch the camera flat enough to toggle on auto-pitch?
+		bool reqToAutoPitch;
 		// In focal or dialogue mode, is the camera offset from the player's right shoulder?
 		bool shoulderOffsetRight;
 		// Should wait to toggle the co-op camera on again.
@@ -1176,7 +1215,7 @@ namespace ALYSLC
 		const float autoTrailPitchMax = 75.0f * PI / 180.0f;
 		// Hull size for anchor points when checking for collisions.
 		// Should always be larger than target pos hull size.
-		const float camAnchorPointHullSize = 35.0f; //15.0f;
+		const float camAnchorPointHullSize = 35.0f; //35.0f;
 		// Maximum camera rotation rate in radians / second.
 		const float camMaxAngRotRate = PI / 1.5f;
 		// Max movement speed in units/second when in manual positioning mode.
@@ -1185,7 +1224,7 @@ namespace ALYSLC
 		const float camMaxMovementSpeed = 1000.0f;
 		// Hull size for target point when checking for collisions.
 		// Should always be smaller than anchor point hull size.
-		const float camTargetPosHullSize = 30.0f; //10.0f;
+		const float camTargetPosHullSize = 10.0f; //30.0f;
 		// Time to reach the starting target position when in the dialogue state.
 		const float secsCamDialogueStartTransition = 2.0f;
 		// Average height of all active players.
@@ -1242,8 +1281,12 @@ namespace ALYSLC
 		float camYaw;
 		// Angular offset to rotate the lock on indicator by from its base rotation.
 		float lockOnIndicatorRotOffset;
+		// Current movement-based pitch offset to set.
+		float movementPitchOffset;
 		// Movement pitch angle total for all players since the last update.
 		float movementPitchRunningTotal;
+		// Current movement-based yaw offset to set.
+		float movementYawOffset;
 		// Movement yaw angle total for all players since the last update.
 		float movementYawToCamRunningTotal;
 		// Previous pitch/yaw interp ratio.
@@ -1257,6 +1300,13 @@ namespace ALYSLC
 		// Player ID for the player given direct/soft focus of the camera.
 		// -1 if none or if focal player mode is not enabled.
 		int32_t focalPID;
+		// PID for the player influencing movement of the camera centroid position the most, 
+		// meaning the camera is following them more than any other player.
+		int32_t leadingCamPID;
+		// PID for the player closest to the camera.
+		// Their position is used to determine the origin point 
+		// and keep the camera as far back as possible to maintain a view of all players.
+		int32_t originPointPID;
 		// Soft focus means temporary and still adjusted relative to the camera origin point,
 		// not relative to a specific player's focus point.
 		// A requesting player receive temporary focus when rotating the camera

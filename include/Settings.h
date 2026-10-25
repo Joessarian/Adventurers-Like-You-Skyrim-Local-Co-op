@@ -114,7 +114,7 @@ namespace ALYSLC
 		// 2: Zoom: 
 		// Zoom out the camera automatically to keep the players and lock on target on screen. 
 		// Can still rotate the camera normally.
-		static inline uint32_t uLockOnAssistance = !ALYSLC::CamLockOnAssistanceLevel::kRotation;
+		static inline uint32_t uLockOnAssistance = !ALYSLC::CamLockOnAssistanceLevel::kZoom;
 
 		//---------
 		//[Cheats]:
@@ -332,6 +332,8 @@ namespace ALYSLC
 		static inline float fRangedAttackRotMult = 0.5f;
 		// Mounted rotation multiplier.
 		static inline float fRidingRotMult = 0.3f;
+		// SkyParkour slide rotation multiplier.
+		static inline float fSlidingRotMult = 0.15f;
 		// Sneak rotation multiplier.
 		static inline float fSneakRotMult = 1.0f;
 		// Speedmult actor value multiplier when sprinting.
@@ -940,17 +942,24 @@ namespace ALYSLC
 		//-------------------
 		//[Camera Constants]:
 		//-------------------
+		// Pitch auto-rotate window is centered at this value.
+		// Also the pitch angle the camera rotates towards 
+		// when players are standing on a flat surface.
+		static inline const float fCamAutoRotateBasePitch = PI / 36.0f;
+		// Pitch angle magnitude below which to toggle on auto-pitch
+		// if the player has adjusted the pitch of the co-op camera manually.
+		static inline const float fCamAutoPitchReqAngMag = PI / 12.0f;
 		// Interpolation factors [0, 1].
 		// Cam positioning interp factor is lower to smooth out jumps past obstacles
 		// and movement above the ground.
 		// May also be compensating for some sub-par positioning code. Heh.
-		static inline const float fCamInterpFactor = 0.2f;
-		static inline const float fCamManualPosInterpFactor = 0.5f;
+		static inline const float fCamInterpFactor = 0.425f;
+		static inline const float fCamManualPosInterpFactor = 0.675f;
 		// Minimum distance the co-op camera will reach relative to the focus point.
 		static inline const float fCamMinTrailingDistance = 100.0f;
 		// Base horizontal offset is how far left/right relative to the focal player's head position
 		// that the camera will position itself before other factors are also applied.
-		static inline const float fFocalCamBaseHorizontalOffset = 25.0f;
+		static inline const float fFocalCamBaseHorizontalOffset = 50.0f;
 		// Base vertical offset is how far up/down relative to the focal player's head position
 		// that the camera will position itself before adding on any player-made height adjustments.
 		static inline const float fFocalCamBaseVerticalOffset = 0.0f;
@@ -972,11 +981,11 @@ namespace ALYSLC
 		// Inreasing this value while also using a larger interp factor will lead to jittering,
 		// since the camera will jump forward/back when auto-zooming in/out
 		// to keep all players in frame.
-		static inline const float fMinAutoZoomDelta = 1.0f / 100.0f;
+		static inline const float fMinAutoZoomDelta = 0.1f; //1.0f / 100.0f;
 		// Interpolation interval when oscillating the lock on target's indicator.
 		static inline const float fSecsCamLockOnIndicatorOscillationUpdate = 0.5f;
 		// Interpolation interval when calculating the average of player movement pitch angles.
-		static inline const float fSecsCamMovementPitchUpdate = 2.0f;
+		static inline const float fSecsCamMovementPitchUpdate = 1.0f;
 		// Interpolation interval when calculating the average of player movement yaw angles 
 		// relative to the camera's yaw.
 		static inline const float fSecsCamMovementYawUpdate = 0.05f;

@@ -165,6 +165,34 @@ namespace Raycast
 	static_assert(sizeof(RayResult) == 128);
 #pragma warning(pop)
 
+	
+	// Unused for now. Serves as a more performance-friendly, 
+	// less precise alternative to the spherical hull cast.
+	// Cast from the given start point to the given end point,
+	// and if a hit is recorded, return the result.
+	// Otherwise, cast the requested number of times 
+	// in concentric clusters of 4 about the initial raycast
+	// and return the hit result whose hit position is closest to its starting position.
+	// Params:
+	//		glm::vec4 a_start:			Starting position for the trace in world space.
+	//		glm::vec4 a_end:			End position for the trace in world space.
+	//		float a_radius:				Worldspace units from the first, central cast 
+	//									to the outer ring of casts.
+	//		uint32_t a_ringsOfCasts:	Additional sets of 4 casts from the outer ring 
+	//									towards the centermost cast (ring 0).
+	//
+	// Returns:
+	//		Vector of RayResulst:
+	//		A structure holding the results of the ray cast.
+	//		If the ray hit something, result.hit will be true.
+	std::vector<RayResult> ClusterCast
+	(
+		const glm::vec4& a_start, 
+		const glm::vec4& a_end, 
+		const float& a_radius, 
+		const uint32_t& a_ringsOfCasts
+	);
+
 	// Cast a ray from 'a_start' to 'a_end', returning the first thing it hits.
 	// This variant is used by the camera to test for clipping during positional changes.
 	// Params:
@@ -365,7 +393,7 @@ namespace Raycast
 	//		float a_hullSize:		Size of the collision hull used for the trace.
 	// 
 	// Returns:
-	//		RayResult:
+	//		Vector of RayResults:
 	//		A structure holding the results of the ray cast.
 	//		If the ray hit something, result.hit will be true.
 	std::vector<RayResult> GetAllCamCastHitResults
@@ -394,7 +422,7 @@ namespace Raycast
 	//			should be exclusively included in or excluded from hit results.
 	//
 	// Returns:
-	//		RayResult:
+	//		Vector of RayResults:
 	//		A structure holding the results of the ray cast.
 	//		If the ray hit something, result.hit will be true.
 	std::vector<RayResult> GetAllHavokCastHitResults

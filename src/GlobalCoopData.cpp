@@ -7503,6 +7503,7 @@ namespace ALYSLC
 			glob.dragonHolesShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x4CEC8);
 			glob.dragonSoulAbsorbShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x280C0);
 			glob.ghostFXShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x64D67);
+			glob.recklessLungeShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x10DEAA);//0x56AC9);
 
 			// Spells.
 			glob.tarhielsGaleSpell = 

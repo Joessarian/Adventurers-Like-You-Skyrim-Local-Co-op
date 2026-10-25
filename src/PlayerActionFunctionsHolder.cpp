@@ -177,6 +177,8 @@ namespace ALYSLC
 		ProgressFuncs::AttackRH;
 		_progFuncs[!InputAction::kBash - paOffset] = 
 		ProgressFuncs::Bash;
+		_progFuncs[!InputAction::kBlock - paOffset] = 
+		ProgressFuncs::Block;
 		_progFuncs[!InputAction::kCastLH - paOffset] = 
 		ProgressFuncs::CastLH;
 		_progFuncs[!InputAction::kCastRH - paOffset] = 
@@ -226,8 +228,6 @@ namespace ALYSLC
 		StartFuncs::ActivateAllOfType;
 		_startFuncs[!InputAction::kActivateCancel - paOffset] = 
 		StartFuncs::ActivateCancel;
-		_startFuncs[!InputAction::kBlock - paOffset] = 
-		StartFuncs::Block;
 		_startFuncs[!InputAction::kCamLockOn - paOffset] = 
 		StartFuncs::CamLockOn;
 		_startFuncs[!InputAction::kCamManualPos - paOffset] = 
@@ -443,7 +443,7 @@ namespace ALYSLC
 			// Must have weapons/magic out and not blocking.
 			bool baselineCheck = 
 			{
-				drawn && !a_p->pam->isBlocking
+				drawn && !a_p->pam->isBlocking && !a_p->pam->isBashing
 			};
 			// Return early if baseline check fails.
 			if (!baselineCheck)
@@ -500,7 +500,7 @@ namespace ALYSLC
 			// Must have weapons/magic out and not blocking.
 			bool baselineCheck = 
 			{
-				drawn && !a_p->pam->isBlocking
+				drawn && !a_p->pam->isBlocking && !a_p->pam->isBashing
 			};
 			// Return early if baseline check fails.
 			if (!baselineCheck)
@@ -747,16 +747,7 @@ namespace ALYSLC
 				(
 					(a_p->mm->isParagliding) || 
 					(a_p->coopActor->IsSwimming()) ||
-					(
-						!a_p->mm->isAirborneWhileJumping && 
-						charController && 
-						charController->context.currentState == 
-						RE::hkpCharacterStateType::kOnGround &&
-						charController->surfaceInfo.supportedState.all
-						(
-							RE::hkpSurfaceInfo::SupportedState::kSupported
-						)
-					)
+					(!a_p->coopActor->IsOnMount())
 				) &&
 				(!a_p->coopActor->IsSneaking() || a_p->isTransformed) && 
 				(
@@ -1284,8 +1275,8 @@ namespace ALYSLC
 				// Must be moving while sneaking and have the silent roll perk.
 				canPerform =  
 				(
-					a_p->lsMoved &&
-					a_p->coopActor->HasPerk(glob.sneakRollPerk)
+					(a_p->pam->isSliding) ||
+					(a_p->lsMoved && a_p->coopActor->HasPerk(glob.sneakRollPerk))
 				);
 			}
 			else if (a_p->coopActor->IsBlocking())
@@ -1306,7 +1297,10 @@ namespace ALYSLC
 				// and not ragdolled or in ragdoll flight.
 				canPerform =  
 				(
-					((a_p->mm->isParagliding) || (a_p->lsMoved && !a_p->pam->isJumping)) &&
+					(
+						(a_p->mm->isParagliding || a_p->pam->isSliding) || 
+						(a_p->lsMoved && !a_p->pam->isJumping)
+					) &&
 					/*(
 						!a_p->pam->isAttacking && 
 						!a_p->pam->isBashing && 
@@ -1445,17 +1439,9 @@ namespace ALYSLC
 				return false;
 			}
 
-			if ((ALYSLC::MCOCompat::g_installed) && 
-				(
-					a_action == InputAction::kPowerAttackDual ||
-					a_action == InputAction::kPowerAttackLH
-				))
+			if (a_p->pam->isPowerAttacking || a_p->pam->isBashing)
 			{
-				return false;
-			}
-			else if (a_p->pam->isPowerAttacking)
-			{
-				// Must not be already power attacking.
+				// Must not be already power attacking or bashing.
 				return false;
 			}
 
@@ -1726,9 +1712,10 @@ namespace ALYSLC
 			bool wasBlocking = a_p->coopActor->IsBlocking();
 			a_p->coopActor->NotifyAnimationGraph("attackStop");
 			a_p->coopActor->NotifyAnimationGraph("blockStart");
-			// 'BowBash' triggers the normal bash animation,
-			// whereas the 'BashStart' idle does not (fails conditions).
+			// 'BowBash' triggers the normal bash animation, even without a bow equipped,
+			// whereas the 'bashStart' idle does not (fails conditions).
 			Util::PlayIdle("BowBash", a_p->coopActor.get());
+			a_p->coopActor->NotifyAnimationGraph("blockStop");
 			// Must play the bash release animation for P1,
 			// otherwise, P1 will hold the block animation for a few seconds
 			// before performing the bash.
@@ -3766,6 +3753,145 @@ namespace ALYSLC
 			}
 
 			return cost;
+		}
+
+		MovementDirection GetRelativeMovementDirection
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, bool a_onlyMainFourDirections
+		)
+		{
+			// Get the player's movement direction relative to the direction they're facing.
+			// Either the cardinal 4 directions or all 8.
+
+			auto targetRefrPtr = Util::GetRefrPtrFromHandle
+			(
+				a_p->tm->aimMode == AimMode::kTwinStick ? 
+				a_p->tm->aimCorrectionTargetHandle :
+				a_p->tm->crosshairRefrHandle
+			);
+			// Targeting a world position or refr.
+			bool hasTarget = 
+			(
+				(a_p->tm->crosshairActive) ||
+				(
+					Util::HandleIsValid(a_p->tm->aimCorrectionTargetHandle) && 
+					Util::IsValidRefrForTargeting
+					(
+						a_p->tm->aimCorrectionTargetHandle.get().get()
+					)
+				)
+			);
+			const float& lsGameAngle = a_p->analogStickParams[!AnalogStickParams::kLSWorldAng];
+			// Facing to moving angle difference.
+			float facingToMovingAngDiff = 0.0f;
+			if (hasTarget)
+			{
+				const auto targetPos = 
+				(
+					a_p->tm->aimMode == AimMode::kTwinStick	?
+					Util::GetTorsoPosition(a_p->tm->aimCorrectionTargetHandle.get().get()) : 
+					a_p->tm->crosshairWorldPos
+				);
+				float angToTarget = Util::GetYawBetweenPositions
+				(
+					a_p->coopActor->data.location, targetPos
+				);
+				// Face the target first.
+				a_p->coopActor->data.angle.z = Util::NormalizeAng0To2Pi(angToTarget);
+				if (a_p->lsMoved)
+				{
+					facingToMovingAngDiff = Util::NormalizeAngToPi(lsGameAngle - angToTarget);
+				}
+				else
+				{
+					// Dodge backward if LS is not moved.
+					facingToMovingAngDiff = PI;
+				}
+			}
+			else
+			{
+				// Roll forwards when moving, backwards otherwise.
+				facingToMovingAngDiff = a_p->lsMoved ? 0.0f : PI;
+			}
+
+			if (a_onlyMainFourDirections)
+			{
+				if (facingToMovingAngDiff <= (-3.0f / 4.0f * PI) ||
+					facingToMovingAngDiff >= (3.0f / 4.0f * PI))
+				{
+					return MovementDirection::kBackward;
+				}
+			
+				if (facingToMovingAngDiff <= (1.0f / 4.0f * PI) &&
+					facingToMovingAngDiff >= (-1.0f / 4.0f * PI))
+				{
+					return MovementDirection::kForward;
+				}
+
+				if (facingToMovingAngDiff < (-1.0f / 4.0f * PI) &&
+					facingToMovingAngDiff > (-3.0f / 4.0f * PI))
+				{
+					return MovementDirection::kLeft;
+				}
+			
+				if (facingToMovingAngDiff < (3.0f / 4.0f * PI) &&
+					facingToMovingAngDiff > (1.0f / 4.0f * PI))
+				{
+					return MovementDirection::kRight;
+				}
+			}
+			else
+			{
+				if (facingToMovingAngDiff <= (-7.0f / 8.0f * PI) ||
+					facingToMovingAngDiff >= (7.0f / 8.0f * PI))
+				{
+					return MovementDirection::kBackward;
+				}
+			
+				if (facingToMovingAngDiff <= (1.0f / 8.0f * PI) &&
+					facingToMovingAngDiff >= (-1.0f / 8.0f * PI))
+				{
+					return MovementDirection::kForward;
+				}
+
+				if (facingToMovingAngDiff <= (-3.0f / 8.0f * PI) &&
+					facingToMovingAngDiff >= (-5.0f / 8.0f * PI))
+				{
+					return MovementDirection::kLeft;
+				}
+			
+				if (facingToMovingAngDiff <= (5.0f / 8.0f * PI) &&
+					facingToMovingAngDiff >= (3.0f / 8.0f * PI))
+				{
+					return MovementDirection::kRight;
+				}
+
+				if (facingToMovingAngDiff < (-1.0f / 8.0f * PI) &&
+					facingToMovingAngDiff > (-3.0f / 8.0f * PI))
+				{
+					return MovementDirection::kForwardLeft;
+				}
+
+				if (facingToMovingAngDiff < (3.0f / 8.0f * PI) &&
+					facingToMovingAngDiff > (1.0f / 8.0f * PI))
+				{
+					return MovementDirection::kForwardRight;
+				}
+
+				if (facingToMovingAngDiff < (-5.0f / 8.0f * PI) &&
+					facingToMovingAngDiff > (-7.0f / 8.0f * PI))
+				{
+					return MovementDirection::kBackwardLeft;
+				}
+
+				if (facingToMovingAngDiff < (7.0f / 8.0f * PI) &&
+					facingToMovingAngDiff > (5.0f / 8.0f * PI))
+				{
+					return MovementDirection::kBackwardRight;
+				}
+			}
+
+			return MovementDirection::kForward;
 		}
 
 		int32_t GetSelectedHotkeySlot(const std::shared_ptr<CoopPlayer>& a_p)
@@ -6200,10 +6326,37 @@ namespace ALYSLC
 					}
 					else
 					{
-						Util::RunPlayerActionCommand
-						(
-							RE::DEFAULT_OBJECT::kActionDualPowerAttack, a_p->coopActor.get()
-						);
+						if (ALYSLC::MCOCompat::g_installed)
+						{
+							if (a_p->lsMoved)
+							{
+								if (a_p->pam->isSprinting)
+								{
+									Util::PlayIdle
+									(
+										"AttackStartDualSprinting", a_p->coopActor.get()
+									);
+								}
+								else
+								{
+									Util::PlayIdle
+									(
+										"DualWieldSpecialPowerAttack", a_p->coopActor.get()
+									);
+								}
+							}
+							else
+							{
+								Util::PlayIdle("DualWieldPowerAttack", a_p->coopActor.get());
+							}
+						}
+						else
+						{
+							Util::RunPlayerActionCommand
+							(
+								RE::DEFAULT_OBJECT::kActionDualPowerAttack, a_p->coopActor.get()
+							);
+						}
 					}
 				}
 			}
@@ -6229,16 +6382,69 @@ namespace ALYSLC
 					}
 					else
 					{
-						// Have to trigger a normal LH attack first 
-						// so that the power attack command executes successfully.
-						Util::RunPlayerActionCommand
-						(
-							RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
-						);
-						Util::RunPlayerActionCommand
-						(
-							RE::DEFAULT_OBJECT::kActionLeftPowerAttack, a_p->coopActor.get()
-						);
+						if (ALYSLC::MCOCompat::g_installed)
+						{
+							Util::PlayIdle("LeftHandAttack", a_p->coopActor.get());
+							if (a_p->em->LHEmpty())
+							{
+								// Prevents blocking when there is a weapon in the RH.
+								Util::PlayIdle("H2HLeftHandPowerAttack", a_p->coopActor.get());
+							}
+							else if (a_p->pam->isSprinting)
+							{
+								Util::PlayIdle
+								(
+									"AttackPowerLeftHandForwardSprinting", 
+									a_p->coopActor.get()
+								);
+							}
+							else if (a_p->lsMoved)
+							{
+								const auto movementDir = HelperFuncs::GetRelativeMovementDirection
+								(
+									a_p, true
+								);
+								if (movementDir == MovementDirection::kForward)
+								{
+									Util::PlayIdle
+									(
+										"LeftHandPowerAttackForward", a_p->coopActor.get()
+									);
+								}
+								else if (movementDir == MovementDirection::kBackward)
+								{
+									Util::PlayIdle("LeftHandPowerAttackBack", a_p->coopActor.get());
+								}
+								else if (movementDir == MovementDirection::kLeft)
+								{
+									Util::PlayIdle("LeftHandPowerAttackLeft", a_p->coopActor.get());
+								}
+								else if (movementDir == MovementDirection::kRight)
+								{
+									Util::PlayIdle
+									(
+										"LeftHandPowerAttackRight", a_p->coopActor.get()
+									);
+								}
+							}
+							else
+							{
+								Util::PlayIdle("LeftHandPowerAttack", a_p->coopActor.get());
+							}
+						}
+						else
+						{
+							// Have to trigger a normal LH attack first 
+							// so that the power attack command executes successfully.
+							Util::RunPlayerActionCommand
+							(
+								RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
+							);
+							Util::RunPlayerActionCommand
+							(
+								RE::DEFAULT_OBJECT::kActionLeftPowerAttack, a_p->coopActor.get()
+							);
+						}
 					}
 				}
 			}
@@ -6257,16 +6463,6 @@ namespace ALYSLC
 				}
 				else
 				{
-					// Have to trigger a normal RH attack before the H2H power attack idle;
-					// otherwise, the power attack idle will fail to play.
-					if (!ALYSLC::MCOCompat::g_installed) 
-					{
-						Util::RunPlayerActionCommand
-						(
-							RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
-						);
-					}
-					
 					// The default unarmed right power attack fails to trigger 
 					// via action command at times if using MCO.
 					// Play the corresponding MCO idle instead.
@@ -6278,7 +6474,49 @@ namespace ALYSLC
 						}
 						else
 						{
+							// Have to trigger a normal RH attack before the H2H power attack idle;
+							// otherwise, the power attack idle will fail to play.
+							Util::RunPlayerActionCommand
+							(
+								RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
+							);
 							Util::PlayIdle("H2HRightHandPowerAttack", a_p->coopActor.get());
+						}
+					}
+					else if (a_p->pam->isSprinting && ALYSLC::MCOCompat::g_installed)
+					{
+						auto twoHander = 
+						(
+							a_p->em->Has2HMeleeWeapEquipped() ?
+							a_p->em->GetRHWeapon() : 
+							nullptr
+						);
+						if (twoHander)
+						{
+							if (*twoHander->weaponData.animationType == 
+								RE::WEAPON_TYPE::kTwoHandAxe)
+							{
+								Util::PlayIdle
+								(
+									"AttackRightPower2HWForwardSprinting", 
+									a_p->coopActor.get()
+								);
+							}
+							else
+							{
+								Util::PlayIdle
+								(
+									"AttackRightPower2HMForwardSprinting", 
+									a_p->coopActor.get()
+								);
+							}
+						}
+						else
+						{
+							Util::PlayIdle
+							(
+								"AttackRightPowerForwardSprinting", a_p->coopActor.get()
+							);
 						}
 					}
 					else
@@ -7548,31 +7786,96 @@ namespace ALYSLC
 				a_p->coopActor->NotifyAnimationGraph("SneakStop");
 			}
 
-			// Continue blocking if the player was blocking before the bash; stop otherwise.
-			bool wasBlocking = a_p->coopActor->IsBlocking();
-			// Action command for both player types.
-			Util::RunPlayerActionCommand
-			(
-				RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
-			);
-			Util::PlayIdle("PowerBash", a_p->coopActor.get());
-			// Redundancy since block start/stop requests fail at times.
-			if (wasBlocking)
+			// Action command for both player types without MCO.
+			if (ALYSLC::MCOCompat::g_installed)
 			{
-				Util::RunPlayerActionCommand
-				(
-					RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
-				);
 				a_p->coopActor->NotifyAnimationGraph("blockStart");
 			}
 			else
 			{
 				Util::RunPlayerActionCommand
 				(
-					RE::DEFAULT_OBJECT::kActionLeftRelease, a_p->coopActor.get()
+					RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
 				);
+			}
+			
+			Util::PlayIdle("PowerBash", a_p->coopActor.get());
+			//a_p->coopActor->NotifyAnimationGraph("blockStop");
+		}
+
+		void Block(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// Start blocking with weapon/shield.
+
+			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kBlock) || !a_p->pam->isBlocking)
+			{
+				if (!a_p->coopActor->IsWeaponDrawn())
+				{
+					// Unsheathe if not rotating arms.
+					// Do nothing otherwise.
+					if (!Settings::bEnableArmsRotation)
+					{
+						a_p->pam->ReadyWeapon(true);
+					}
+
+					return;
+				}
+
+				// Stop sneak animation if currently dash dodging so that the player 
+				// is not stuck sneaking after blocking.
+				if (a_p->mm->isDashDodging)
+				{
+					a_p->coopActor->NotifyAnimationGraph("SneakStop");
+				}
+
+				// Stop attacking first.
 				a_p->coopActor->NotifyAnimationGraph("attackStop");
-				a_p->coopActor->NotifyAnimationGraph("blockStop");
+				// For Valhalla Combat projectile deflection compatibility.
+				// Requires propagation of 'Block' input event.
+				if (a_p->isPlayer1) 
+				{
+					a_p->pam->QueueP1ButtonEvent
+					(
+						InputAction::kBlock,
+						RE::INPUT_DEVICE::kGamepad, 
+						ButtonEventPressType::kInstantTrigger,
+						0.0f,
+						false
+					);
+					a_p->pam->QueueP1ButtonEvent
+					(
+						InputAction::kBlock,
+						RE::INPUT_DEVICE::kGamepad,
+						ButtonEventPressType::kPressAndHold,
+						0.1f,
+						false
+					);
+				}
+			
+				// Redundancy since block start/stop requests fail at times.
+				if (!ALYSLC::MCOCompat::g_installed)
+				{
+					Util::RunPlayerActionCommand
+					(
+						RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
+					);
+				}
+			
+				a_p->coopActor->NotifyAnimationGraph("blockStart");
+				bool canShieldChargeAfter = 
+				{
+					a_p->lsMoved &&
+					a_p->em->HasShieldEquipped() &&
+					a_p->coopActor->HasPerk(glob.shieldChargePerk) &&
+					a_p->pam->IsPerforming(InputAction::kSprint)
+				};
+				if (canShieldChargeAfter)
+				{
+					Util::RunPlayerActionCommand
+					(
+						RE::DEFAULT_OBJECT::kActionSprintStart, a_p->coopActor.get()
+					);
+				}
 			}
 		}
 
@@ -8219,21 +8522,12 @@ namespace ALYSLC
 						asProjectile->shooter != a_p->coopActor->GetHandle() ||
 						Util::HandleIsValid(asProjectile->desiredTarget))
 					{
-						RE::NiPoint3 gameVelocity{ }; 
-						a_projectile->GetLinearVelocity(gameVelocity);
-						if (asProjectile)
-						{
-							gameVelocity = asProjectile->linearVelocity;
-						}
-						else if (auto hkpRigidBodyPtr = Util::GethkpRigidBody(a_projectile);
-								 hkpRigidBodyPtr)
-						{
-							gameVelocity = ToNiPoint3
-							(
-								hkpRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME
-							);
-						}
-
+						RE::NiPoint3 gameVelocity = 
+						(
+							asProjectile ? 	
+							asProjectile->linearVelocity : 
+							Util::GetLinearVelocity(a_projectile)
+						);
 						projDistWindow =
 						(
 							gameVelocity.Length() * 
@@ -8245,7 +8539,7 @@ namespace ALYSLC
 					if (projDistWindow != FLT_MAX)
 					{
 						// REMOVE when done debugging.
-						if (auto trueHUD = TrueHUDCompat::g_trueHUDAPI3; trueHUD)
+						/*if (auto trueHUD = TrueHUDCompat::g_trueHUDAPI3; trueHUD)
 						{
 							trueHUD->DrawCapsule
 							(
@@ -8258,7 +8552,7 @@ namespace ALYSLC
 								Settings::vuOverlayRGBAValues[a_p->playerID],
 								2.0f
 							);
-						}
+						}*/
 
 						// Not close enough to grab.
 						// Separate XY plane and Z axis distance checks -> 
@@ -9666,75 +9960,6 @@ namespace ALYSLC
 			);
 		}
 
-		void Block(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Start blocking with weapon/shield.
-
-			if (!a_p->coopActor->IsWeaponDrawn())
-			{
-				// Unsheathe if not rotating arms.
-				// Do nothing otherwise.
-				if (!Settings::bEnableArmsRotation)
-				{
-					a_p->pam->ReadyWeapon(true);
-				}
-
-				return;
-			}
-
-			// Stop sneak animation if currently dash dodging so that the player 
-			// is not stuck sneaking after blocking.
-			if (a_p->mm->isDashDodging)
-			{
-				a_p->coopActor->NotifyAnimationGraph("SneakStop");
-			}
-
-			// Stop attacking first.
-			a_p->coopActor->NotifyAnimationGraph("attackStop");
-			// For Valhalla Combat projectile deflection compatibility.
-			// Requires propagation of 'Block' input event.
-			if (a_p->isPlayer1) 
-			{
-				a_p->pam->QueueP1ButtonEvent
-				(
-					InputAction::kBlock,
-					RE::INPUT_DEVICE::kGamepad, 
-					ButtonEventPressType::kInstantTrigger,
-					0.0f,
-					false
-				);
-				a_p->pam->QueueP1ButtonEvent
-				(
-					InputAction::kBlock,
-					RE::INPUT_DEVICE::kGamepad,
-					ButtonEventPressType::kPressAndHold,
-					0.1f,
-					false
-				);
-			}
-			
-			// Redundancy since block start/stop requests fail at times.
-			Util::RunPlayerActionCommand
-			(
-				RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
-			);
-			a_p->coopActor->NotifyAnimationGraph("blockStart");
-			bool canShieldChargeAfter = 
-			{
-				a_p->lsMoved &&
-				a_p->em->HasShieldEquipped() &&
-				a_p->coopActor->HasPerk(glob.shieldChargePerk) &&
-				a_p->pam->IsPerforming(InputAction::kSprint)
-			};
-			if (canShieldChargeAfter)
-			{
-				Util::RunPlayerActionCommand
-				(
-					RE::DEFAULT_OBJECT::kActionSprintStart, a_p->coopActor.get()
-				);
-			}
-		}
-
 		void CamLockOn(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Switch to lock-on state if a new valid actor is targeted
@@ -9831,14 +10056,49 @@ namespace ALYSLC
 					// as the current cam lock-on target,
 					// send a request to update the lock-on target,
 					// and switch to the lock-on state.
-					glob.cam->lockOnActorReq = targetActorHandle;
+					glob.cam->camLockOnTargetHandle = targetActorHandle;
 					glob.cam->camState = CamState::kLockOn;
+
+					// LOS first checked (valid selected actor) before request is sent,
+					// so target is always valid here initially.
+					// Change lock-on data to reflect this.
+					glob.cam->lockOnLOSCheckTP = SteadyClock::now();
+					glob.cam->secsSinceLockOnTargetLOSChecked =
+					glob.cam->secsSinceLockOnTargetLOSLost = 0.0f;
+
+					glob.cam->lockOnTargetInSight = true;
+					glob.cam->lockOnShouldAutoRotate = true;
+					glob.cam->facingLockOnTarget = !targetActorPtr->IsFlying();
+
 					// Inform the player.
-					a_p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Camera lock-on mode", a_p->playerID + 1)
-					);
+					if (glob.cam->facingLockOnTarget)
+					{
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kCamera,
+							fmt::format
+							(
+								"P{}: Locked on to {}", 
+								a_p->playerID + 1,
+								targetActorPtr->GetName()
+							)
+						);
+					}
+					else
+					{
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kCamera,
+							fmt::format
+							(
+								"P{}: Locked on to {}, facing the party", 
+								a_p->playerID + 1, targetActorPtr->GetName()
+							)
+						);
+					}
+
+					// Face the target/party directly afterward.
+					glob.cam->FaceLockOnTarget(a_p->playerID);
 				}
 				else
 				{
@@ -9865,7 +10125,6 @@ namespace ALYSLC
 				{
 					// Send a request to clear the cam lock-on target
 					// and reset the cam state to auto-trail.
-					glob.cam->lockOnActorReq = RE::ActorHandle();
 					glob.cam->camState = CamState::kAutoTrail;
 					// Inform the player of switch back to auto-trail mode.
 					a_p->tm->SetCrosshairMessageRequest
@@ -9913,7 +10172,6 @@ namespace ALYSLC
 				glob.cam->focalPID = -1;
 				// Send a request to clear the cam lock-on target
 				// and reset the cam state to auto-trail.
-				glob.cam->lockOnActorReq = RE::ActorHandle();
 				glob.cam->camState = CamState::kAutoTrail;
 			}
 		}
@@ -10429,6 +10687,8 @@ namespace ALYSLC
 			
 			if (Settings::bUseDashDodgeSystem) 
 			{
+				// Shhhh! Secret mechanic.
+				a_p->tm->bumpDamagedActorFIDs.clear();
 				// Reset to default package first.
 				bool occupyingFurniture = 
 				(
@@ -10456,60 +10716,11 @@ namespace ALYSLC
 				(
 					RE::DEFAULT_OBJECT::kActionSprintStop, a_p->coopActor.get()
 				);
-				auto targetRefrPtr = Util::GetRefrPtrFromHandle
-				(
-					a_p->tm->aimMode == AimMode::kTwinStick ? 
-					a_p->tm->aimCorrectionTargetHandle :
-					a_p->tm->crosshairRefrHandle
-				);
-				// Targeting a world position or refr.
-				bool hasTarget = 
-				(
-					(a_p->tm->crosshairActive) ||
-					(
-						Util::HandleIsValid(a_p->tm->aimCorrectionTargetHandle) && 
-						Util::IsValidRefrForTargeting
-						(
-							a_p->tm->aimCorrectionTargetHandle.get().get()
-						)
-					)
-				);
-				const float& lsGameAngle = a_p->analogStickParams[!AnalogStickParams::kLSWorldAng];
-				// Facing to moving angle difference.
-				float facingToMovingAngDiff = 0.0f;
-				if (hasTarget)
-				{
-					const auto targetPos = 
-					(
-						a_p->tm->aimMode == AimMode::kTwinStick	?
-						Util::GetTorsoPosition(a_p->tm->aimCorrectionTargetHandle.get().get()) : 
-						a_p->tm->crosshairWorldPos
-					);
-					float angToTarget = Util::GetYawBetweenPositions
-					(
-						a_p->coopActor->data.location, targetPos
-					);
-					// Face the target first.
-					a_p->coopActor->data.angle.z = Util::NormalizeAng0To2Pi(angToTarget);
-					if (a_p->lsMoved)
-					{
-						facingToMovingAngDiff = lsGameAngle - angToTarget;
-					}
-					else
-					{
-						// Dodge backward if LS is not moved.
-						facingToMovingAngDiff = PI;
-					}
-				}
-				else
-				{
-					// Roll forwards when moving, backwards otherwise.
-					facingToMovingAngDiff = a_p->lsMoved ? 0.0f : PI;
-				}
-
+				
+				const auto movementDir = HelperFuncs::GetRelativeMovementDirection(a_p, true);
 				// Not working at the moment. Will investigate later.
 				a_p->coopActor->SetGraphVariableFloat("TKDR_IframeDuration", 0.3f);
-				if (HelperFuncs::MovingBackward(a_p, facingToMovingAngDiff))
+				if (movementDir == MovementDirection::kBackward)
 				{
 					a_p->coopActor->actorState1.movingBack = 1;
 					a_p->coopActor->actorState1.movingForward = 0;
@@ -10517,7 +10728,7 @@ namespace ALYSLC
 					a_p->coopActor->actorState1.movingRight = 0;
 					a_p->coopActor->NotifyAnimationGraph("TKDodgeBack");
 				}
-				else if (HelperFuncs::MovingForward(a_p, facingToMovingAngDiff))
+				else if (movementDir == MovementDirection::kForward)
 				{
 					a_p->coopActor->actorState1.movingBack = 0;
 					a_p->coopActor->actorState1.movingForward = 1;
@@ -10525,7 +10736,7 @@ namespace ALYSLC
 					a_p->coopActor->actorState1.movingRight = 0;
 					a_p->coopActor->NotifyAnimationGraph("TKDodgeForward");
 				}
-				else if (HelperFuncs::MovingLeft(a_p, facingToMovingAngDiff))
+				else if (movementDir == MovementDirection::kLeft)
 				{
 					a_p->coopActor->actorState1.movingBack = 0;
 					a_p->coopActor->actorState1.movingForward = 0;
@@ -10533,7 +10744,7 @@ namespace ALYSLC
 					a_p->coopActor->actorState1.movingRight = 0;
 					a_p->coopActor->NotifyAnimationGraph("TKDodgeLeft");
 				}
-				else if (HelperFuncs::MovingRight(a_p, facingToMovingAngDiff))
+				else if (movementDir == MovementDirection::kRight)
 				{
 					a_p->coopActor->actorState1.movingBack = 0;
 					a_p->coopActor->actorState1.movingForward = 0;
@@ -10553,11 +10764,6 @@ namespace ALYSLC
 		{
 			// Open the FavoritesMenu if the player has favorited anything.
 			// Notify them if they have no favorites otherwise.
-			
-			// REMOVE when done debugging.
-			INF("{}: Precision enabled: {}.",
-				a_p->coopActor->GetName(), 
-				PrecisionCompat::g_precisionAPI4->IsActorActive(a_p->coopActor->GetHandle()));
 
 			// Update favorited forms lists.
 			a_p->em->UpdateFavoritedFormsLists(true);
@@ -10638,11 +10844,6 @@ namespace ALYSLC
 			{
 				return;
 			}
-			
-			// REMOVE when done debugging.
-			INF("{}: Precision enabled: {}.",
-				a_p->coopActor->GetName(), 
-				PrecisionCompat::g_precisionAPI4->IsActorActive(a_p->coopActor->GetHandle()));
 
 			a_p->em->FixInventory();
 			if (a_p->isPlayer1)
@@ -11017,10 +11218,7 @@ namespace ALYSLC
 			else
 			{
 				// SkyParkour slide compatibility.
-				bool isSliding = false;
-				bool succ = a_p->coopActor->GetGraphVariableBool("SkyParkourSliding", isSliding);
-				if (succ && 
-					!isSliding && 
+				if (!a_p->pam->isSliding && 
 					!a_p->coopActor->IsSneaking() &&
 					a_p->pam->AllButtonsPressedForAction(InputAction::kSprint) &&
 					a_p->pam->currentStamina > 0.0f &&
@@ -11222,36 +11420,6 @@ namespace ALYSLC
 					);
 				}
 			}
-		}
-
-		void SprintPowerAttackLH(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Power attack with LH object/fists while sprinting.
-
-			// Doesn't trigger consistently unless already performing a LH attack.
-			Util::RunPlayerActionCommand
-			(
-				RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
-			);
-			Util::RunPlayerActionCommand
-			(
-				RE::DEFAULT_OBJECT::kActionLeftPowerAttack, a_p->coopActor.get()
-			);
-		}
-
-		void SprintPowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Power attack with RH object/fists while sprinting.
-
-			// Same reasoning as with LH sprint power attack above.
-			Util::RunPlayerActionCommand
-			(
-				RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
-			);
-			Util::RunPlayerActionCommand
-			(
-				RE::DEFAULT_OBJECT::kActionRightPowerAttack, a_p->coopActor.get()
-			);
 		}
 
 		void StatsMenu(const std::shared_ptr<CoopPlayer>& a_p)
@@ -11608,46 +11776,8 @@ namespace ALYSLC
 			// Prevents activation of objects while paragliding or when landing after paragliding.
 			if (a_p->mm->canParaglide && notInterrupted)
 			{				
-				DBG("{} has requested to paraglide.", a_p->coopActor->GetName());
-				if (!a_p->isPlayer1)
-				{
-					// All credits for the method used to spawn and attach the paraglider 
-					// anim object go to zfroggyman. Thanks a mill, bro! 
-					// Can retire my jank magical paraglider visuals.
-					// https://www.nexusmods.com/skyrimspecialedition/mods/192387
-					a_p->coopActor->SetGraphVariableInt("hasParaGlider"sv, 1);
-					a_p->coopActor->SetGraphVariableInt("hasparaglider"sv, 1);
-					bool isParagliding = false;
-					a_p->coopActor->GetGraphVariableBool
-					(
-						"bParaGliding", isParagliding
-					);
-					if (isParagliding)
-					{
-						// Cancel if already paragliding.
-						a_p->coopActor->NotifyAnimationGraph("EndPara");
-						a_p->mm->shouldParaglide = false;
-						DBG("{}: SHTOP PARAGLOIDE: {}", 
-							a_p->coopActor->GetName(), a_p->mm->shouldParaglide);
-					}
-					else if (a_p->coopActor->NotifyAnimationGraph("JumpFallDirectional") ||
-							 a_p->coopActor->NotifyAnimationGraph("JumpFall") ||
-							 a_p->coopActor->NotifyAnimationGraph("JumpDown"))
-					{
-						if (a_p->coopActor->NotifyAnimationGraph("StartPara"))
-						{
-							a_p->mm->shouldParaglide = true;
-						}
-						
-						// Animation event must play and update the paragliding state flag.
-						a_p->coopActor->GetGraphVariableBool
-						(
-							"bParaGliding", isParagliding
-						);
-						a_p->mm->shouldParaglide &= isParagliding;
-					}
-				}
-
+				DBG("{} has requested to toggle paragliding.", a_p->coopActor->GetName());
+				a_p->mm->AttemptParaglidingToggle();
 				return;
 			}
 
@@ -12483,10 +12613,17 @@ namespace ALYSLC
 			if (a_p->pam->isSprinting) 
 			{
 				// Perform LH sprint attack.
-				Util::RunPlayerActionCommand
-				(
-					RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
-				);
+				if (ALYSLC::MCOCompat::g_installed)
+				{
+					Util::PlayIdle("AttackStartDualSprinting", a_p->coopActor.get());
+				}
+				else
+				{
+					Util::RunPlayerActionCommand
+					(
+						RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
+					);
+				}
 			}
 			else if (a_p->em->Has2HRangedWeapEquipped())
 			{
@@ -12531,15 +12668,21 @@ namespace ALYSLC
 			else
 			{
 				// Left Attack action makes the player start blocking when MCO is installed.
-				//if (ALYSLC::MCOCompat::g_installed)
-				//{
-				//	// Stop blocking.
-				//	Util::RunPlayerActionCommand
-				//	(
-				//		RE::DEFAULT_OBJECT::kActionLeftRelease, a_p->coopActor.get()
-				//	);
-				//}
-				//else
+				if (ALYSLC::MCOCompat::g_installed)
+				{
+					// Play attack idle instead of running an action command, 
+					// which would cause the player to start blocking 
+					// because of MCO's alterations to left hand attack behavior.
+					if (a_p->em->LHEmpty())
+					{
+						Util::PlayIdle("AttackLeftH2H", a_p->coopActor.get());
+					}
+					else
+					{
+						Util::PlayIdle("LeftHandAttack", a_p->coopActor.get());
+					}
+				}
+				else
 				{
 					// Generic attack and release.
 					Util::RunPlayerActionCommand
@@ -12603,11 +12746,25 @@ namespace ALYSLC
 
 			if (a_p->pam->isSprinting)
 			{
-				// Perform RH sprint attack.
-				Util::RunPlayerActionCommand
-				(
-					RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
-				);
+				if (ALYSLC::MCOCompat::g_installed)
+				{
+					if (a_p->em->Has2HMeleeWeapEquipped())
+					{
+						Util::PlayIdle("AttackRightForwardSprinting_2hand", a_p->coopActor.get());
+					}
+					else
+					{
+						Util::PlayIdle("AttackRightForwardSprinting_1hand", a_p->coopActor.get());
+					}
+				}
+				else
+				{
+					// Perform RH sprint attack.
+					Util::RunPlayerActionCommand
+					(
+						RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
+					);
+				}
 			}
 			else if (a_p->em->Has2HRangedWeapEquipped())
 			{
@@ -12697,9 +12854,6 @@ namespace ALYSLC
 			}
 			else
 			{
-				// Ensure that the player actor continues blocking afterward if they were already
-				// blocking before the bash request.
-				bool wasBlocking = a_p->coopActor->IsBlocking();
 				// For some reason, sending input events to trigger a regular bash for P1
 				// fails when there is a spell in the RH. 
 				// So we'll use action commands in that case.
@@ -12707,15 +12861,26 @@ namespace ALYSLC
 				// when triggered this way for P1. Better than not being able to bash at all.
 				if (!a_p->isPlayer1 || a_p->em->GetRHSpell())
 				{
-					// Triggered via action command for companion players.
-					Util::RunPlayerActionCommand
-					(
-						RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
-					);
-					Util::RunPlayerActionCommand
-					(
-						RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
-					);
+					if (ALYSLC::MCOCompat::g_installed)
+					{
+						a_p->coopActor->NotifyAnimationGraph("blockStart");
+						// 'BowBash' triggers the normal bash animation, 
+						// even without a bow equipped,
+						// whereas the 'bashStart' idle does not (fails conditions).
+						Util::PlayIdle("BowBash", a_p->coopActor.get());
+					}
+					else
+					{
+						// Triggered via action command for companion players.
+						Util::RunPlayerActionCommand
+						(
+							RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
+						);
+						Util::RunPlayerActionCommand
+						(
+							RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
+						);
+					}
 				}
 				else
 				{
@@ -12779,26 +12944,6 @@ namespace ALYSLC
 					a_p->pam->sendingP1MotionDrivenEvents = false;
 					Util::SetPlayerAIDriven(true);
 				}
-
-				// Continue or stop blocking afterward.
-				// Redundancy since block start/stop requests fail at times.
-				if (wasBlocking)
-				{
-					Util::RunPlayerActionCommand
-					(
-						RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
-					);
-					a_p->coopActor->NotifyAnimationGraph("blockStart");
-				}
-				else
-				{
-					Util::RunPlayerActionCommand
-					(
-						RE::DEFAULT_OBJECT::kActionLeftRelease, a_p->coopActor.get()
-					);
-					a_p->coopActor->NotifyAnimationGraph("attackStop");
-					a_p->coopActor->NotifyAnimationGraph("blockStop");
-				}
 			}
 		}
 
@@ -12820,10 +12965,14 @@ namespace ALYSLC
 				);
 			}
 			
-			Util::RunPlayerActionCommand
-			(
-				RE::DEFAULT_OBJECT::kActionLeftRelease, a_p->coopActor.get()
-			);
+			if (!ALYSLC::MCOCompat::g_installed)
+			{
+				Util::RunPlayerActionCommand
+				(
+					RE::DEFAULT_OBJECT::kActionLeftRelease, a_p->coopActor.get()
+				);
+			}
+
 			// Extra animation event sent to ensure P1 stops blocking, 
 			// since getting hit while blocking and then releasing block does not always work.
 			a_p->coopActor->NotifyAnimationGraph("blockStop");
@@ -14640,7 +14789,7 @@ namespace ALYSLC
 					Util::AdjustFallState(charController, false);
 					charController->lock.Unlock();
 				}*/
-
+				
 				// Drop on the deck and flop like a fish!
 				// Set self as grabbed refr to ragdoll the player, clear the grabbed refr, 
 				// and add as a released refr to listen for collisions afterward.

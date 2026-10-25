@@ -303,6 +303,7 @@ namespace ALYSLC
 		isDashDodging = false;
 		isFallingWhileJumping = false;
 		isGettingUp = false;
+		isLungingRecklessly = false;
 		isMounting = false;
 		isParagliding = false;
 		isParaglidingTiltAngleReset = false;
@@ -321,8 +322,10 @@ namespace ALYSLC
 		shouldStopMoving = false;
 		turnToTarget = false;
 		wantsToMount = false;
+		wasParagliding = false;
 		wasSubmerged = false;
 		wasSwimming = false;
+		wasUsingParaglider = false;
 		// Floats.
 		aimPitch = PI / 18.0f;
 		baseHeightMult = max(0.001f, static_cast<float>(coopActor->refScale) / 100.0f);
@@ -334,8 +337,10 @@ namespace ALYSLC
 		dashDodgeLSDisplacement = 0.0f;
 		dashDodgeTorsoPitchOffset = 0.0f;
 		dashDodgeTorsoRollOffset = 0.0f;
+		havokInitialDashDodgeZVelocity = 0.0f;
 		oldLSAngle = 0.0f;
 		playerPitch = 0.0f;
+		playerRotInterpFactor = 1.0f - powf(0.85f, 60.0f * *g_deltaTimeRealTime);
 		playerYaw = coopActor->GetHeading(false);
 		magicParaglideEndZVel = magicParaglideStartZVel = magicParaglideVelInterpFactor = 0.0f;
 		framesSinceAttemptingDiscovery =
@@ -344,6 +349,17 @@ namespace ALYSLC
 		framesSinceStartingJump = 
 		framesToCompleteDashDodge =
 		jumpBindHeldFrameCount = 0;
+		// Havok state.
+		if (auto charController = coopActor->GetCharController(); charController)
+		{
+			characterStateType = charController->context.currentState;
+			supportedState = *charController->surfaceInfo.supportedState;
+		}
+		else
+		{
+			characterStateType = RE::hkpCharacterStateType::kOnGround;
+			supportedState = RE::hkpSurfaceInfo::SupportedState::kSupported;
+		}
 
 		// Reset time points used by this manager.
 		ResetTPs();
@@ -362,6 +378,66 @@ namespace ALYSLC
 	{
 		// Resumption triggered externally.
 		return currentState;
+	}
+	
+	void MovementManager::AttemptParaglidingToggle()
+	{
+		// Attempt to start/stop paragliding.
+		
+		bool isParagliding = false;
+		if (p->isPlayer1)
+		{
+			p->pam->SendButtonEvent
+			(
+				InputAction::kActivate, 
+				RE::INPUT_DEVICE::kGamepad, 
+				ButtonEventPressType::kInstantTrigger, 
+				0.0f,
+				true
+			);
+			p->pam->SendButtonEvent
+			(
+				InputAction::kActivate,
+				RE::INPUT_DEVICE::kGamepad, 
+				ButtonEventPressType::kRelease, 
+				1.0f, 
+				true
+			);
+
+			coopActor->GetGraphVariableBool("bParaGliding", isParagliding);
+			shouldParaglide = isParagliding;
+		}
+		else
+		{
+			// All credits for the method used to spawn and attach the paraglider 
+			// anim object go to zfroggyman.
+			// Can retire my jank magical paraglider visuals.
+			// https://www.nexusmods.com/skyrimspecialedition/mods/192387
+			coopActor->SetGraphVariableInt("hasParaGlider"sv, 1);
+			coopActor->SetGraphVariableInt("hasparaglider"sv, 1);
+			coopActor->GetGraphVariableBool("bParaGliding", isParagliding);
+			if (isParagliding)
+			{
+				// Cancel if already paragliding.
+				coopActor->NotifyAnimationGraph("EndPara");
+				shouldParaglide = false;
+			}
+			else if (coopActor->NotifyAnimationGraph("JumpFallDirectional") ||
+					 coopActor->NotifyAnimationGraph("JumpFall") ||
+					 coopActor->NotifyAnimationGraph("JumpDown"))
+			{
+				if (coopActor->NotifyAnimationGraph("StartPara"))
+				{
+					shouldParaglide = true;
+				}
+						
+				// Animation event must play and update the paragliding state flag.
+				coopActor->GetGraphVariableBool("bParaGliding", isParagliding);
+				shouldParaglide &= isParagliding;
+			}
+		}
+
+		DBG("{}: {} paragliding", coopActor->GetName(), shouldParaglide ? "Start" : "Stop");
 	}
 
 	void MovementManager::ClearKeepOffsetFromActor()
@@ -510,6 +586,10 @@ namespace ALYSLC
 		{
 			mult = Settings::fRidingRotMult;
 		}
+		if (p->pam->isSliding)
+		{
+			mult = Settings::fSlidingRotMult;
+		}
 		if (p->pam->isSneaking)
 		{
 			mult = Settings::fSneakRotMult;
@@ -615,7 +695,7 @@ namespace ALYSLC
 		auto charController = coopActor->GetCharController(); 
 		if (!charController) 
 		{
-			isRequestingDashDodge = isDashDodging = isBackStepDodge = false;
+			isRequestingDashDodge = isDashDodging = isBackStepDodge = isLungingRecklessly = false;
 			framesSinceStartingDashDodge = framesSinceRequestingDashDodge = 0;
 			dashDodgeCompletionRatio = 0.0f;
 			return;
@@ -655,6 +735,7 @@ namespace ALYSLC
 			bool succ = 
 			(
 				isParagliding ||
+				isAirborneWhileJumping ||
 				isSwimming ||
 				p->isTransformed ||
 				p->pam->isPlayingEmoteIdle ||
@@ -844,6 +925,11 @@ namespace ALYSLC
 						0.0f, 
 						0.0f
 					).Length3();
+					// Set initial Z velocity for adjustments to vertical velocity during the dodge.
+					havokInitialDashDodgeZVelocity = 
+					(
+						charController->initialVelocity.quad.m128_f32[2]
+					);
 				}
 
 				// Z velocity set elsewhere, so save the Z component and restore later.
@@ -869,7 +955,7 @@ namespace ALYSLC
 						(
 							glob.paraglidingMT->movementTypeData.defaultData.speeds
 						);
-						maxXYSpeed *= 
+						maxXYSpeed *=
 						(
 							speeds
 							[RE::Movement::SPEED_DIRECTIONS::kForward]
@@ -881,10 +967,7 @@ namespace ALYSLC
 						maxXYSpeed *= 700.0f;
 					}
 
-					// P1 dodges further than companion players, 
-					// even if the dash dodge speeds are set to the same value.
-					// Halve the dodge speed for P1 here.
-					maxXYSpeed *= 0.5f;
+					maxXYSpeed *= 0.75f;
 				}
 				else
 				{
@@ -945,9 +1028,14 @@ namespace ALYSLC
 				else if (charController->surfaceInfo.supportedState != 
 						 RE::hkpSurfaceInfo::SupportedState::kSupported)
 				{
-					// Apply gravity to get downward velocity 
+					// If falling, apply gravity to get downward velocity 
 					// (gravity is not in effect if velocity was set directly while in the air).
-					havokVel.quad.m128_f32[2] = -9.8f * secsSinceStartingDodge;
+					// Terminal velocity of 52 havok units per frame.
+					havokVel.quad.m128_f32[2] = max
+					(
+						-52.0f,
+						havokInitialDashDodgeZVelocity - (Settings::fG * secsSinceStartingDodge)
+					);
 				}
 				
 				// NOTE:
@@ -988,7 +1076,7 @@ namespace ALYSLC
 					float maxLeanAngle = 0.0f;
 					if (isParagliding)
 					{
-						maxLeanAngle = p->isPlayer1 ? PI / 4.0f : PI / 2.0f;
+						maxLeanAngle = PI / 4.0f;
 					}
 					else if (isSwimming)
 					{
@@ -1191,6 +1279,40 @@ namespace ALYSLC
 						actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, false, false
 					);
 				}
+			}
+		}
+
+		// Violently scooting in your general direction.
+		if (isDashDodging && !isLungingRecklessly)
+		{
+			isLungingRecklessly = 
+			(
+				(isParagliding) ||
+				(
+					(aimPitchManuallyAdjusted || isAirborneWhileJumping) &&
+					(
+						p->mm->aimPitch > PI / 4.0f &&
+						p->lsMoved &&
+						fabsf
+						(
+							Util::NormalizeAngToPi
+							(
+								p->analogStickParams[!AnalogStickParams::kLSWorldAng] - 
+								coopActor->GetHeading(false)
+							)
+						) < PI / 4.0f
+					)
+				)
+			);
+
+			if (isLungingRecklessly && glob.recklessLungeShader)
+			{
+				Util::StartEffectShader
+				(
+					coopActor.get(), 
+					glob.recklessLungeShader,
+					p->mm->framesToCompleteDashDodge * *g_deltaTimeRealTime
+				);
 			}
 		}
 	}
@@ -1427,7 +1549,7 @@ namespace ALYSLC
 				ResetJumpData();
 				return;
 			}
-			else if (p->mm->isParagliding)
+			else if (isParagliding)
 			{
 				// Reset jump state variables.
 				charController->lock.Lock();
@@ -1467,7 +1589,12 @@ namespace ALYSLC
 			{
 				charController->lock.Lock();
 				{
-					isFallingWhileJumping = charController->outVelocity.quad.m128_f32[2] <= 0.0f;
+					// Start falling instantly when dash dodging.
+					isFallingWhileJumping = 
+					(
+						isDashDodging ||
+						charController->outVelocity.quad.m128_f32[2] <= 0.0f
+					);
 				}
 				charController->lock.Unlock();
 				
@@ -1600,48 +1727,52 @@ namespace ALYSLC
 				}
 			}
 
-			// Continue falling.
-			charController->lock.Lock();
+			// Continue falling and set downward velocity directly.
+			// Defer to dash dodge code for handling downward velocity while dodging.
+			if (!isDashDodging)
 			{
-				// No air resistance here.
-				// Not necessary as it makes a barely-tangible difference 
-				// at the expense of more computation.
-				// And set terminal velocity at 52 m/s. Why not?
-				float jumpYaw = Util::NormalizeAng0To2Pi
-				(
-					atan2f
-					(
-						charController->outVelocity.quad.m128_f32[1], 
-						charController->outVelocity.quad.m128_f32[0]
-					)
-				);
-				RE::hkVector4 vel
+				charController->lock.Lock();
 				{
-					charController->outVelocity.quad.m128_f32[0],
-					charController->outVelocity.quad.m128_f32[1],
-					max
+					// No air resistance here.
+					// Not necessary as it makes a barely-tangible difference 
+					// at the expense of more computation.
+					// And set terminal velocity at 52 m/s. Why not?
+					float jumpYaw = Util::NormalizeAng0To2Pi
 					(
-						-52.0f,
+						atan2f
 						(
-							havokInitialJumpZVelocity + 
-							jumpHoldTimeVertSpeedOffset +
-							(
-								GAME_TO_HAVOK *
-								Settings::fJumpAdditionalLaunchSpeed
-							)
-						) - 
-						(
-							Settings::fG * 
-							Settings::fJumpingGravityMult *
-							Util::GetElapsedSeconds(p->jumpStartTP)
+							charController->outVelocity.quad.m128_f32[1], 
+							charController->outVelocity.quad.m128_f32[0]
 						)
-					),
-					charController->outVelocity.quad.m128_f32[3],
-				};
+					);
+					RE::hkVector4 vel
+					{
+						charController->outVelocity.quad.m128_f32[0],
+						charController->outVelocity.quad.m128_f32[1],
+						max
+						(
+							-52.0f,
+							(
+								havokInitialJumpZVelocity + 
+								jumpHoldTimeVertSpeedOffset +
+								(
+									GAME_TO_HAVOK *
+									Settings::fJumpAdditionalLaunchSpeed
+								)
+							) - 
+							(
+								Settings::fG * 
+								Settings::fJumpingGravityMult *
+								Util::GetElapsedSeconds(p->jumpStartTP)
+							)
+						),
+						charController->outVelocity.quad.m128_f32[3],
+					};
 
-				charController->SetLinearVelocityImpl(vel);
+					charController->SetLinearVelocityImpl(vel);
+				}
+				charController->lock.Unlock();
 			}
-			charController->lock.Unlock();
 		}
 
 		/*DBG
@@ -1767,7 +1898,7 @@ namespace ALYSLC
 				framesSinceStartingJump = 0;
 				return;
 			}
-			else if (p->mm->isParagliding)
+			else if (isParagliding)
 			{
 				// Reset gravity and jump state variables.
 				charController->lock.Lock();
@@ -2161,42 +2292,94 @@ namespace ALYSLC
 		// and P1 has obtained a paraglider.
 		// All credit goes to Loki:
 		// https://github.com/LXIV-CXXVIII/Skyrims-Paraglider/blob/main/src/main.cpp
-		
-		auto charController = coopActor->GetCharController();
-		if (p->isPlayer1)
-		{
-			// Paragliding graph variable only updates for P1. 
-			bool wasParagliding = isParagliding;
-			coopActor->GetGraphVariableBool("bParaGliding", isParagliding);
-			isParagliding &= coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal;
-			if ((wasParagliding && !isParagliding) && 
-				(
-					!charController ||
-					 charController->context.currentState == RE::hkpCharacterStateType::kOnGround
-				))
-			{
-				coopActor->NotifyAnimationGraph("JumpLand");
-			}
-		}
-		
-		// Nothing else to do for P1. 
-		// Only for companion players since they have no support by default.
+
 		if (!ALYSLC::SkyrimsParagliderCompat::g_installed || 
 			!ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider)
 		{
 			return;
 		}
 
+		auto charController = coopActor->GetCharController();
 		if (!charController) 
 		{
 			// Stop art effects and reset data if the char controller is invalid.
 			shouldParaglide = false;
 			isParagliding = false;
+			wasParagliding = false;
+			wasUsingParaglider = false;
 			magicParaglideVelInterpFactor = magicParaglideEndZVel = magicParaglideStartZVel = 0.0f;
 			p->lastParaglidingStateChangeTP = SteadyClock::now();
 			return;
 		}
+		
+		/*DBG
+		(
+			"{}: Should: {}, is: {}, was last frame, was using: {}, {}.", 
+			coopActor->GetName(),
+			shouldParaglide,
+			isParagliding,
+			wasParagliding,
+			wasUsingParaglider
+		);*/
 
+		if (!isParagliding && wasUsingParaglider)
+		{
+			bool isRagdolled = coopActor->IsInRagdollState();
+			bool onGround = 
+			(
+				(
+					isRagdolled ||
+					charController->flags.all
+					(
+						RE::CHARACTER_FLAGS::kCanJump, RE::CHARACTER_FLAGS::kSupport
+					)
+				) && 
+				(
+					characterStateType == RE::hkpCharacterStateType::kOnGround &&
+					supportedState == RE::hkpSurfaceInfo::SupportedState::kSupported
+				)
+			);
+			if (onGround)
+			{
+				// Need to force P1 to land if they stopped paragliding in midair previously.
+				// Otherwise, the hover bug occurs.
+				// DBG("LAND HO");
+				wasUsingParaglider = false;
+				if (p->isPlayer1 && !isRagdolled)
+				{
+					coopActor->NotifyAnimationGraph("JumpLand");
+					charController->lock.Lock();
+					charController->surfaceInfo.surfaceNormal = RE::hkVector4(0.0f);
+					charController->surfaceInfo.surfaceDistanceExcess = 0.0f;
+					charController->surfaceInfo.supportedState = 
+					RE::hkpSurfaceInfo::SupportedState::kSupported;
+					charController->lock.Unlock();
+				}
+			}
+			else if (!p->isPlayer1 && wasParagliding)
+			{
+				// Fall start height and time already handled for P1 by Skyrim's Paraglider.
+				// Set fall height once done paragliding.
+				charController->lock.Lock();
+				Util::AdjustFallState(charController, true);
+				charController->lock.Unlock();
+				// Reset interp factor, end, and start speed.
+				magicParaglideVelInterpFactor = 0.0f;
+				magicParaglideEndZVel = magicParaglideStartZVel = 0.0f;
+				// Target char controller pitch not reset yet.
+				isParaglidingTiltAngleReset = false;
+				p->lastParaglidingStateChangeTP = SteadyClock::now();
+			}
+		}
+		
+		if (p->isPlayer1)
+		{
+			// Nothing else to do for P1 after forcing a landing upon touching the ground. 
+			// Only adjust velocity for companion players since they have no support by default
+			// beyond pulling out the paraglider anim object.
+			return;
+		}
+		
 		//==========================================================================================
 		charController->lock.Lock();
 		//==========================================================================================
@@ -2232,17 +2415,6 @@ namespace ALYSLC
 				p->lastParaglidingStateChangeTP = SteadyClock::now();
 			}
 
-			// Make sure the player is continuously falling while paragliding.
-			// NOTE: 
-			// Game attempts to land the player periodically, even when in the air,
-			// and no related animation event to catch is sent via the NotifyAnimationGraph() hook.
-			// Sending the fall animation each frame cancels the landing animation,
-			// but still leads to a 'hiccup' whenever the game tries to land the player.
-			/*if (coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal) 
-			{
-				coopActor->NotifyAnimationGraph("JumpFallDirectional");
-			}*/
-
 			// No fall damage while still paragliding.
 			Util::AdjustFallState(charController, false);
 			// Hardcoded defaults for now.
@@ -2272,102 +2444,8 @@ namespace ALYSLC
 			// Set the new Z component and apply the velocity.
 			havokVel.quad.m128_f32[2] = newHavokZVel;
 			charController->SetLinearVelocityImpl(havokVel);
-			// Tilt the character controller in the player's gliding direction 
-			// when not dash dodging.
-			/*
-			if (!isDashDodging) 
-			{
-				const float maxTiltAngle = PI / 4.0f;
-				RE::NiPoint3 linVelXY = RE::NiPoint3
-				(
-					charController->outVelocity.quad.m128_f32[0], 
-					charController->outVelocity.quad.m128_f32[1], 
-					0.0f
-				);
-				float normXYSpeed = linVelXY.Unitize();
-				// Proportion of the max lean angle to set as pitch or roll.
-				// The two ratios add to 1.
-				float pitchRatio = 0.0f;
-				float pitchSign = 1.0f;
-				float rollRatio = 0.0f;
-				float rollSign = 1.0f;
-				// Remain upright if not moving.
-				if (normXYSpeed != 0.0f)
-				{
-					auto linVelYaw = Util::DirectionToGameAngYaw(linVelXY);
-					// Difference between the player's moving and facing angles.
-					float movementToFacingYawDiff = Util::NormalizeAngToPi
-					(
-						linVelYaw - coopActor->data.angle.z
-					);
-					float absAngDiffMod = fmodf(fabsf(movementToFacingYawDiff), PI);
-					pitchRatio = 
-					(
-						absAngDiffMod <= PI / 2.0f ? 
-						(1.0f - absAngDiffMod / (PI / 2.0f)) : 
-						(absAngDiffMod / (PI / 2.0f) - 1.0f)
-					);
-					rollRatio = 1.0f - pitchRatio;
-					pitchSign = fabsf(movementToFacingYawDiff) <= PI / 2.0f ? 1.0f : -1.0f;
-					rollSign = movementToFacingYawDiff <= 0.0f ? 1.0f : -1.0f;
-				}
-
-				charController->pitchAngle = Util::InterpolateEaseInEaseOut
-				(
-					charController->pitchAngle,
-					maxTiltAngle * pitchSign * pitchRatio, 
-					0.2f, 
-					2.0f
-				);
-				charController->rollAngle = Util::InterpolateEaseInEaseOut
-				(
-					charController->rollAngle,
-					maxTiltAngle * rollSign * rollRatio,
-					0.2f,
-					2.0f
-				);
-			}
-			*/
-
 			// Not resetting tilt while paragliding.
 			isParaglidingTiltAngleReset = false;
-		}
-		else
-		{
-			// Stop paragliding.
-			if (isParagliding) 
-			{
-				// Set fall height once done paragliding.
-				Util::AdjustFallState(charController, true);
-				// Reset interp factor, end, and start speed.
-				magicParaglideVelInterpFactor = 0.0f;
-				magicParaglideEndZVel = magicParaglideStartZVel = 0.0f;
-				// Target char controller pitch not reset yet.
-				isParaglidingTiltAngleReset = false;
-				// Is not paragliding.
-				isParagliding = false;
-				p->lastParaglidingStateChangeTP = SteadyClock::now();
-			}
-
-
-			// Rotate char controller back to the upright position.
-			//charController->pitchAngle = Util::InterpolateEaseInEaseOut
-			//(
-			//	charController->pitchAngle, 0.0f, 0.2f, 2.0f
-			//);
-			//charController->rollAngle = Util::InterpolateEaseInEaseOut
-			//(
-			//	charController->rollAngle, 0.0f, 0.2f, 2.0f
-			//);
-			//// Close enough to 0 to set directly.
-			//isParaglidingTiltAngleReset = 
-			//(
-			//	charController->pitchAngle < 1e-5f && charController->rollAngle < 1e-5f
-			//);
-			//if (isParaglidingTiltAngleReset)
-			//{
-			//	charController->pitchAngle = charController->rollAngle = 0.0f;
-			//}
 		}
 		
 		//==========================================================================================
@@ -2821,9 +2899,9 @@ namespace ALYSLC
 			{
 				currentProc->SetHeadtrackTarget(coopActor.get(), p->tm->crosshairWorldPos);
 			}
-			else if (Util::PointIsOnScreen(p->mm->aimPitchPos))
+			else if (Util::PointIsOnScreen(aimPitchPos))
 			{
-				currentProc->SetHeadtrackTarget(coopActor.get(), p->mm->aimPitchPos);
+				currentProc->SetHeadtrackTarget(coopActor.get(), aimPitchPos);
 			}
 		}
 		else
@@ -2952,6 +3030,9 @@ namespace ALYSLC
 		// Set the player/mount's rotation and keep/clear a movement offset
 		// from the player/mount themselves to allow them to start/stop moving.
 	 	
+		// Set the interp factor first. Results in framerate-independent lerping.
+		playerRotInterpFactor = (1.0f - powf(0.85f, 60.0f * *g_deltaTimeRealTime));
+
 		//===========
 		// [Rotation]
 		//===========
@@ -3061,6 +3142,7 @@ namespace ALYSLC
 					!isAirborne &&
 					!p->pam->isJumping &&
 					!p->pam->isSprinting && 
+					!p->pam->isSliding &&
 					!coopActor->IsSprinting() && 
 					!p->pam->IsPerforming(InputAction::kSprint) &&
 					!coopActor->IsSwimming()
@@ -3111,6 +3193,7 @@ namespace ALYSLC
 					!isTKDodging && 
 					!isTDMDodging && 
 					!isDashDodging && 
+					!p->pam->isSliding &&
 					!coopActor->IsOnMount() &&
 					!coopActor->IsSwimming()
 				) &&
@@ -3334,14 +3417,15 @@ namespace ALYSLC
 		// less frequently at lower framerates,
 		// we want to scale up the offset higher at lower framerates to compensate.
 		// Yaw angle offset to add on top of the player's yaw this frame.
+
+		playerRotInterpFactor = min(playerRotInterpFactor * interpFactorScalar, 1.0f);
 		float rawYawOffset = std::lerp
 		(
 			0.0f,
 			rotMult * yawDiff,
-			min(playerRotInterpFactor * interpFactorScalar, 1.0f) * 
-			max(1.0f, 60.0f * *g_deltaTimeRealTime) *
-			RE::BSTimer::QGlobalTimeMultiplier()
+			min(1.0f, playerRotInterpFactor * RE::BSTimer::QGlobalTimeMultiplier())
 		);
+
 		// P1 is not AI driven if attempting discovery or motion driven flag is set.
 		bool p1MotionDriven = 
 		{
@@ -3649,9 +3733,7 @@ namespace ALYSLC
 						(
 							p->analogStickParams[!AnalogStickParams::kLSWorldAng] - newYaw
 						),
-						playerRotInterpFactor * 
-						max(1.0f, 60.0f * *g_deltaTimeRealTime) *
-						RE::BSTimer::QGlobalTimeMultiplier()
+						min(1.0f, playerRotInterpFactor * RE::BSTimer::QGlobalTimeMultiplier())
 					);
 					newYaw = Util::NormalizeAng0To2Pi
 					(
@@ -3672,9 +3754,8 @@ namespace ALYSLC
 							) - 
 							newYaw
 						),
-						playerRotInterpFactor * 
-						max(1.0f, 60.0f * *g_deltaTimeRealTime) *
-						RE::BSTimer::QGlobalTimeMultiplier()
+						min(1.0f, playerRotInterpFactor * RE::BSTimer::QGlobalTimeMultiplier())
+
 					);
 					newYaw = Util::NormalizeAng0To2Pi
 					(
@@ -4238,7 +4319,7 @@ namespace ALYSLC
 			);
 		}
 
-		isDashDodging = isBackStepDodge = false;
+		isDashDodging = isBackStepDodge = isLungingRecklessly = false;
 	}
 
 	void MovementManager::UpdateAimPitch()
@@ -4298,7 +4379,8 @@ namespace ALYSLC
 		{
 			adjustAimPitchToFaceTarget = 
 			{ 
-				(!p->isTransformed && p->coopActor->IsWeaponDrawn()) && 
+				(!p->isTransformed) && 
+				(p->coopActor->IsWeaponDrawn() || isDashDodging) &&
 				(
 					(p->tm->crosshairActive || usingAimCorrectionOrLinkedTarget)
 				) 
@@ -4437,7 +4519,7 @@ namespace ALYSLC
 			// Instantly resets all nodes' rotations to their defaults, without blending out.
 			if (reqResetAimAndBody) 
 			{
-				std::unique_lock<std::mutex> lock(p->mm->nom->orientationDataMutex);
+				std::unique_lock<std::mutex> lock(nom->orientationDataMutex);
 				nom->ClearCustomRotations();
 			}
 
@@ -5187,13 +5269,20 @@ namespace ALYSLC
 		// Is the player.
 		if (!movementActorPtr->IsAMount())
 		{
-			const auto& currentCharacterState = charController->context.currentState;
+			const auto prevCharacterStateType = characterStateType;
+			characterStateType = charController->context.currentState;
+			const auto prevSupportedState = supportedState;
+			supportedState = *charController->surfaceInfo.supportedState;
+
+			//
 			// Jump up and get down.
+			//
+
 			if (reqStartJump || isAirborneWhileJumping)
 			{
 				PerformJump();
 			}
-			else if ((currentCharacterState == RE::hkpCharacterStateType::kOnGround) &&
+			else if ((characterStateType == RE::hkpCharacterStateType::kOnGround) &&
 					 (coopActor->actorState1.walking || coopActor->actorState1.running))
 			{
 				// Prevent P1 from mysteriously dying after moving down a slope 
@@ -5210,7 +5299,10 @@ namespace ALYSLC
 				}
 			}
 			
-			// Update submerged state.
+			//
+			// Update swimming/submerged state.
+			//
+
 			wasSubmerged = isSubmerged;
 			isSubmerged = 
 			(
@@ -5243,7 +5335,10 @@ namespace ALYSLC
 				isSwimming = false;
 			}
 
+			//
 			// Perform dash dodge.
+			//
+
 			if (isRequestingDashDodge || isDashDodging) 
 			{
 				PerformDashDodge();
@@ -5253,17 +5348,36 @@ namespace ALYSLC
 				// Stop sneaking if no longer dodging and still crouched down.
 				coopActor->NotifyAnimationGraph("SneakStop");
 			}
-				
-			// Perform a magical-paraglide alternative which looks like trash.
-			if (isParagliding || shouldParaglide || !isParaglidingTiltAngleReset) 
+			
+			//
+			// Perform paraglide.
+			//
+
+			wasParagliding = isParagliding;
+			coopActor->GetGraphVariableBool("bParaGliding", isParagliding);
+			isParagliding &= coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal;
+			if (isParagliding)
+			{
+				wasUsingParaglider = true;
+			}
+			else
+			{
+				shouldParaglide = false;
+			}
+
+			if (isParagliding || 
+				shouldParaglide ||
+				wasUsingParaglider || 
+				!isParaglidingTiltAngleReset) 
 			{
 				PerformParaglide();
+				// Perform a magical-paraglide alternative which looks like trash.
 				//PerformMagicalParaglide();
 			}
 
 			// Prevent fall damage when falling, even when not ragdolling.
 			if (Settings::bPreventFallDamage && 
-				currentCharacterState != RE::hkpCharacterStateType::kOnGround)
+				characterStateType != RE::hkpCharacterStateType::kOnGround)
 			{
 				charController->lock.Lock();
 				Util::AdjustFallState(charController, false);
@@ -5305,19 +5419,6 @@ namespace ALYSLC
 				)
 			};
 			bool isMounted = coopActor->IsOnMount();
-			// Requesting to paraglide or is paragliding.
-			bool reqOrIsParagliding = false;
-			/*{ 
-				(isParagliding) || 
-				(
-					ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider &&
-					isActivating && 
-					glob.player1Actor->GetCharController() && 
-					glob.player1Actor->GetCharController()->context.currentState ==
-					RE::hkpCharacterStateType::kInAir
-				) 
-			};*/
-
 			// Must have weapons sheathed and switch to controls driven to mine ore.
 			// NOTE:
 			// P2 cannot mine ore since mining is performed via the Papyrus MineOreScript
@@ -5384,7 +5485,6 @@ namespace ALYSLC
 					isMounted ||
 					isMining ||
 					isRagdolled ||
-					reqOrIsParagliding ||
 					menuStopsMovement ||
 					attemptDiscovery
 				)
@@ -5395,7 +5495,7 @@ namespace ALYSLC
 				DBG
 				(
 					"{} is anim driven: {}, in furniture idle: {}, mounted: {}, "
-					"ragdolled: {}, synced: {}, paragliding: {}. "
+					"ragdolled: {}, synced: {}. "
 					"Sending motion driven events: {}, "
 					"menu stops movement: {}, attempt discovery: {}. "
 					"REMOVE AI driven.",
@@ -5406,7 +5506,6 @@ namespace ALYSLC
 					isMounted, 
 					isRagdolled, 
 					isSynced, 
-					reqOrIsParagliding,
 					p->pam->sendingP1MotionDrivenEvents,
 					menuStopsMovement,
 					attemptDiscovery
@@ -5422,7 +5521,7 @@ namespace ALYSLC
 				DBG
 				(
 					"{} is anim driven: {}, mounted: {}, "
-					"ragdolled: {}, synced: {}, paragliding: {}. "
+					"ragdolled: {}, synced: {}. "
 					"Sending motion driven events: {}, "
 					"menu stops movement: {}, attempt discovery: {}. "
 					"SET AI driven.",
@@ -5431,7 +5530,6 @@ namespace ALYSLC
 					isMounted, 
 					isRagdolled,
 					isSynced, 
-					reqOrIsParagliding, 
 					p->pam->sendingP1MotionDrivenEvents,
 					menuStopsMovement, 
 					attemptDiscovery
@@ -6536,6 +6634,12 @@ namespace ALYSLC
 			return false;
 		}
 		
+		// REMOVE when done debugging.
+		/*DebugAPI::QueueArrow3D
+		(
+			a_startPos, a_endPos, Settings::vuOverlayRGBAValues[a_p->playerID], 3.0f, 2.0f
+		);*/
+
 		// Ensure the arm node is accounted for in the rotation data map before continuing.
 		auto iter = nodeNameToRotationDataMap.find(a_armNode->name);
 		if (a_armNodeType != ArmNodeType::kShield)
@@ -7360,8 +7464,7 @@ namespace ALYSLC
 					a_staminaCostOut,
 					releaseAngleFactor,
 					hitToKnockdownSpeedRatio
-				);
-				*/
+				);*/
 			}
 			else
 			{
@@ -8141,9 +8244,9 @@ namespace ALYSLC
 		// start combat with the hit target,
 		// and do not have applied effects from special hit type flags.
 		
+		/*
 		// Add Precision colliders to forearm/hand nodes
 		// if the player just started modifying node rotations.
-		/*
 		bool shouldStart = 
 		(
 			(!forearmData->precisionColliderAdded) &&
@@ -9476,9 +9579,9 @@ namespace ALYSLC
 		// start combat with the hit target,
 		// and do not have applied effects from special hit type flags.
 
+		/*
 		// Add Precision collider to shoulder node
 		// if the player just started modifying node rotations.
-		/*
 		bool shouldStart = 
 		(
 			(!shoulderData->precisionColliderAdded) &&
@@ -9745,11 +9848,7 @@ namespace ALYSLC
 			// or if they are dash dodging on the ground.
 			torsoData->rotationModified = 
 			{
-				(a_p->mm->aimPitchAdjusted) || 
-				(
-					a_p->mm->isDashDodging && 
-					!a_p->mm->isParagliding
-				)
+				(!a_p->mm->isParagliding) && (a_p->mm->aimPitchAdjusted || a_p->mm->isDashDodging)
 			};
 
 			// Update blend state after modifying the rotation flags

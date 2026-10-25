@@ -1759,6 +1759,7 @@ namespace ALYSLC
 		isVoiceCasting = false;
 		isWeaponAttack = false;
 		wantsToSneak = false;
+		wasSliding = false;
 		wasSprinting = false;
 		reqMeleeSpellcastKillmove = false;
 		sendingP1MotionDrivenEvents = false;
@@ -4139,7 +4140,6 @@ namespace ALYSLC
 				);
 				// Stop the player from sprinting right after running out of stamina.
 				coopActor->NotifyAnimationGraph("sprintStop");
-				DBG("{}: Was sprinting cooldown is now {}.", coopActor->GetName(), secsTotalStaminaRegenCooldown);
 			}
 			else
 			{
@@ -4149,7 +4149,6 @@ namespace ALYSLC
 					(-newStamina) / (baseStaminaRegenRateMult / 100.0f),
 					maxStaminaCooldownSecs
 				);
-				DBG("{}: Was NOT sprinting cooldown is now {}.", coopActor->GetName(), secsTotalStaminaRegenCooldown);
 			}
 		}
 
@@ -8559,6 +8558,7 @@ namespace ALYSLC
 		// Update cached graph variables and dependent variables.
 
 		bool wasAttacking = isAttacking || isBashing || isInCastingAnim;
+		wasSliding = isSliding;
 		// Reset all cached animation vars before refreshing.
 		isAttacking = false;
 		isBashing = false;
@@ -8570,6 +8570,7 @@ namespace ALYSLC
 		isJumping = false;
 		isRiding = false;
 		isShouting = false;
+		isSliding = false;
 		isSneaking = false;
 
 		// Read in updated vars.
@@ -8584,6 +8585,11 @@ namespace ALYSLC
 		coopActor->GetGraphVariableBool("bIsRiding", isRiding);
 		coopActor->GetGraphVariableBool("IsShouting", isShouting);
 		coopActor->GetGraphVariableBool("IsSneaking", isSneaking);
+		coopActor->GetGraphVariableBool("SkyParkourSliding", isSliding);
+		// Do not consider the roll a slide.
+		bool isLandingRoll = false;
+		coopActor->GetGraphVariableBool("SkyParkourIsLandingRoll", isLandingRoll);
+		isSliding &= !isLandingRoll;
 		// Also include non-default attack states.
 		isAttacking |= 
 		(

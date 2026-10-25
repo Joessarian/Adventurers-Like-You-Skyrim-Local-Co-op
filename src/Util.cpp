@@ -3269,6 +3269,41 @@ namespace ALYSLC
 				);
 			}
 		}
+		
+		RE::NiPoint3 GetActorLinearVelocity(RE::Actor* a_actor)
+		{
+			// Get the given actor's character controller-reported linear velocity.
+			// Prefer char controller out velocity, unless ragdolled, 
+			// then use rigidbody linear velocity, which is more accurate.
+			// Fall back to refr reported velocity if there is no char controller available.
+
+			if (!a_actor)
+			{
+				return RE::NiPoint3();
+			}
+
+			if (const auto charController = a_actor->GetCharController(); charController)
+			{
+				if (a_actor->IsInRagdollState())
+				{
+					auto hkpRigidBodyPtr = Util::GethkpRigidBody(a_actor);
+					if (hkpRigidBodyPtr)
+					{
+						return ToNiPoint3(hkpRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME);
+					}
+				}
+
+				return ToNiPoint3(charController->outVelocity) * HAVOK_TO_GAME;
+			}
+			else
+			{
+				RE::NiPoint3 vel{ };
+				a_actor->GetLinearVelocity(vel);
+				return vel;
+			}
+
+			return RE::NiPoint3();
+		}
 
 		SkillList GetActorSkillLevels(RE::Actor* a_actor)
 		{
@@ -3405,96 +3440,12 @@ namespace ALYSLC
 			RE::NiPoint3 boundMax{ };
 			RE::NiPoint3 boundMin{ };
 			RE::NiPoint3 boundCenter{ };
-			auto asActor = a_refr->As<RE::Actor>();
-			boundMax = a_refr->GetBoundMax();
-			boundMin = a_refr->GetBoundMin();
-			boundCenter = a_refr->data.location;
-			bool isDead = a_refr->IsDead();
-			bool isKnocked = asActor && asActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal;
-			bool isRagdolled = asActor && asActor->IsInRagdollState();
-			bool isUprightActor = asActor && !isDead && !isKnocked && !isRagdolled;
-			if (isUprightActor)
-			{
-				// Offset halfway up the actor if upright.
-				boundCenter = 
-				(
-					asActor->data.location + 
-					RE::NiPoint3(0.0f, 0.0f, 0.5f * asActor->GetHeight())
-				);
-			}
-			else if (auto refrHkpRigidBodyPtr = GethkpRigidBody(a_refr); refrHkpRigidBodyPtr)
-			{
-				if ((asActor) && (isDead || isKnocked || isRagdolled))
-				{
-					// Centered at the rigid body's position when ragdolled.
-					// The 3D center position is still upright, so we can't use it.
-					boundCenter = ToNiPoint3
-					(
-						refrHkpRigidBodyPtr->motion.motionState.transform.translation *
-						HAVOK_TO_GAME
-					);
-				}
-				else
-				{
-					// 3D center pos otherwise.
-					boundCenter = Get3DCenterPos(a_refr);
-				}
-
-				// Grab bounds from collidable shape and the refr bounds are unspecified.
-				if ((refrHkpRigidBodyPtr->collidable.GetShape() &&
-					 refrHkpRigidBodyPtr->collidable.GetShape()->type == RE::hkpShapeType::kBox) &&
-					(boundMax == RE::NiPoint3() || boundMin == RE::NiPoint3()))
-				{
-					auto shape = refrHkpRigidBodyPtr->collidable.GetShape();
-					RE::hkTransform hkTrans{ };
-					hkTrans.rotation.col0 = { 1.0f, 0.0f, 0.0f, 0.0f };
-					hkTrans.rotation.col1 = { 0.0f, 1.0f, 0.0f, 0.0f };
-					hkTrans.rotation.col2 = { 0.0f, 0.0f, 1.0f, 0.0f };
-					RE::hkAabb aabb{ };
-					shape->GetAabbImpl(hkTrans, 0.0f, aabb);
-					boundMax = ToNiPoint3(aabb.max) * HAVOK_TO_GAME;
-					boundMin = ToNiPoint3(aabb.min) * HAVOK_TO_GAME;
-				}
-			}
+			RE::NiMatrix3 rotMat{ };
+			GetWorldBoundData(a_refr, boundMin, boundMax, boundCenter, rotMat);
 			
-			auto hit3DPtr = GetRefr3D(a_refr); 
-			if (hit3DPtr)
-			{
-				if (boundMin == boundMax && boundMax.Length() == 0.0f)
-				{
-					// Fall back to the radius for the bounds.
-					boundMax = 
-					(
-						RE::NiPoint3(0.0f, 1.0f, 0.0f) * hit3DPtr->worldBound.radius
-					);
-					boundMin = -boundMax;
-				}
-			}
-
-			// Next fallback: halfway up the refr as the center position.
-			if (boundCenter.Length() == 0.0f)
-			{
-				boundCenter = 
-				(
-					a_refr->data.location + 
-					RE::NiPoint3(0.0f, 0.0f, 0.5f * a_refr->GetHeight())
-				);
-			}
-
-			// Last fallback: bounds determined by half the refr's height.
-			if (boundMin == boundMax && boundMax.Length() == 0.0f)
-			{
-				boundMax = 
-				(
-					RE::NiPoint3(0.0f, 1.0f, 0.0f) * 0.5f * a_refr->GetHeight()
-				);
-				boundMin = -boundMax;
-			}
-		
 			// Offset from the bounding box's center to one of the corners 
 			// along the positive X and Y axes.
 			auto halfExtent = (boundMax - boundMin) / 2.0f;
-
 			enum
 			{
 				kX,
@@ -3652,105 +3603,7 @@ namespace ALYSLC
 			RE::NiPoint3 boundMin{ };
 			RE::NiPoint3 boundCenter{ };
 			RE::NiMatrix3 rotMat{ }; 
-			auto asActor = a_refr->As<RE::Actor>();
-			boundMax = a_refr->GetBoundMax();
-			boundMin = a_refr->GetBoundMin();
-			boundCenter = a_refr->data.location;
-			bool isDead = a_refr->IsDead();
-			bool isKnocked = asActor && asActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal;
-			bool isRagdolled = asActor && asActor->IsInRagdollState();
-			bool isUprightActor = asActor && !isDead && !isKnocked && !isRagdolled;
-			if (isUprightActor)
-			{
-				// Offset halfway up the actor if upright.
-				boundCenter = 
-				(
-					asActor->data.location + 
-					RE::NiPoint3(0.0f, 0.0f, 0.5f * asActor->GetHeight())
-				);
-			}
-			else if (auto refrHkpRigidBodyPtr = GethkpRigidBody(a_refr); refrHkpRigidBodyPtr)
-			{
-				if ((asActor) && (isDead || isKnocked || isRagdolled))
-				{
-					// Centered at the rigid body's position when ragdolled.
-					// The 3D center position is still upright, so we can't use it.
-					boundCenter = ToNiPoint3
-					(
-						refrHkpRigidBodyPtr->motion.motionState.transform.translation *
-						HAVOK_TO_GAME
-					);
-				}
-				else
-				{
-					// 3D center pos otherwise.
-					boundCenter = Get3DCenterPos(a_refr);
-				}
-
-				// Grab bounds from collidable shape.
-				if (refrHkpRigidBodyPtr->collidable.GetShape() &&
-					refrHkpRigidBodyPtr->collidable.GetShape()->type == 
-					RE::hkpShapeType::kBox)
-				{
-					auto shape = refrHkpRigidBodyPtr->collidable.GetShape();
-					RE::hkTransform hkTrans{ };
-					hkTrans.rotation.col0 = { 1.0f, 0.0f, 0.0f, 0.0f };
-					hkTrans.rotation.col1 = { 0.0f, 1.0f, 0.0f, 0.0f };
-					hkTrans.rotation.col2 = { 0.0f, 0.0f, 1.0f, 0.0f };
-					RE::hkAabb aabb{ };
-					shape->GetAabbImpl(hkTrans, 0.0f, aabb);
-					boundMax = ToNiPoint3(aabb.max) * HAVOK_TO_GAME;
-					boundMin = ToNiPoint3(aabb.min) * HAVOK_TO_GAME;
-				}
-			}
-			
-			auto hit3DPtr = GetRefr3D(a_refr); 
-			if (hit3DPtr)
-			{
-				// Rotation from the refr's 3D.
-				rotMat = hit3DPtr->world.rotate;
-				if (boundMin == boundMax && boundMax.Length() == 0.0f)
-				{
-					// Fall back to the radius for the bounds.
-					boundMax = 
-					(
-						RE::NiPoint3(0.0f, 1.0f, 0.0f) * hit3DPtr->worldBound.radius
-					);
-					boundMin = -boundMax;
-				}
-			}
-			else
-			{
-				// Set rotation using the refr data angles as a fallback.
-				SetRotationMatrixPYR
-				(
-					rotMat,
-					a_refr->data.angle.x,
-					a_refr->data.angle.z,
-					a_refr->data.angle.y
-				);
-			}
-
-			// Next fallback: halfway up the refr as the center position.
-			if (boundCenter.Length() == 0.0f)
-			{
-				boundCenter = 
-				(
-					a_refr->data.location + 
-					RE::NiPoint3(0.0f, 0.0f, 0.5f * a_refr->GetHeight())
-				);
-			}
-
-			// Last fallback: bounds determined by half the refr's height.
-			if (boundMin == boundMax && boundMax.Length() == 0.0f)
-			{
-				boundMax = 
-				(
-					RE::NiPoint3(0.0f, 1.0f, 0.0f) * 0.5f * a_refr->GetHeight()
-				);
-				boundMin = -boundMax;
-			}
-		
+			GetWorldBoundData(a_refr, boundMin, boundMax, boundCenter, rotMat);
 			// Offset from the bounding box's center to one of the corners 
 			// along the positive X and Y axes.
 			auto halfExtent = (boundMax - boundMin) / 2.0f;
@@ -4876,6 +4729,54 @@ namespace ALYSLC
 
 			return numberOwned;
 		}
+		
+		RE::NiPoint3 GetLinearVelocity(RE::TESObjectREFR* a_refr)
+		{
+			// Get the given refr's linear valocity (game units, not havok).
+			// For actors, use the char controller reported velocity,
+			// or the rigidbody linear velocity if ragdolled, since it is more accurate.
+			// For refrs, prefer rigidbody linear velocity, 
+			// fall back to refr reported linear velocity.
+
+			if (!a_refr)
+			{
+				return RE::NiPoint3();
+			}
+			
+			RE::NiPoint3 vel{ };
+			// Refr reported velocity by default.
+			a_refr->GetLinearVelocity(vel);
+			if (auto asActor = a_refr->As<RE::Actor>(); asActor)
+			{
+				if (const auto charController = asActor->GetCharController(); charController)
+				{
+					// Then char controller out velocity.
+					vel = ToNiPoint3(charController->outVelocity) * HAVOK_TO_GAME;
+					if (asActor->IsInRagdollState())
+					{
+						// Then rigidbody velocity when ragdolled.
+						auto hkpRigidBodyPtr = Util::GethkpRigidBody(asActor);
+						if (hkpRigidBodyPtr)
+						{
+							vel = ToNiPoint3
+							(
+								hkpRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME
+							);
+						}
+					}
+				}
+			}
+			else
+			{
+				auto hkpRigidBodyPtr = Util::GethkpRigidBody(a_refr);
+				if (hkpRigidBodyPtr)
+				{
+					vel = ToNiPoint3(hkpRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME);
+				}
+			}
+
+			return vel;
+		}
 
 		RE::NiPointer<RE::NiCamera> GetNiCamera()
 		{
@@ -5461,6 +5362,118 @@ namespace ALYSLC
 						a_value += value * countInvEntryDataPair.first;
 					}
 				}
+			}
+		}
+
+		void GetWorldBoundData
+		(
+			RE::TESObjectREFR* a_refr,
+			RE::NiPoint3& a_boundMinOut,
+			RE::NiPoint3& a_boundMaxOut,
+			RE::NiPoint3& a_boundCenterOut,
+			RE::NiMatrix3& a_rotMatOut
+		)
+		{
+			// Return the given refr's world bound min/max extents, center, 
+			// and rotation matrix through the outparams.
+
+			auto asActor = a_refr->As<RE::Actor>();
+			a_boundMaxOut = a_refr->GetBoundMax();
+			a_boundMinOut = a_refr->GetBoundMin();
+			a_boundCenterOut = a_refr->data.location;
+			bool isDead = a_refr->IsDead();
+			bool isKnocked = asActor && asActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal;
+			bool isRagdolled = asActor && asActor->IsInRagdollState();
+			bool isUprightActor = asActor && !isDead && !isKnocked && !isRagdolled;
+			if (isUprightActor)
+			{
+				// Offset halfway up the actor if upright.
+				a_boundCenterOut = 
+				(
+					asActor->data.location + 
+					RE::NiPoint3(0.0f, 0.0f, 0.5f * asActor->GetHeight())
+				);
+			}
+			else if (auto refrHkpRigidBodyPtr = GethkpRigidBody(a_refr); refrHkpRigidBodyPtr)
+			{
+				if ((asActor) && (isDead || isKnocked || isRagdolled))
+				{
+					// Centered at the rigid body's position when ragdolled.
+					// The 3D center position is still upright, so we can't use it.
+					a_boundCenterOut = ToNiPoint3
+					(
+						refrHkpRigidBodyPtr->motion.motionState.transform.translation *
+						HAVOK_TO_GAME
+					);
+				}
+				else
+				{
+					// 3D center pos otherwise.
+					a_boundCenterOut = Get3DCenterPos(a_refr);
+				}
+
+				// Grab bounds from collidable shape.
+				if (refrHkpRigidBodyPtr->collidable.GetShape() &&
+					refrHkpRigidBodyPtr->collidable.GetShape()->type == 
+					RE::hkpShapeType::kBox)
+				{
+					auto shape = refrHkpRigidBodyPtr->collidable.GetShape();
+					RE::hkTransform hkTrans{ };
+					hkTrans.rotation.col0 = { 1.0f, 0.0f, 0.0f, 0.0f };
+					hkTrans.rotation.col1 = { 0.0f, 1.0f, 0.0f, 0.0f };
+					hkTrans.rotation.col2 = { 0.0f, 0.0f, 1.0f, 0.0f };
+					RE::hkAabb aabb{ };
+					shape->GetAabbImpl(hkTrans, 0.0f, aabb);
+					a_boundMaxOut = ToNiPoint3(aabb.max) * HAVOK_TO_GAME;
+					a_boundMinOut = ToNiPoint3(aabb.min) * HAVOK_TO_GAME;
+				}
+			}
+			
+			auto refr3DPtr = GetRefr3D(a_refr); 
+			if (refr3DPtr)
+			{
+				// Rotation from the refr's 3D.
+				a_rotMatOut = refr3DPtr->world.rotate;
+				if (a_boundMinOut == a_boundMaxOut && a_boundMaxOut.Length() == 0.0f)
+				{
+					// Fall back to the radius for the bounds.
+					a_boundMaxOut = 
+					(
+						RE::NiPoint3(0.0f, 1.0f, 0.0f) * refr3DPtr->worldBound.radius
+					);
+					a_boundMinOut = -a_boundMaxOut;
+				}
+			}
+			else
+			{
+				// Set rotation using the refr data angles as a fallback.
+				SetRotationMatrixPYR
+				(
+					a_rotMatOut,
+					a_refr->data.angle.x,
+					a_refr->data.angle.z,
+					a_refr->data.angle.y
+				);
+			}
+
+			// Next fallback: halfway up the refr as the center position.
+			if (a_boundCenterOut.Length() == 0.0f)
+			{
+				a_boundCenterOut = 
+				(
+					a_refr->data.location + 
+					RE::NiPoint3(0.0f, 0.0f, 0.5f * a_refr->GetHeight())
+				);
+			}
+
+			// Last fallback: bounds determined by half the refr's height.
+			if (a_boundMinOut == a_boundMaxOut && a_boundMaxOut.Length() == 0.0f)
+			{
+				a_boundMaxOut = 
+				(
+					RE::NiPoint3(0.0f, 1.0f, 0.0f) * 0.5f * a_refr->GetHeight()
+				);
+				a_boundMinOut = -a_boundMaxOut;
 			}
 		}
 		
@@ -7028,6 +7041,11 @@ namespace ALYSLC
 			// but converges to the next endpoint faster at higher powers
 			// when comparing values computed from the same interpolation ratio and endpoints.
 
+			if (a_pow == 1.0f)
+			{
+				return std::lerp(a_prev, a_next, a_ratio);
+			}
+
 			a_ratio = std::clamp(a_ratio, 0.0f, 1.0f);
 			float powUpper = ceilf(a_pow);
 			float powLower = floorf(a_pow);
@@ -7051,6 +7069,11 @@ namespace ALYSLC
 			// Diverges from the previous endpoint faster, 
 			// but converges to the next endpoint slower at higher powers
 			// when comparing values computed from the same interpolation ratio and endpoints.
+
+			if (a_pow == 1.0f)
+			{
+				return std::lerp(a_prev, a_next, a_ratio);
+			}
 
 			a_ratio = std::clamp(a_ratio, 0.0f, 1.0f);
 			float powUpper = ceilf(a_pow);
@@ -7077,6 +7100,11 @@ namespace ALYSLC
 			// Ease in from the previous value then ease out to the next value
 			// using the interpolation ratio.
 			// Raising the interpolation power increases the steepness of the interpolation curve.
+
+			if (a_pow == 1.0f)
+			{
+				return std::lerp(a_prev, a_next, a_ratio);
+			}
 
 			a_ratio = std::clamp(a_ratio, 0.0f, 1.0f);
 			float powUpper = ceilf(a_pow);
