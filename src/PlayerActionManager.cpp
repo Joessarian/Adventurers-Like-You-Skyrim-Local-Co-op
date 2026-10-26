@@ -4704,7 +4704,7 @@ namespace ALYSLC
 		bool closeEnoughToTalk = 
 		(
 			coopActor->data.location.GetDistance(speakerRefrPtr->data.location) <=
-			Settings::fAutoEndDialogueRadius
+			Util::GetMaxDialogueDistance(speakerRefrPtr.get(), coopActor.get())
 		);
 		if (closeEnoughToTalk)
 		{

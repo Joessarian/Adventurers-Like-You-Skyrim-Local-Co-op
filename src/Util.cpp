@@ -4778,6 +4778,17 @@ namespace ALYSLC
 			return vel;
 		}
 
+		float GetMaxDialogueDistance(RE::TESObjectREFR* a_refrA, RE::TESObjectREFR* a_refrB)
+		{
+			// Get the maximum distance at which dialogue can start between the two given refrs.
+
+			return max
+			(
+				Settings::fAutoEndDialogueRadius, 
+				2.0f * max(a_refrA->GetHeight(), a_refrB->GetHeight())
+			);
+		}
+
 		RE::NiPointer<RE::NiCamera> GetNiCamera()
 		{
 			// Get the game's NiCamera.

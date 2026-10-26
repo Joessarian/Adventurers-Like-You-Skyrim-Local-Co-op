@@ -21,6 +21,7 @@ namespace ALYSLC
 		camBaseTargetPos =  
 		camRefrFocusPoint = 
 		camCentroidPointDelta = 
+		camCollisionOriginPoint = 
 		camCollisionTargetPos = 
 		camFocusPoint = 
 		camLockOnFocusPoint = 
@@ -1232,6 +1233,7 @@ namespace ALYSLC
 		//====================
 
 		auto oldCentroidPoint = camCentroidPoint;
+		auto oldCollisionOriginPoint = camCollisionOriginPoint;
 		auto oldOriginPoint = camOriginPoint;
 		// If true, no players are visible from the origin point.
 		bool originViewObstructed = false;
@@ -1382,7 +1384,45 @@ namespace ALYSLC
 		// Base origin point before processing.
 		camOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
 		camOriginPoint.z += avgPlayerHeight;
-		
+		*/
+
+		if (camCollisions)
+		{
+			//========================
+			//[Modified Origin Point]:
+			//========================
+			// Set the next origin point by accounting for collisions
+			// when moving from the previous origin point to the new base origin point.
+			// Want to ensure the origin point is in a valid, reachable position,
+			// and not clipping through geometry.
+			
+			glm::vec4 castStartPoint{ ToVec4(oldCollisionOriginPoint) };
+			glm::vec4 castEndPoint{ ToVec4(camOriginPoint) };
+			auto result = Raycast::CastRay(castStartPoint, castEndPoint, camAnchorPointHullSize);
+			if (result.hit)
+			{
+				hitToBasePos = true;
+			}
+
+			// Get point above ground at the base origin point's XY coords.
+			RE::NiPoint3 basePointAboveGround = camOriginPoint;
+			bounds = Util::GetVertCollPoints(basePointAboveGround, 0.0f);
+			ClampToZCoordAboveLowerBound
+			(
+				basePointAboveGround.z, 
+				minZOffset, 
+				camAnchorPointHullSize, 
+				bounds.first, 
+				bounds.second
+			);
+
+			if (AllPlayersVisibleAtPoint(basePointAboveGround, true))
+			{
+				camCollisionOriginPoint = basePointAboveGround;
+			}
+		}
+
+		/*
 		if (camCollisions)
 		{
 			//========================
@@ -1457,7 +1497,6 @@ namespace ALYSLC
 					// No hit, so the previous hit position was unobstructed.
 					camCollisionOriginPoint = ToNiPoint3(castEndPoint);
 				}
-
 			}
 
 			if (focalPID == -1)
@@ -1654,10 +1693,14 @@ namespace ALYSLC
 				Util::GetElapsedSeconds(dialogueSpeakerChangedTP) <= 
 				15.0f * *g_deltaTimeRealTime
 			);
-			if (inDialogueCamState && 
+			bool inDialogue = 
+			(
+				inDialogueCamState && 
 				Settings::bDialogueCamEnabled &&
 				Util::HandleIsValid(camDialogueTargetHandle) &&
-				glob.menuPID >= 0)
+				glob.menuPID >= 0
+			);
+			if (inDialogue)
 			{
 				// Position is based off the listener's head position 
 				// and focuses on the speaker's torso.
@@ -1710,10 +1753,14 @@ namespace ALYSLC
 						)
 					);
 				}
-
+				
 				float xyDistToTarget = Util::GetXYDistance(camTargetPos, speakerPos);
 				// Default radius at which to start slowing rotation.
-				float radius = Settings::fTargetAttackSourceDistToSlowRotation;
+				float radius = min
+				(
+					Settings::fTargetAttackSourceDistToSlowRotation, 
+					Settings::fAutoEndDialogueRadius
+				);
 				// Slow down when within a multiple of the player actor's bounds.
 				auto player3DPtr = Util::GetRefr3D(dialogueP->coopActor.get()); 
 				if (player3DPtr &&
@@ -2035,7 +2082,7 @@ namespace ALYSLC
 			// Focus point from which the target position is based.
 			const RE::NiPoint3& focusPoint = 
 			(
-				focalPID == -1 ? camFocusPoint : camRefrFocusPoint
+				focalPID == -1 && !inDialogue ? camCollisionOriginPoint : camRefrFocusPoint
 			);
 			if (camCollisions && !movingToDialogueStartPos)
 			{
@@ -2145,10 +2192,11 @@ namespace ALYSLC
 				}
 
 				bool baseTargetPosVisible = !result.hit;
-				if (focalPID != -1)
+				if (focalPID != -1 || inDialogue)
 				{
-					//DBG("BRANCH: Focal player.");
-					// Set directly to offset hit position if there is a focal player.
+					//DBG("BRANCH: Focal player or in dialogue.");
+					// Set directly to offset hit position if there is a focal player
+					// or in dialogue.
 					// Not necessary to raycast for visibility from the other active players.
 					if (baseTargetPosVisible)
 					{
@@ -2171,24 +2219,6 @@ namespace ALYSLC
 					// when they move far apart and the focus point remains in a reachable spot.
 					closestHitPos = baseTargetPos;
 				}
-				else if ((!baseTargetPosVisible &&
-						 !IsAdjustingCamera() && 
-						 Util::GetElapsedSeconds(playerInViewTP) <= 0.5f) &&
-						 (
-							!movementResult.hit &&
-								Util::GetVertCollPoints(camBaseTargetPos).second > -131072.0f
-						 ))
-				{
-					// Even if the base target position is not visible from the focus point.
-					// stay back instead of jumping forward if less than half a second
-					// has elapsed since at least one player was visible.
-					// 
-					// Prevents excessive jumps forward and back again when players pass by
-					// thin obstacles like trees while the camera is zoomed out.
-					// 
-					//DBG("BRANCH: Stay back in valid position.");
-					closestHitPos = baseTargetPos;
-				}
 				else
 				{
 					// Now cast from each player's focus point
@@ -2200,25 +2230,25 @@ namespace ALYSLC
 
 					// Commented out for now because the closest hit position from the focus point
 					// may sit in an out-of-bounds position.
-					//if (softFocalPID == -1)
-					//{
-					//	// Only allow the focus point cast's hit result position to serve
-					//	// as the new target position if there is no soft focal player 
-					//	// because the camera can easily snag onto a surface between players 
-					//	// near the focus point, like the ceiling between two different floors, 
-					//	// and block both players from view.
-					//	adjHitResultPos =
-					//	(
-					//		result.hitPos +
-					//		result.rayNormal *
-					//		//endToStartDir *
-					//		//(result.rayNormal + endToStartDir) *
-					//		min(result.rayLength, camTargetPosHullSize)
-					//	);
-					//	// Set the initial closest distance to the previous target position.
-					//	closestDist = glm::distance(adjHitResultPos, lastSetTargetPos); 
-					//	closestHitPos = adjHitResultPos;
-					//}
+					if (softFocalPID == -1)
+					{
+						// Only allow the focus point cast's hit result position to serve
+						// as the new target position if there is no soft focal player 
+						// because the camera can easily snag onto a surface between players 
+						// near the focus point, like the ceiling between two different floors, 
+						// and block both players from view.
+						adjHitResultPos =
+						(
+							result.hitPos +
+							result.rayNormal *
+							//endToStartDir *
+							//(result.rayNormal + endToStartDir) *
+							min(result.rayLength, camTargetPosHullSize)
+						);
+						// Set the initial closest distance to the previous target position.
+						closestDist = glm::distance(adjHitResultPos, lastSetTargetPos); 
+						closestHitPos = adjHitResultPos;
+					}
 					
 					// Check from refr target's focus point if in dialogue or locked on
 					// and not facing the target, since the camera is then following the target.
@@ -2384,6 +2414,21 @@ namespace ALYSLC
 					}
 				}
 				
+				const bool isAdjustingCam = IsAdjustingCamera();
+				if ((!baseTargetPosVisible && !movementResult.hit) && 
+					(isAdjustingCam || Util::GetElapsedSeconds(playerInViewTP) <= 0.5f))
+				{
+					// Even if the base target position is not visible from the focus point.
+					// stay back instead of jumping forward if less than half a second
+					// has elapsed since at least one player was visible.
+					// 
+					// Prevents excessive jumps forward and back again when players pass by
+					// thin obstacles like trees while the camera is zoomed out.
+					// 
+					//DBG("BRANCH: Stay back in valid position.");
+					closestHitPos = baseTargetPos;
+				}
+
 				// Set next collision target position and set colliding flag.
 				camCollisionTargetPos = ToNiPoint3(closestHitPos);
 
@@ -4125,6 +4170,7 @@ namespace ALYSLC
 
 		camFocusPoint =
 		camLockOnFocusPoint = 
+		camCollisionOriginPoint = 
 		camOriginPoint = camCentroidPoint;
 
 		camCentroidPointDelta = RE::NiPoint3();
@@ -5128,12 +5174,15 @@ namespace ALYSLC
 			else
 			{
 				speakerPos = Util::GetHeadPosition(dialogueP->coopActor.get());
-				dialogueP->mm->playerTorsoPosition;
 			}
 
 			float xyDistToTarget = Util::GetXYDistance(camTargetPos, speakerPos);
 			// Default radius at which to start slowing rotation.
-			float radius = Settings::fTargetAttackSourceDistToSlowRotation;
+			float radius = min
+			(
+				Settings::fTargetAttackSourceDistToSlowRotation, 
+				Settings::fAutoEndDialogueRadius
+			);
 			// Slow down when within a multiple of the player actor's bounds.
 			auto player3DPtr = Util::GetRefr3D(dialogueP->coopActor.get()); 
 			if (player3DPtr &&
@@ -5151,11 +5200,11 @@ namespace ALYSLC
 
 			const float startingTargetPitch = Util::GetPitchBetweenPositions
 			(
-				camTargetPos, speakerPos
+				camRefrFocusPoint, speakerPos
 			);
 			const float startingTargetYaw = Util::GetYawBetweenPositions
 			(
-				camTargetPos, speakerPos
+				camRefrFocusPoint, speakerPos
 			);
 			float pitchDelta = Util::NormalizeAngToPi(startingTargetPitch - camPitch);
 			float yawDelta = Util::NormalizeAngToPi(startingTargetYaw - camYaw);
@@ -5182,7 +5231,7 @@ namespace ALYSLC
 			{
 				rotMult = Util::InterpolateEaseOut
 				(
-					0.0f, 1.0f, min(1.0f, xyDistToTarget / max(0.01f, radius)), 9.0f
+					0.0f, 1.0f, min(1.0f, xyDistToTarget / max(0.01f, radius)), 5.0f
 				);
 				tRatio = 
 				(
@@ -6783,14 +6832,44 @@ namespace ALYSLC
 		if (camState == CamState::kDialogue && glob.menuPID > -1)
 		{
 			const auto menuTopicManager = RE::MenuTopicManager::GetSingleton();
+			// REMOVE when done debugging.
+			/*DBG
+			(
+				"{} and {}. Prev: {}, speaker: {}, menu topic info valid: {}. "
+				"Unks: B3: {}, B4: {}, B5: {}, B6: {}, B7: {}, B8: {}, B9: {}, BA: {}, BB: {}",
+				glob.coopPlayers[glob.menuPID]->coopActor->GetName(),
+				Util::HandleIsValid(camDialogueTargetHandle) ? 
+				camDialogueTargetHandle.get()->GetName() :
+				"NONE",
+				Util::HandleIsValid(camDialogueSpeakerHandle) ? 
+				camDialogueSpeakerHandle.get()->GetName() :
+				"NONE",
+				menuTopicManager && Util::HandleIsValid(menuTopicManager->speaker) ? 
+				menuTopicManager->speaker.get()->GetName() :
+				"NONE",
+				menuTopicManager && menuTopicManager->currentTopicInfo,
+				menuTopicManager && menuTopicManager->unkB3,
+				menuTopicManager && menuTopicManager->unkB4,
+				menuTopicManager && menuTopicManager->unkB5,
+				menuTopicManager && menuTopicManager->unkB6,
+				menuTopicManager && menuTopicManager->unkB7,
+				menuTopicManager && menuTopicManager->unkB8,
+				menuTopicManager && menuTopicManager->unkB9,
+				menuTopicManager && menuTopicManager->unkBA,
+				menuTopicManager && menuTopicManager->unkBB
+			);*/
 			if (menuTopicManager && Util::HandleIsValid(menuTopicManager->speaker))
 			{
 				auto prevSpeakerHandle = camDialogueSpeakerHandle;
+				// Checking if 'currentTopicInfo' is available is not enough 
+				// for switching back to a position behind the player 
+				// because it sometimes gets cleared and repopulated after one frame.
+				// UnkB8 is set not set to true when this one frame change happens.
 				if (menuTopicManager->currentTopicInfo)
 				{
 					camDialogueSpeakerHandle = camDialogueTargetHandle;
 				}
-				else
+				else if (menuTopicManager->unkB8)
 				{
 					camDialogueSpeakerHandle = 
 					(

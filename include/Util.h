@@ -5110,6 +5110,9 @@ namespace ALYSLC
 		// if ragdolled, since it is more accurate.
 		// For refrs, prefer rigidbody linear velocity, fall back to refr reported linear velocity.
 		RE::NiPoint3 GetLinearVelocity(RE::TESObjectREFR* a_refr);
+		
+		// Get the maximum distance at which dialogue can start between the two given refrs.
+		float GetMaxDialogueDistance(RE::TESObjectREFR* a_refrA, RE::TESObjectREFR* a_refrB);
 
 		// Get a smart pointer to the game's NiCamera.
 		RE::NiPointer<RE::NiCamera> GetNiCamera();

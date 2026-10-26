@@ -10302,7 +10302,11 @@ namespace ALYSLC
 										menuTopicMgr->lastSpeaker
 									);
 								}
-
+								
+								const float maxDialogueDist = Util::GetMaxDialogueDistance
+								(
+									speakerPtr.get(), reqP->coopActor.get()
+								);
 								if (speakerPtr) 
 								{
 									float distToSpeaker = 
@@ -10312,7 +10316,7 @@ namespace ALYSLC
 											speakerPtr->data.location
 										)
 									);
-									if (distToSpeaker > Settings::fAutoEndDialogueRadius) 
+									if (distToSpeaker > maxDialogueDist) 
 									{
 										Util::TeleportToActor
 										(
@@ -10329,7 +10333,7 @@ namespace ALYSLC
 											a_p->coopActor->data.location
 										)
 									);
-									if (distToThisPlayer > Settings::fAutoEndDialogueRadius)
+									if (distToThisPlayer > maxDialogueDist)
 									{
 										Util::TeleportToActor
 										(

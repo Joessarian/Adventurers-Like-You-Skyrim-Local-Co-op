@@ -1077,6 +1077,9 @@ namespace ALYSLC
 		RE::NiPoint3 camCentroidPoint;
 		// Current centroid point movement delta this frame (ignoring collisions).
 		RE::NiPoint3 camCentroidPointDelta;
+		// Position at which the origin point collides with geometry (if there are obstructions).
+		// Equal to the origin point when there are no obstructions.
+		RE::NiPoint3 camCollisionOriginPoint;
 		// Position at which the cam collides with geometry (if there are obstructions).
 		// Equal to the base position when there are no obstructions.
 		RE::NiPoint3 camCollisionTargetPos;
@@ -1215,7 +1218,7 @@ namespace ALYSLC
 		const float autoTrailPitchMax = 75.0f * PI / 180.0f;
 		// Hull size for anchor points when checking for collisions.
 		// Should always be larger than target pos hull size.
-		const float camAnchorPointHullSize = 35.0f; //35.0f;
+		const float camAnchorPointHullSize = 20.0f; //35.0f;
 		// Maximum camera rotation rate in radians / second.
 		const float camMaxAngRotRate = PI / 1.5f;
 		// Max movement speed in units/second when in manual positioning mode.
@@ -1224,7 +1227,7 @@ namespace ALYSLC
 		const float camMaxMovementSpeed = 1000.0f;
 		// Hull size for target point when checking for collisions.
 		// Should always be smaller than anchor point hull size.
-		const float camTargetPosHullSize = 10.0f; //30.0f;
+		const float camTargetPosHullSize = 15.0f; //30.0f;
 		// Time to reach the starting target position when in the dialogue state.
 		const float secsCamDialogueStartTransition = 2.0f;
 		// Average height of all active players.

@@ -426,14 +426,21 @@ namespace ALYSLC
 					 coopActor->NotifyAnimationGraph("JumpFall") ||
 					 coopActor->NotifyAnimationGraph("JumpDown"))
 			{
+				coopActor->NotifyAnimationGraph("EndPara");
 				if (coopActor->NotifyAnimationGraph("StartPara"))
 				{
 					shouldParaglide = true;
+					DBG("{}: Successfully started paraglide animation.", coopActor->GetName());
+				}
+				else
+				{
+					DBG("{}: Failed to start paragliding.", coopActor->GetName());
 				}
 						
 				// Animation event must play and update the paragliding state flag.
 				coopActor->GetGraphVariableBool("bParaGliding", isParagliding);
 				shouldParaglide &= isParagliding;
+				DBG("{}: Now paragliding: {}.", coopActor->GetName(), shouldParaglide);
 			}
 		}
 
