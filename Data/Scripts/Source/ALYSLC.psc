@@ -85,6 +85,89 @@ Function UnfreezeTime() Global Native
 ; after changing cells or when summoned. 
 ; This function serves as a workaround to reset the equip state and 
 ; fix the problem. Player actor must be disabled for the changes to take effect.
+
+Function SummonPlayerCharacter(Actor akActor) Global
+    akActor.ClearKeepOffsetFromActor()
+    akActor.ClearLookAt()
+	akActor.SetDontMove(True)
+	
+	Form LHObj = akActor.GetEquippedObject(0)
+	Form RHObj = akActor.GetEquippedObject(1)
+	Bool HasLHObjEquipped = LHObj
+	Bool HasRHObjEquipped = RHObj
+	If (HasLHObjEquipped)
+		If (LHObj as Spell)
+			akActor.UnequipSpell(LHObj as Spell, 0)
+		Else
+			akActor.UnequipItemEx(LHObj, 2, False)
+		EndIf
+		;ALYSLC.Wait(0.1)
+	EndIf
+
+	If (HasRHObjEquipped)
+		If (RHObj as Spell)
+			akActor.UnequipSpell(RHObj as Spell, 1)
+		Else
+			akActor.UnequipItemEx(RHObj, 1, False)
+		EndIf
+		;ALYSLC.Wait(0.1)
+	EndIf
+
+	EffectShader FadeOutShader = Game.GetFormFromFile(0xEC355, "Skyrim.esm") as EffectShader
+	FadeOutShader.Play(akActor, 0.5)
+	ALYSLC.Wait(0.5)
+
+	ObjectReference PlayerRef = Game.GetPlayer()
+	ALYSLC.TeleportToP1OrAway(akActor, True)
+	
+	;akActor.MoveTo(PlayerRef, 0.0, 100.0)
+
+	; If (akActor.Is3DLoaded() && akActor.GetParentCell() == PlayerRef.GetParentCell())
+	; 	akActor.SetPosition(PlayerRef.GetPositionX(), PlayerRef.GetPositionY(), PlayerRef.GetPositionZ())
+	; Else
+	; 	akActor.DisableNoWait(False)
+	; 	Float WaitTimeSecs = 0.0
+	; 	Float MaxWaitTimeSecs = 0.5
+	; 	While (akActor.IsEnabled() && WaitTimeSecs < MaxWaitTimeSecs)
+	; 		ALYSLC.Wait(0.1)
+	; 	    WaitTimeSecs += 0.1
+	; 	    ALYSLC.Log("WAIT FOR DISABLE: " + WaitTimeSecs)
+	; 	EndWhile
+
+	; 	akActor.MoveTo(PlayerRef, 0.0, 100.0)
+
+	; 	akActor.EnableNoWait(False)
+	; 	WaitTimeSecs = 0.0
+	; 	While (!akActor.IsEnabled() && WaitTimeSecs < MaxWaitTimeSecs)
+	; 		ALYSLC.Wait(0.1)
+	; 	    WaitTimeSecs += 0.1
+	; 	    ALYSLC.Log("WAIT FOR ENABLE: " + WaitTimeSecs)
+	; 	EndWhile
+	; EndIf
+
+    EffectShader FadeInShader = Game.GetFormFromFile(0xEC354, "Skyrim.esm") as EffectShader
+	FadeInShader.Play(akActor, 0.5)
+
+	If (HasLHObjEquipped)
+		If (LHObj as Spell)
+			akActor.EquipSpell(LHObj as Spell, 0)
+		Else
+			akActor.EquipItemEx(LHObj, 2, False, False)
+		EndIf
+		;ALYSLC.Wait(0.1)
+	EndIf
+
+	If (HasRHObjEquipped)
+		If (RHObj as Spell)
+			akActor.EquipSpell(RHObj as Spell, 1)
+		Else
+			akActor.EquipItemEx(RHObj, 1, False, False)
+		EndIf
+	EndIf
+
+	akActor.SetDontMove(False)
+EndFunction
+
 Function FixStutterAnimsAfterEquipBug(Actor akActor) Global
     akActor.ClearKeepOffsetFromActor()
     akActor.ClearLookAt()
@@ -124,6 +207,7 @@ Function FixStutterAnimsAfterEquipBug(Actor akActor) Global
 	EndWhile
 
 	ALYSLC.Wait(0.1)
+
 	If (HasLHObjEquipped)
 		If (LHObj as Spell)
 			akActor.EquipSpell(LHObj as Spell, 0)
@@ -209,8 +293,8 @@ EndFunction
 ; Wait the specified number of seconds. Account for open menus.
 Function Wait(Float afSeconds) Global
     If (Utility.IsInMenuMode())
-        Utility.WaitMenuMode(0.1)
+        Utility.WaitMenuMode(afSeconds)
     Else
-        Utility.Wait(0.1)
+        Utility.Wait(afSeconds)
     EndIf
 EndFunction

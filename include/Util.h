@@ -2861,6 +2861,43 @@ namespace ALYSLC
 			return a_handle && a_handle.get();
 		}
 
+		// Returns true if the given object has an attached script with the given name.
+		inline bool HasAttachedScript
+		(
+			RE::TESBoundObject* a_object, 
+			RE::TESObjectREFR* a_refr, 
+			const RE::BSFixedString& a_scriptName
+		)
+		{
+			// Special activator cases:
+			// 1. Mining ore from a vein (furniture).
+			// 2. Interacting with a mannequin through its activator.
+
+			if (!a_object)
+			{
+				return false;
+			}
+
+			auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+			if (!vm)
+			{
+				return false;
+			}
+
+			const auto policy = 
+			(
+				vm->GetObjectHandlePolicy()
+			);
+			if (!policy)
+			{
+				return false;
+			}
+
+			auto handle = policy->GetHandleForObject(*a_object->formType, a_refr);
+			RE::BSTSmartPointer<RE::BSScript::Object> result{ };
+			return vm->FindBoundObject(handle, a_scriptName.c_str(), result) && result;
+		}
+
 		// Return true if this actor's crime faction has bounty on player 1.
 		inline bool HasBountyOnPlayer(RE::Actor* a_actor)
 		{
@@ -3612,6 +3649,60 @@ namespace ALYSLC
 				(a_keyCode < sizeof(keyboard->curState)) && 
 				((keyboard->curState[a_keyCode] & 0x80) != 0)
 			);
+		}
+
+		// Return true if the given check refr is a linked refr for the given source refr
+		// and no linked keyword is given, or the linked refr keyword matches the given keyword.
+		inline bool IsLinkedRefr
+		(
+			RE::TESObjectREFR* a_sourceRefr, 
+			RE::TESObjectREFR* a_checkRefr, 
+			RE::BGSKeyword* a_linkedKeyword = nullptr
+		)
+		{
+			if (!a_sourceRefr || !a_checkRefr)
+			{
+				return false;
+			}
+
+			auto exLinkedRef = 
+			(
+				a_sourceRefr->extraList.GetByType<RE::ExtraLinkedRef>()
+			);
+
+			if (!exLinkedRef) 
+			{
+				return false;
+			}
+
+			for (const auto& linkedRef : exLinkedRef->linkedRefs) 
+			{
+				if (!linkedRef.refr)
+				{
+					continue;
+				}
+
+				DBG
+				(
+					"{}: Keyword: {} ({:X}), Linked Ref: {} ({}, {}, {:X})",
+					a_sourceRefr->GetName(),
+					linkedRef.keyword ? 
+					Util::GetEditorID(linkedRef.keyword) : 
+					"NONE",
+					linkedRef.keyword ? linkedRef.keyword->formID : 0xDEAD,
+					linkedRef.refr->GetName(),
+					Util::GetEditorID(linkedRef.refr),
+					Util::GetEditorID(linkedRef.refr->GetBaseObject()),
+					linkedRef.refr->formID
+				);
+				if ((linkedRef.refr == a_checkRefr) && 
+					(!a_linkedKeyword || linkedRef.keyword == a_linkedKeyword))
+				{
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 		//=========================================================================================
@@ -5041,6 +5132,9 @@ namespace ALYSLC
 			RE::TESObjectREFR* a_refr, RE::TESForm* a_form, bool a_equipsToLH = false
 		);
 
+		// Get the equip slot for the given form at the given equip index.
+		RE::BGSEquipSlot* GetEquipSlotForForm(RE::TESForm* a_form, const EquipIndex& a_index);
+
 		// Get the X, Y, and Z euler angles from the given rotation matrix.
 		// Pitch and yaw angles returned in the NiPoint follow the game's conventions for both.
 		RE::NiPoint3 GetEulerAnglesFromRotMatrix(const RE::NiMatrix3& a_matrix);
@@ -5127,7 +5221,7 @@ namespace ALYSLC
 
 		// Get associated refr from the given 3D object.
 		RE::TESObjectREFR* GetRefrFrom3D(RE::NiAVObject* a_obj3D);
-
+		
 		// Get the given refr's position.
 		// Default to the refr data's reported position,
 		// then if the refr's current 3D is loaded choose the refr's 3D position,
@@ -5333,6 +5427,9 @@ namespace ALYSLC
 		// (can be moved into a player's inventory directly through activation)?
 		bool IsLootableRefr(RE::TESObjectREFR* a_refr);
 		
+		// Return true if the given refr/base object is a mannequin.
+		bool IsMannequin(RE::TESObjectREFR* a_refr, RE::TESBoundObject* a_object);
+
 		// Is the given race one that has an accompanying transformation?
 		// Werewolf, vampire, or non-playable, non-humanoid races.
 		bool IsRaceWithTransformation(RE::TESRace* a_race);

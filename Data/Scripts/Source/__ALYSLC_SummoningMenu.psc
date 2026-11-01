@@ -25,8 +25,6 @@ Message Property CoopCompanionStatsMenu3 Auto
 Message Property CoopSetupMenu Auto
 ; Message boxes to view stats for chosen companion.
 Message[] Property StatsMenuArr Auto
-; For summoning the camera operator.
-ObjectReference Property CoopSummonEnterPortal Auto
 ; Player 1 reference alias.
 ReferenceAlias Property Player1RefrAlias Auto
 ; Finished selecting characters to summon.
@@ -1268,9 +1266,10 @@ Function SetUpPlayersAndSummon()
         If (CoopActors[Index] && CoopActors[Index] as Actor)
             Actor CoopPlayerToSummon = CoopActors[Index] as Actor
             ALYSLC.Log("[SUMMON SCRIPT] Summoning companion player " + CoopPlayerToSummon + ".")
-            ALYSLC.TeleportToP1OrAway(CoopPlayerToSummon, True)
-            ; Reset equip state and set up actor values and relationship ranks with P1.
-            ALYSLC.FixStutterAnimsAfterEquipBug(CoopPlayerToSummon)
+            ;ALYSLC.TeleportToP1OrAway(CoopPlayerToSummon, True)
+            ;; Reset equip state and set up actor values and relationship ranks with P1.
+            ;ALYSLC.FixStutterAnimsAfterEquipBug(CoopPlayerToSummon)
+            ALYSLC.SummonPlayerCharacter(CoopPlayerToSummon)
 
             ; Maybe unnecessary. Keeping commented out for now.
             ; CoopPlayerToSummon.SetRelationshipRank(PlayerRef as Actor, 3)

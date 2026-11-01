@@ -13714,13 +13714,13 @@ namespace ALYSLC
 				{
 					const auto& p = glob.coopPlayers[firedAtPlayerIndex];
 					shader = glob.useHighlightShaders[firedAtPlayerIndex];
-					p->tm->AdjustHighlightShader(shader, false, false, false, true, false);
+					p->tm->AdjustHighlightShader(shader, false, false, true, false, false);
 				}
 				else if (firingPlayerIndex != -1)
 				{
 					const auto& p = glob.coopPlayers[firingPlayerIndex];
 					shader = glob.useHighlightShaders[firingPlayerIndex];
-					p->tm->AdjustHighlightShader(shader, false, false, false, true, false);
+					p->tm->AdjustHighlightShader(shader, false, false, true, false, false);
 				}
 
 				a_this->ApplyEffectShader(shader, 5.0f);
@@ -13738,6 +13738,12 @@ namespace ALYSLC
 				return;
 			}
 			
+			// REMOVE when done debugging.
+			/*if (auto refr3DPtr = Util::GetRefr3D(projectile); refr3DPtr)
+			{
+				DebugAPI::QueuePoint3D(ToVec3(refr3DPtr->worldBound.center), 0xFFFFFFFF, 5.0f);
+			}*/
+
 			int32_t grabbedByPlayerPID = -1;
 			int32_t releasedByPlayerPID = -1;
 			GetManipulatingPlayer(projectileHandle, grabbedByPlayerPID, releasedByPlayerPID);
@@ -15942,7 +15948,7 @@ namespace ALYSLC
 						index,
 						equippedPlayerList, 
 						1, 
-						p->em->GetEquipSlotForForm(a_item, index)
+						Util::GetEquipSlotForForm(a_item, index)
 					);
 				}
 				else
@@ -16001,7 +16007,7 @@ namespace ALYSLC
 					EquipIndex::kLeftHand, 
 					equippedPlayerList, 
 					1, 
-					p->em->GetEquipSlotForForm(a_item, EquipIndex::kLeftHand)
+					Util::GetEquipSlotForForm(a_item, EquipIndex::kLeftHand)
 				);
 			}
 			// I stg, if this line was causing the enchantments removal bug from 1.0.3

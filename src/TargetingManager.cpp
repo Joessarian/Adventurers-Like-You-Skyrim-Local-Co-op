@@ -471,7 +471,8 @@ namespace ALYSLC
 		// Indicator screen positions.
 		playerIndicatorScaleformPos = glm::vec2(0.0f, 0.0f);
 
-		// Nearby refrs.
+		// Nearby and bumped refrs.
+		bumpDamagedRefrFIDs.clear();
 		nearbyObjectsOfSameType.clear();
 		nearbyReferences.clear();
 		proximityLootHandles.clear();
@@ -2880,8 +2881,8 @@ namespace ALYSLC
 			)
 		);
 			
-		bool isSoftFocalPlayer = playerID == glob.cam->softFocalPID;
 		float alphaMult = 1.0f;
+		bool isSoftFocalPlayer = playerID == glob.cam->softFocalPID;
 
 		// Commented out for now unless using automatic soft focal player switching code.
 		/*const float secsSinceLeadingPlayerChange = Util::GetElapsedSeconds
@@ -6556,7 +6557,7 @@ namespace ALYSLC
 				)
 			)
 		);
-		/*DBG
+		DBG
 		(
 			"{}: {}, {} <? {}, from center: {}, max disp: {}.", 
 			coopActor->GetName(),
@@ -6572,7 +6573,7 @@ namespace ALYSLC
 			Settings::fSecsBetweenSelectingActivationTargets,
 			stickState.MovedFromCenter(),
 			stickState.MaxDisplacement()
-		);*/
+		);
 		// Closest object refr within FOV window.
 		const auto& playerTorsoPos = p->mm->playerTorsoPosition;
 		// Check for a new target if the current target
@@ -6602,6 +6603,7 @@ namespace ALYSLC
 		// if starting from the currently selected target.
 		if (!canSelect)
 		{
+			DBG("NOPE");
 			return a_currentTargetHandle;
 		}
 
@@ -6794,10 +6796,19 @@ namespace ALYSLC
 			for (const auto& closeActorHandle : procLists->highActorHandles)
 			{
 				// Ignore non-actors, actors that cannot be targeted, and dead actors.
-				auto actorPtr = Util::GetActorPtrFromHandle(closeActorHandle); 
+				auto actorPtr = Util::GetActorPtrFromHandle(closeActorHandle);
 				if (!actorPtr || 
+					!actorPtr->GetBaseObject() ||
 					!Util::IsValidRefrForTargeting(actorPtr.get()) || 
 					actorPtr->IsDead())
+				{
+					continue;
+				}
+				
+				// Special Case Alert:
+				// Skip mannequins actors since activating them does nothing.
+				// Must interact with their activator to open the Container Menu.
+				if (Util::IsMannequin(actorPtr.get(), actorPtr->GetBaseObject()))
 				{
 					continue;
 				}
@@ -6952,10 +6963,10 @@ namespace ALYSLC
 					
 					// Skip if trying to select another player. 
 					// Use the crosshair to select another player and give them items.
-					if (GlobalCoopData::IsCoopPlayer(a_refr) && !canSelectOtherPlayers)
+					/*if (GlobalCoopData::IsCoopPlayer(a_refr) && !canSelectOtherPlayers)
 					{
 						return RE::BSContainer::ForEachResult::kContinue;
-					}
+					}*/
 
 					const auto handle = a_refr->GetHandle();
 					auto baseObj = a_refr->GetBaseObject();
@@ -6973,6 +6984,14 @@ namespace ALYSLC
 						return RE::BSContainer::ForEachResult::kContinue;
 					}
 					
+					// Special Case Alert:
+					// Skip mannequins actors since activating them does nothing.
+					// Must interact with their activator to open the Container Menu.
+					if (Util::IsMannequin(a_refr, baseObj))
+					{
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+
 					isOnScreen = Util::PointIsOnScreen(Util::GetRefrPosition(a_refr));
 					if (!isOnScreen)
 					{
@@ -7189,6 +7208,17 @@ namespace ALYSLC
 			++losChecksPerformed;
 			if (hasLOS)
 			{
+				DBG
+				(
+					"{}: Checking LOS for {}, factor: {}, distance: {}, max dist: {}.", 
+					coopActor->GetName(), 
+					refrHandle.get()->GetName(),
+					factor,
+					playerTorsoPos.GetDistance(Util::GetRefrPosition(refrPtr.get())),
+					refrPtr->As<RE::Actor>() && !refrPtr->IsDead() ? 
+					GetMaxActivationDist() * Settings::fLivingActorActivationDistMult :
+					GetMaxActivationDist()
+				);
 				closestRefrHandle = refrHandle;
 				choseLastOption = ++iter == factorMap.end();
 				break;
@@ -7200,15 +7230,12 @@ namespace ALYSLC
 		// restart the selection chain from the player next time.
 		// Only when using the left stick, because turning away from the current target 
 		// to select a new target in the opposite direction is awkward.
-		//if (a_useLeftStickAngle || !a_selectFromCrosshairScreenPos)
-		{
-			shouldFindLockOnTargetFromPlayer = 
-			(
-				!a_fromCurrentTarget || 
-				!Util::HandleIsValid(closestRefrHandle) ||
-				choseLastOption
-			);
-		}
+		shouldFindLockOnTargetFromPlayer = 
+		(
+			!a_fromCurrentTarget || 
+			!Util::HandleIsValid(closestRefrHandle) ||
+			choseLastOption
+		);
 
 		DBG
 		(
@@ -7707,24 +7734,21 @@ namespace ALYSLC
 						return RE::BSContainer::ForEachResult::kContinue;
 					}
 
+					// Skip activating the underlying mannequin actor directly, 
+					// as this does not open the container menu to place items on the mannequin.
+					if (Util::IsMannequin(a_refr, baseObj))
+					{
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+				
 					// Living actor selection has an expanded search radius.
 					auto asActor = a_refr->As<RE::Actor>();
-					auto refrPos = Util::GetRefrPosition(a_refr);
 					float checkDist = maxRefrCheckDist;
 					if (asActor && !asActor->IsDead())
 					{
 						checkDist *= Settings::fLivingActorActivationDistMult;
 					}
 
-					const bool inRange = 
-					(
-						refrPos.GetDistance(playerTorsoPos) < checkDist
-					);
-					if (!inRange)
-					{
-						return RE::BSContainer::ForEachResult::kContinue;
-					}
-					
 					// Skip grabbed items.
 					// Too easy to accidentally target a grabbed object when auto-selection
 					// is active with the player moving towards a free object.
@@ -7791,7 +7815,9 @@ namespace ALYSLC
 					{
 						return RE::BSContainer::ForEachResult::kContinue;
 					}
-
+					
+					// Skip this refr if ALL considered positions are out of range.
+					bool inRange = false;
 					// Skip refrs that are not within FOV cone 
 					// in the player's facing direction and not on screen.
 					// Do not want to select a door or furniture, for example,
@@ -7804,6 +7830,25 @@ namespace ALYSLC
 					// of where the refr is located relative to the player.
 					// Start with the reported refr location.
 					RE::NiPoint3 refrLoc1 = a_refr->data.location;
+					// Next three positions only exist if the refr's 3D is available.
+					std::optional<RE::NiPoint3> refrLoc2 = std::nullopt;
+					std::optional<RE::NiPoint3> refrLoc3 = std::nullopt;
+					std::optional<RE::NiPoint3> refrLoc4 = std::nullopt;
+					if (refr3DPtr)
+					{
+						refrLoc2 = refr3DPtr->world.translate;
+						refrLoc3 = refr3DPtr->worldBound.center;
+						auto hkpRigidBodyPtr = Util::GethkpRigidBody(refr3DPtr.get()); 
+						if (hkpRigidBodyPtr)
+						{
+							refrLoc4 = ToNiPoint3
+							(
+								hkpRigidBodyPtr->motion.motionState.transform.translation *
+								HAVOK_TO_GAME
+							);
+						}
+					}
+
 					RE::NiPoint3 toRefrDirXY = refrLoc1 - coopActor->data.location;
 					toRefrDirXY.z = 0.0f;
 					toRefrDirXY.Unitize();
@@ -7829,15 +7874,10 @@ namespace ALYSLC
 						//(0.5f * (1.0f - facingToRefrDot)) +
 						(playerTorsoPos.GetDistance(refrLoc1) / checkDist)
 					);
-
-					// Next two positions only exist if the refr's 3D is available.
-					std::optional<RE::NiPoint3> refrLoc2 = std::nullopt;
-					std::optional<RE::NiPoint3> refrLoc3 = std::nullopt;
-					if (refr3DPtr)
-					{
-						refrLoc2 = refr3DPtr->world.translate;
-						refrLoc3 = refr3DPtr->worldBound.center;
-					}
+					inRange =
+					(
+						refrLoc1.GetDistance(playerTorsoPos) < checkDist
+					);
 
 					// Refr 3D world position.
 					if (refrLoc2.has_value())
@@ -7860,6 +7900,10 @@ namespace ALYSLC
 						if (selectionFactor < minSelectionFactor) 
 						{
 							minSelectionFactor = selectionFactor;
+							inRange =
+							(
+								refrLoc2.value().GetDistance(playerTorsoPos) < checkDist
+							);
 						}
 					}
 
@@ -7884,9 +7928,47 @@ namespace ALYSLC
 						if (selectionFactor < minSelectionFactor)
 						{
 							minSelectionFactor = selectionFactor;
+							inRange =
+							(
+								refrLoc3.value().GetDistance(playerTorsoPos) < checkDist
+							);
+						}
+					}
+
+					// Refr rigidbody position.
+					if (refrLoc4.has_value())
+					{
+						toRefrDirXY = refrLoc4.value() - coopActor->data.location;
+						toRefrDirXY.z = 0.0f;
+						toRefrDirXY.Unitize();
+						facingToRefrDot = movingDirXY.Dot(toRefrDirXY);
+						movingToRefrAngDelta = fabsf(acosf(facingToRefrDot));
+						if (allPositionsWithinFOV && movingToRefrAngDelta >= PI / 2.0f)
+						{
+							allPositionsWithinFOV = false;
+						}
+
+						float selectionFactor = 
+						(
+							//(0.5f * (1.0f - facingToRefrDot)) +
+							(playerTorsoPos.GetDistance(refrLoc4.value()) / checkDist)
+						);
+						if (selectionFactor < minSelectionFactor)
+						{
+							minSelectionFactor = selectionFactor;
+							inRange =
+							(
+								refrLoc4.value().GetDistance(playerTorsoPos) < checkDist
+							);
 						}
 					}
 					
+					// Continue if no locations are in range.
+					if (!inRange)
+					{
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+
 					// Player is not turned towards the object if its refr data, 3D,
 					// and 3D center positions are behind the player.
 					if (!allPositionsWithinFOV)
@@ -7901,7 +7983,7 @@ namespace ALYSLC
 					{
 						minSelectionFactor *= 100.0f;
 					}
-
+	
 					/*DBG("Add {} (0x{:X}), factor {}.", 
 						a_refr->GetName(), a_refr->formID, minSelectionFactor);*/
 					nearbyReferences.insert
@@ -7920,13 +8002,14 @@ namespace ALYSLC
 
 					/*DBG
 					(
-						"{}: Activation candidate {} ({}, 0x{:X}, 0x{:X}) from mod {} ({}). "
-						"Factor: {}", 
+						"{}: Activation candidate {} ({}, 0x{:X}, 0x{:X}, type: 0x{:X}) "
+						"from mod {} ({}). Factor: {}", 
 						coopActor->GetName(),
 						a_refr->GetName(),
 						Util::GetEditorID(baseObj),
 						a_refr->formID,
 						baseObj->formID,
+						*baseObj->formType,
 						modFile ? modFile->fileName : "NONE",
 						modFile2 ? modFile2->fileName : "NONE",
 						minSelectionFactor
@@ -8030,15 +8113,30 @@ namespace ALYSLC
 								//(0.5f * (1.0f - facingToRefrDot)) +
 								(playerTorsoPos.GetDistance(refrLoc1) / checkDist)
 							);
+							
+							// Skip this refr if ALL considered positions are out of range.
+							bool inRange = false;
+							// Next three positions only exist if the refr's 3D is available.
 							std::optional<RE::NiPoint3> refrLoc2 = std::nullopt;
 							std::optional<RE::NiPoint3> refrLoc3 = std::nullopt;
+							std::optional<RE::NiPoint3> refrLoc4 = std::nullopt;
 							auto refr3DPtr = Util::GetRefr3D(pickRefrPtr.get()); 
 							if (refr3DPtr)
 							{
 								refrLoc2 = refr3DPtr->world.translate;
 								refrLoc3 = refr3DPtr->worldBound.center;
+								auto hkpRigidBodyPtr = Util::GethkpRigidBody(refr3DPtr.get()); 
+								if (hkpRigidBodyPtr)
+								{
+									refrLoc4 = ToNiPoint3
+									(
+										hkpRigidBodyPtr->motion.motionState.transform.translation *
+										HAVOK_TO_GAME
+									);
+								}
 							}
 
+							// Refr 3D world position.
 							if (refrLoc2.has_value())
 							{
 								toRefrDirXY = refrLoc2.value() - coopActor->data.location;
@@ -8059,9 +8157,14 @@ namespace ALYSLC
 								if (selectionFactor < minSelectionFactor) 
 								{
 									minSelectionFactor = selectionFactor;
+									inRange =
+									(
+										refrLoc2.value().GetDistance(playerTorsoPos) < checkDist
+									);
 								}
 							}
 
+							// Refr 3D bound center position.
 							if (refrLoc3.has_value())
 							{
 								toRefrDirXY = refrLoc3.value() - coopActor->data.location;
@@ -8082,6 +8185,38 @@ namespace ALYSLC
 								if (selectionFactor < minSelectionFactor)
 								{
 									minSelectionFactor = selectionFactor;
+									inRange =
+									(
+										refrLoc3.value().GetDistance(playerTorsoPos) < checkDist
+									);
+								}
+							}
+
+							// Refr rigidbody position.
+							if (refrLoc4.has_value())
+							{
+								toRefrDirXY = refrLoc4.value() - coopActor->data.location;
+								toRefrDirXY.z = 0.0f;
+								toRefrDirXY.Unitize();
+								facingToRefrDot = movingDirXY.Dot(toRefrDirXY);
+								movingToRefrAngDelta = fabsf(acosf(facingToRefrDot));
+								if (allPositionsWithinFOV && movingToRefrAngDelta >= PI / 2.0f)
+								{
+									allPositionsWithinFOV = false;
+								}
+
+								float selectionFactor = 
+								(
+									//(0.5f * (1.0f - facingToRefrDot)) +
+									(playerTorsoPos.GetDistance(refrLoc4.value()) / checkDist)
+								);
+								if (selectionFactor < minSelectionFactor)
+								{
+									minSelectionFactor = selectionFactor;
+									inRange =
+									(
+										refrLoc4.value().GetDistance(playerTorsoPos) < checkDist
+									);
 								}
 							}
 
@@ -8225,6 +8360,52 @@ namespace ALYSLC
 		// Update activation cycling orientation.
 		lastActivationReqPos = coopActor->data.location;
 		lastActivationFacingAngle = lsAngle;
+
+		// REMOVE when done debugging.
+		/*if (Util::HandleIsValid(selectedRefrHandle))
+		{
+			const auto refrPtr = selectedRefrHandle.get();
+			auto pos = ToVec3(refrPtr->data.location);
+			DebugAPI::QueuePoint3D
+			(
+				pos, 
+				Settings::vuOverlayRGBAValues[playerID], 
+				5.0f
+			);
+			if (auto refr3DPtr = Util::GetRefr3D(refrPtr.get()); refr3DPtr)
+			{
+				pos = ToVec3(refr3DPtr->world.translate);
+				DebugAPI::QueuePoint3D
+				(
+					pos, 
+					Settings::vuCrosshairInnerOutlineRGBAValues[playerID], 
+					5.0f
+				);
+				pos = ToVec3(refr3DPtr->worldBound.center);
+				DebugAPI::QueuePoint3D
+				(
+					pos, 
+					Settings::vuCrosshairOuterOutlineRGBAValues[playerID], 
+					5.0f
+				);
+
+				auto hkpRigidBodyPtr = Util::GethkpRigidBody(refr3DPtr.get()); 
+				if (hkpRigidBodyPtr)
+				{
+					pos = ToVec3
+					(
+						hkpRigidBodyPtr->motion.motionState.transform.translation
+					) * HAVOK_TO_GAME;
+					DebugAPI::QueuePoint3D
+					(
+						pos, 
+						0xFF0000FF, 
+						5.0f
+					);
+				}
+			}
+		}*/
+
 		return selectedRefrHandle;
 	}
 
@@ -8615,102 +8796,158 @@ namespace ALYSLC
 					return false;
 				}
 
-				auto bumpedActor = bumpedRefr->As<RE::Actor>();
-				// Player 1 is never reported as the bumped body for NPCs/other players,
-				// so don't allow player-to-player collisions until a solution is found 
-				// that works for all players.
-				if (!bumpedActor || 
-					p->tm->bumpDamagedActorFIDs.contains(bumpedActor->formID))
+				// Do not bump the same refr twice.
+				if (p->tm->bumpDamagedRefrFIDs.contains(bumpedRefr->formID))
 				{
 					return false;
 				}
 				
-				bool isPlayer = GlobalCoopData::IsCoopPlayer(bumpedActor);
-				const auto& knockState = bumpedActor->GetKnockState();
-				auto exOwner = bumpedActor->extraList.GetByType<RE::ExtraOwnership>(); 
-				auto owner = exOwner ? exOwner->owner : nullptr;
-				const bool shouldStagger = 
-				(
-					!p->mm->isAirborneWhileJumping &&
-					!p->mm->isParagliding &&
-					!bumpedActor->IsStaggered() &&
-					!bumpedActor->IsStaggering() && 
-					!bumpedActor->IsBleedingOut() &&
-					!bumpedActor->IsAttacking()
-				);
-
-				// Knock down if hitting a staggered target that was staggered by another player
-				// (hooray, a bit of cooperative play required!), 
-				// or if the target is attacking (caught by surprise), 
-				// bleeding out, drop kicked, or lunged at while paragliding.
-				const bool shouldKnockDown = 
-				(
-					(!shouldStagger) && 
-					(
-						owner != coopActor.get() || 
-						bumpedActor->IsBleedingOut() ||
-						bumpedActor->IsAttacking() ||
-						bumpedActor->IsStaggered() ||
-						bumpedActor->IsStaggering() ||
-						p->mm->isAirborneWhileJumping ||
-						p->mm->isParagliding
-					)
-				);
+				bool shouldKnockDown = false;
 				const auto linVel = Util::GetLinearVelocity(coopActor.get());
-				const auto playerRigidBodyPtr = Util::GethkpRigidBody(coopActor.get());
-				const float playerMass = 
-				(
-					playerRigidBodyPtr ? playerRigidBodyPtr->motion.GetMass() : 0.0f
-				);
 				const float havokImpactSpeed = linVel.Length() * GAME_TO_HAVOK;
-				HandleBonk
-				(
-					bumpedActor->GetHandle(), 
-					coopActor->GetHandle(), 
-					playerMass,
-					Util::Get3DCenterPos(coopActor.get()).z,
-					linVel,
-					ToNiPoint3(a_result.hitPos),
-					shouldKnockDown
-				);
-				DBG("{}: Bumped {}. Should stagger: {}, should knock down: {}.",
-					coopActor->GetName(), bumpedActor->GetName(), shouldStagger, shouldKnockDown);
-				if (shouldStagger && !shouldKnockDown)
+				auto bumpedActor = bumpedRefr->As<RE::Actor>();
+				if (bumpedActor)
 				{
-					// Update stagger 'owner'.
-					if (!isPlayer)
-					{
-						bumpedActor->SetOwner(coopActor.get());
-					}
-
-					// Apply stagger and damage.
-					bumpedActor->NotifyAnimationGraph("staggerStart");
-					Util::ApplyHit
+					bool isPlayer = GlobalCoopData::IsCoopPlayer(bumpedActor);
+					const auto& knockState = bumpedActor->GetKnockState();
+					auto exOwner = bumpedActor->extraList.GetByType<RE::ExtraOwnership>(); 
+					auto owner = exOwner ? exOwner->owner : nullptr;
+					const bool shouldStagger = 
 					(
-						coopActor.get(), 
-						bumpedActor, 
-						0.0f,
-						!isPlayer, 
-						!isPlayer,
-						isPlayer ? 0.0f : havokImpactSpeed * 300.0f,
-						isPlayer ? 0.0f : havokImpactSpeed * 300.0f,
-						coopActor->GetHandle()
+						!p->mm->isAirborneWhileJumping &&
+						!p->mm->isParagliding &&
+						!bumpedActor->IsDead() &&
+						!bumpedActor->IsStaggered() &&
+						!bumpedActor->IsStaggering() && 
+						!bumpedActor->IsBleedingOut() &&
+						!bumpedActor->IsAttacking()
 					);
+
+					// Knock down if hitting a staggered target that was staggered by another player
+					// (hooray, a bit of cooperative play required!), 
+					// or if the target is attacking (caught by surprise), 
+					// bleeding out, drop kicked, or lunged at while paragliding.
+					shouldKnockDown = 
+					(
+						(!shouldStagger) && 
+						(
+							owner != coopActor.get() || 
+							bumpedActor->IsDead() ||
+							bumpedActor->IsBleedingOut() ||
+							bumpedActor->IsAttacking() ||
+							bumpedActor->IsStaggered() ||
+							bumpedActor->IsStaggering() ||
+							p->mm->isAirborneWhileJumping ||
+							p->mm->isParagliding
+						)
+					);
+					const auto playerRigidBodyPtr = Util::GethkpRigidBody(coopActor.get());
+					const float playerMass = 
+					(
+						playerRigidBodyPtr ? playerRigidBodyPtr->motion.GetMass() : 0.0f
+					);
+					HandleBonk
+					(
+						bumpedActor->GetHandle(), 
+						coopActor->GetHandle(), 
+						playerMass,
+						Util::Get3DCenterPos(coopActor.get()).z,
+						linVel,
+						ToNiPoint3(a_result.hitPos),
+						shouldKnockDown
+					);
+					DBG
+					(
+						"{}: Bumped {}. Should stagger: {}, should knock down: {}.",
+						coopActor->GetName(),
+						bumpedActor->GetName(), 
+						shouldStagger, 
+						shouldKnockDown
+					);
+					if (shouldStagger && !shouldKnockDown)
+					{
+						// Update stagger 'owner'.
+						if (!isPlayer)
+						{
+							bumpedActor->SetOwner(coopActor.get());
+						}
+
+						// Apply stagger and damage.
+						bumpedActor->NotifyAnimationGraph("staggerStart");
+						Util::ApplyHit
+						(
+							coopActor.get(), 
+							bumpedActor, 
+							0.0f,
+							!isPlayer, 
+							!isPlayer,
+							isPlayer ? 0.0f : havokImpactSpeed * 300.0f,
+							isPlayer ? 0.0f : havokImpactSpeed * 300.0f,
+							coopActor->GetHandle()
+						);
+					}
+				
+					// Expend additional stamina on collision if charging.
+					// Large chunk to prevent knockdown-lock cheese.
+					// Can knockdown/stagger 2/4 times max from full stamina.
+					p->pam->ExpendStamina
+					(
+						shouldKnockDown ? 
+						0.5f * Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kStamina) :
+						0.25f * Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kStamina)
+					);
+				}
+				else
+				{
+					// Damage destructible objects.
+					auto taskInterface = RE::TaskQueueInterface::GetSingleton(); 
+					if (taskInterface)
+					{
+						taskInterface->QueueUpdateDestructibleObject
+						(
+							bumpedRefr.get(),
+							max(coopActor->GetWeight(), 0.0f) * havokImpactSpeed,
+							false, 
+							coopActor.get()
+						);
+					}
 				}
 
 				// Insert as hit to prevent applying a hit each frame the bumper
 				// is in contact with a target (wayyy to many hits).
-				p->tm->bumpDamagedActorFIDs.insert(bumpedActor->formID);
-				
-				// Expend additional stamina on collision if charging.
-				// Large chunk to prevent knockdown-lock cheese.
-				// Can knockdown/stagger 2/4 times max from full stamina.
-				p->pam->ExpendStamina
+				p->tm->bumpDamagedRefrFIDs.insert(bumpedRefr->formID);
+				// Redirect towards crosshair target.
+				bool shouldRedirectWithBump = 
 				(
-					shouldKnockDown ? 
-					0.5f * Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kStamina) :
-					0.25f * Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kStamina)
+					((crosshairActive) && (!bumpedActor || shouldKnockDown)) &&
+					(
+						a_result.hitRefrHandle != crosshairRefrHandle &&
+						a_result.hitRefrHandle != aimCorrectionTargetHandle
+					) &&
+					(
+						bumpedActor || 
+						Util::IsLootableRefr(bumpedRefr.get())
+					)
 				);
+				if (shouldRedirectWithBump) 
+				{
+					rmm->InstantlyAddReleasedRefr
+					(
+						p, 
+						a_result.hitRefrHandle, 
+						std::lerp
+						(
+							0.5f,
+							1.0f,
+							min
+							(
+								1.0f,
+								linVel.Length() * GAME_TO_HAVOK / 15.0f
+							)
+						)
+					);
+				}
+
 				return true;
 			};
 
@@ -8988,78 +9225,84 @@ namespace ALYSLC
 						nullptr
 					);
 					auto formOwner = refrPtr->GetOwner();
-					// Need to flag off-limits items as such.
+					if (!formOwner)
+					{
+						// Setting the owner as P1 themselves will still mark the entry 
+						// as 'stealing' (red text, hand icon), 
+						// but will not if set to P1's actorbase.
+						formOwner = p1->GetActorBase();
+					}
+
+					DBG("Set owner as {} (0x{:X}).", formOwner->GetName(), formOwner->formID);
+
+					// Need to modify the item's extra ownership to mark it as stealing or not.
 					// Done by setting the owner of the inserted exData list, 
 					// not the copied one, so we must obtain the inserted entry via iteration 
 					// through the chest's inventory changes.
 					// Ew.
-					if (copiedList && 
-						Util::ActivationIsOffLimits(coopActor.get(), refrPtr.get()))
+					auto insertedList = Util::FindMatchingExtraDataList
+					(
+						glob.lootBuddyChest.get(), baseObj, copiedList
+					);
+					if (insertedList)
 					{
-						auto insertedList = Util::FindMatchingExtraDataList
+						insertedList->SetOwner(formOwner);
+						DBG("YEP: {}: {:p} -> {:p}, owner: {}.", 
+							refrPtr->GetName(), 
+							fmt::ptr(copiedList),
+							fmt::ptr(insertedList),
+							insertedList && insertedList->GetOwner() ? 
+							Util::GetEditorID(insertedList->GetOwner()) :
+							"NONE");
+					}
+					else
+					{
+						DBG("NOPE: {}", refrPtr->GetName());
+						auto invEntry = Util::GetInventoryEntryDataForObject
 						(
-							glob.lootBuddyChest.get(), baseObj, copiedList
+							glob.lootBuddyChest.get(), baseObj, nullptr
 						);
-						if (insertedList)
+						if (invEntry)
 						{
-							insertedList->SetOwner(formOwner);
-							DBG("YEP: {}: {:p} -> {:p}, owner: {}.", 
-								refrPtr->GetName(), 
-								fmt::ptr(copiedList),
-								fmt::ptr(insertedList),
-								insertedList && insertedList->GetOwner() ? 
-								Util::GetEditorID(insertedList->GetOwner()) :
-								"NONE");
-						}
-						else
-						{
-							DBG("NOPE: {}", refrPtr->GetName());
-							auto invEntry = Util::GetInventoryEntryDataForObject
-							(
-								glob.lootBuddyChest.get(), baseObj, nullptr
-							);
-							if (invEntry)
+							if (invEntry->extraLists && !invEntry->extraLists->empty())
 							{
+								(*invEntry->extraLists->begin())->SetOwner(formOwner);
+								DBG("YEP2: {}: {:p} -> {:p}, owner: {}.", 
+									refrPtr->GetName(), 
+									fmt::ptr(copiedList), 
+									fmt::ptr(*invEntry->extraLists->begin()),
+									(*invEntry->extraLists->begin()) && 
+									(*invEntry->extraLists->begin())->GetOwner() ? 
+									Util::GetEditorID
+									(
+										(*invEntry->extraLists->begin())->GetOwner()
+									) :
+									"NONE");
+							}
+							else
+							{
+								invEntry->AddExtraList(Util::CreateExtraDataList());
 								if (invEntry->extraLists && !invEntry->extraLists->empty())
 								{
-									(*invEntry->extraLists->begin())->SetOwner(formOwner);
-									DBG("YEP2: {}: {:p} -> {:p}, owner: {}.", 
+									const auto addedList = invEntry->extraLists->front();
+									addedList->SetOwner(formOwner);
+									DBG("YEP3: {}: {:p} -> {:p}, owner: {}.", 
 										refrPtr->GetName(), 
 										fmt::ptr(copiedList), 
-										fmt::ptr(*invEntry->extraLists->begin()),
-										(*invEntry->extraLists->begin()) && 
-										(*invEntry->extraLists->begin())->GetOwner() ? 
-										Util::GetEditorID
-										(
-											(*invEntry->extraLists->begin())->GetOwner()
-										) :
+										fmt::ptr(addedList),
+										addedList && addedList->GetOwner() ? 
+										Util::GetEditorID(addedList->GetOwner()) :
 										"NONE");
 								}
 								else
 								{
-									invEntry->AddExtraList(Util::CreateExtraDataList());
-									if (invEntry->extraLists && !invEntry->extraLists->empty())
-									{
-										const auto addedList = invEntry->extraLists->front();
-										addedList->SetOwner(formOwner);
-										DBG("YEP3: {}: {:p} -> {:p}, owner: {}.", 
-											refrPtr->GetName(), 
-											fmt::ptr(copiedList), 
-											fmt::ptr(addedList),
-											addedList && addedList->GetOwner() ? 
-											Util::GetEditorID(addedList->GetOwner()) :
-											"NONE");
-									}
-									else
-									{
-										DBG("NOPE3: {}", refrPtr->GetName());
-									}
+									DBG("NOPE3: {}", refrPtr->GetName());
 								}
 							}
-							else
-							{
-								DBG("NOPE2: {}", refrPtr->GetName());
-							}
+						}
+						else
+						{
+							DBG("NOPE2: {}", refrPtr->GetName());
 						}
 					}
 					
@@ -11113,8 +11356,8 @@ namespace ALYSLC
 		}
 
 		auto asActor = a_targetRefr->As<RE::Actor>();
-		auto targetPos = RE::NiPoint3();
-		if (auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_targetRefr); pIndex != -1)
+		auto targetPos = Util::GetRefrPosition(a_targetRefr);
+		/*if (auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_targetRefr); pIndex != -1)
 		{
 			targetPos = glob.coopPlayers[pIndex]->mm->playerTorsoPosition;
 		}
@@ -11125,21 +11368,10 @@ namespace ALYSLC
 		else
 		{
 			targetPos = Util::Get3DCenterPos(a_targetRefr);
-		}
+		}*/
 		
 		// Disregard range when set to -1.
 		bool useRange = a_range != -1.0f;
-		// Get distance between player (NOT source) and close refr position.
-		float distanceFromPlayer = FLT_MAX;
-		if (a_useXYDistance)
-		{
-			distanceFromPlayer = Util::GetXYDistance(targetPos, p->mm->playerTorsoPosition);
-		}
-		else
-		{
-			distanceFromPlayer = targetPos.GetDistance(p->mm->playerTorsoPosition);
-		}
-		
 		// If the target is not flagged as hostile and is not a player, 
 		// the selection range is decreased to prevent selection of a rabbit hiding in a bush 
 		// 3 holds over.
@@ -11149,18 +11381,29 @@ namespace ALYSLC
 			a_range :
 			min(a_range, Settings::fMaxNonHostileAimCorrectionTargetDistance)
 		);
-		// Return false if this actor is not in range.
-		// No need to compare distance-angle weight.
-		if (useRange && distanceFromPlayer > considerationRange)
+		// Return false if this refr is not flying and is not in range.
+		// We ignore the range check for flying refrs to make dragons easier to target, 
+		// even when they are far away.
+		// Also, no need to compare distance-angle weight.
+		bool outsideRange = 
+		(
+			(!asActor || !asActor->IsFlying()) &&
+			(
+				useRange && 
+				!RefrIsInRange
+				(
+					a_targetRefr->GetHandle(), p->mm->playerTorsoPosition, considerationRange
+				)
+			)
+		);
+		if (outsideRange)
 		{
 			DBG
 			(
-				"{}: {} is too far away: range: {}, distance from player (source: {}): {}.",
+				"{}: {} is too far away: range: {}.",
 				coopActor->GetName(), 
 				a_targetRefr->GetName(),
-				considerationRange,
-				a_sourceRefr ? a_sourceRefr->GetName() : "CROSSHAIR SCREEN POS",
-				distanceFromPlayer
+				considerationRange
 			);
 			return;
 		}
@@ -12683,7 +12926,8 @@ namespace ALYSLC
 
 				isActivator = 
 				{
-					baseObj && baseObj->Is(RE::FormType::Activator, RE::FormType::TalkingActivator)
+					baseObj && 
+					baseObj->Is(RE::FormType::Activator, RE::FormType::TalkingActivator)
 				};
 				// Skip EVGAT activators since they should not be targeted for activation.
 				isEVGATActivator = 
@@ -12891,8 +13135,12 @@ namespace ALYSLC
 					// However, in the case of consecutive activators, 
 					// we do not want to set a subsequent activator's hit result
 					// as the chosen one, since it would be further away than the first one.
+
+					// Skip mannequin actors since they have no activation behavior 
+					// and are useless to select.
 					if ((firstNonActivatorHitIndex == -1 || !chosenResultSelectable) && 
-						((!isActivator || !activatorWasHit)))
+						((!isActivator || !activatorWasHit)) &&
+						(!Util::IsMannequin(hitRefrPtr.get(), baseObj)))
 					{
 						chosenResult = result;
 						chosenHitPosIndex = chosenHitResultIndex = i;
@@ -13158,29 +13406,74 @@ namespace ALYSLC
 				}
 			}
 
-			// If the refr is crosshair-selected, 
-			// compare the max check distance with the distance from the crosshair world position.
-			// Otherwise, compare the max check distance
-			// with the smaller of the distance to the refr position
-			// and the distance to the refr's center position.
-			// We pick the smaller of the two since for certain refrs, especially activators,
-			// the center position might be very far from the refr's reported location,
+			// Compare the max check distance
+			// with a number of positions:
+			// Refr-reported, world bound center, world bound, and then rigidbody pos.
+			// Only one has to be in range. Useful for certain refrs, especially activators,
+			// where the center position might be very far from the refr's reported location,
 			// and we only need one or the other to be in range for activation.
-			/*if (a_refrHandle == crosshairRefrHandle)
+
+			return RefrIsInRange(a_refrHandle, p->mm->playerTorsoPosition, maxCheckDist);
+		}
+
+		return false;
+	}
+
+	bool TargetingManager::RefrIsInRange
+	(
+		RE::ObjectRefHandle a_refrHandle, 
+		const RE::NiPoint3& a_originPos, 
+		const float& a_range
+	) const
+	{
+		// Returns true if the given refr is within range of the given position.
+
+		auto refrPtr = Util::GetRefrPtrFromHandle(a_refrHandle);
+		// Invalid refr.
+		if (!refrPtr) 
+		{
+			return false;
+		}
+
+		// Compare the max check distance
+		// with a number of positions:
+		// Refr-reported, world bound center, world bound, and then rigidbody pos.
+
+		auto checkPos = refrPtr->data.location;
+		if (a_originPos.GetDistance(checkPos) <= a_range)
+		{
+			return true;
+		}
+
+		if (auto refr3DPtr = Util::GetRefr3D(refrPtr.get()); refr3DPtr)
+		{
+			checkPos = refr3DPtr->worldBound.center;
+			if (a_originPos.GetDistance(checkPos) <= a_range)
 			{
-				return crosshairWorldPos.GetDistance(p->mm->playerTorsoPosition) <= maxCheckDist;
+				return true;
 			}
-			else*/
+
+			checkPos = refr3DPtr->world.translate;
+			if (a_originPos.GetDistance(checkPos) <= a_range)
 			{
-				return 
+				return true;
+			}
+
+			auto hkpRigidBodyPtr = Util::GethkpRigidBody(refr3DPtr.get()); 
+			if (hkpRigidBodyPtr)
+			{
+				checkPos = ToNiPoint3
 				(
-					p->mm->playerTorsoPosition.GetDistance(refrPtr->data.location) <= 
-					maxCheckDist ||
-					p->mm->playerTorsoPosition.GetDistance(Util::Get3DCenterPos(refrPtr.get())) <= 
-					maxCheckDist
-				);
+					hkpRigidBodyPtr->motion.motionState.transform.translation
+				) * HAVOK_TO_GAME;
+				if (a_originPos.GetDistance(checkPos) <= a_range)
+				{
+					return true;
+				}
 			}
 		}
+
+		return false;
 	}
 
 	void TargetingManager::ResetTPs()
@@ -16101,14 +16394,118 @@ namespace ALYSLC
 					// Turn auto rotation on after the facing direction change.
 					glob.cam->lockOnShouldAutoRotate = true;
 				}
-
 			}
 			else if (glob.cam->focalPID == -1)
 			{
 				// Toggle soft focal player control when there is no lock on target or focal player.
-				glob.cam->ToggleSoftFocalPlayerTracking(playerID);
+				//glob.cam->ToggleSoftFocalPlayerTracking(playerID);
+				// Unfreeze time, just in case.
+				glob.cam->manualPositioningTimeFrozen = false;
+				Util::ToggleFreezeTime(false);
+
+				// Skip if another player is adjusting the camera.
+				if (glob.cam->camAdjMode != CamAdjustmentMode::kNone)
+				{
+					SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kCamera,
+						fmt::format("P{}: Another player has camera control", playerID + 1)
+					);
+					return;
+				}
+				else
+				{
+					auto playerFocusPoint = 
+					(
+						coopActor->data.location +
+						RE::NiPoint3(0.0f, 0.0f, glob.cam->avgPlayerHeight)
+					);
+					// Zoom back in to place the camera behind the player.
+					glob.cam->adjustedAfterReachingDialoguePos = false;
+					glob.cam->camRadialDistanceOffset = 
+					glob.cam->camSavedRadialDistanceOffset =
+					glob.cam->camBaseHeightOffset = 0.0f;
+					glob.cam->camTrueRadialDistance = 
+					glob.cam->camTargetRadialDistance = glob.cam->camMinTrailingDistance;
+					
+					// Clear auto rotation angle data.
+					glob.cam->movementAngleMultInterpData->Reset();
+					glob.cam->movementPitchOffset = 
+					glob.cam->movementYawOffset = 0.0f;
+
+					// Turn camera to face the centroid point.
+					glob.cam->camCurrentPitchToFocus = 
+					glob.cam->camBaseTargetPosPitch = 
+					glob.cam->camTargetPosPitch = 
+					glob.cam->camPitch = Util::NormalizeAngToPi
+					(
+						Util::GetPitchBetweenPositions
+						(
+							coopActor->data.location, glob.cam->camCentroidPoint
+						)
+					);
+					glob.cam->camCurrentYawToFocus = 
+					glob.cam->camBaseTargetPosYaw =
+					glob.cam->camTargetPosYaw = 
+					glob.cam->camYaw = Util::NormalizeAng0To2Pi
+					(
+						Util::GetYawBetweenPositions
+						(
+							coopActor->data.location, glob.cam->camCentroidPoint
+						)
+					);
+
+					// Directly set new position.
+					float r = glob.cam->camTargetRadialDistance;
+					float phi = Util::ConvertAngle(glob.cam->camTargetPosYaw);
+					float theta = PI / 2.0f + glob.cam->camTargetPosPitch;
+
+					glob.cam->camBaseTargetPos = playerFocusPoint;
+					glob.cam->camBaseTargetPos.z -= r * cosf(theta);
+					glob.cam->camBaseTargetPos.x -= r * cosf(phi) * sinf(theta);
+					glob.cam->camBaseTargetPos.y -= r * sinf(phi) * sinf(theta);
+
+					// Get raycast hit position to avoid clipping through geometry.
+					if (glob.cam->camCollisions)
+					{
+						const auto castStartPoint = ToVec4(playerFocusPoint);
+						const auto castEndPoint = ToVec4(glob.cam->camBaseTargetPos);
+						auto result = Raycast::CastRay
+						(
+							castStartPoint, castEndPoint, glob.cam->camTargetPosHullSize
+						);
+						if (result.hit)
+						{
+							glob.cam->camCollisionTargetPos = 
+							glob.cam->camTargetPos = 
+							glob.cam->camBaseTargetPos = ToNiPoint3
+							(
+								result.hitPos + 
+								(glm::normalize(castStartPoint - castEndPoint)) * 
+								min(result.rayLength, glob.cam->camTargetPosHullSize)
+							);
+						}
+						else
+						{
+							glob.cam->camCollisionTargetPos = 
+							glob.cam->camTargetPos = glob.cam->camBaseTargetPos;
+						}
+					}
+					else
+					{
+						glob.cam->camCollisionTargetPos = 
+						glob.cam->camTargetPos = glob.cam->camBaseTargetPos;
+					}
+
+					glob.cam->SetCamOrientation(true);
+					SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kCamera,
+						fmt::format("P{}: Hello there!", playerID + 1)
+					);
+				}
 			}
-			else
+			else if (glob.cam->focalPID == playerID)
 			{
 				// Shoulder swap.
 				glob.cam->SwapShoulders(playerID);
@@ -16172,28 +16569,9 @@ namespace ALYSLC
 				const auto refr3DPtr = RE::NiPointer<RE::NiAVObject>(refr->GetCurrent3D());
 				DBG
 				(
-					"{}: Activation refr {} is no longer selected as the activation target. "
-					"dists: {}, {}, max check dist: {}. "
-					"Has current 3d: {}, center pos: ({}, {}, {}), "
-					"data location pos: ({}, {}, {}).",
+					"{}: Activation refr {} is no longer selected as the activation target.",
 					coopActor->GetName(),
-					activationRefrHandle.get()->GetName(),
-					p->mm->playerTorsoPosition.GetDistance(refr->data.location),
-					p->mm->playerTorsoPosition.GetDistance(Util::Get3DCenterPos(refr)),
-					maxCheckDist,
-					(bool)refr3DPtr,
-					refr3DPtr ? 
-					refr3DPtr->worldBound.center.x :
-					-1337.0f,
-					refr3DPtr ? 
-					refr3DPtr->worldBound.center.y :
-					-1337.0f,
-					refr3DPtr ? 
-					refr3DPtr->worldBound.center.z :
-					-1337.0f,
-					refr->data.location.x,
-					refr->data.location.y,
-					refr->data.location.z
+					activationRefrHandle.get()->GetName()
 				);
 				ClearActivationTargetData();
 			}
@@ -16719,10 +17097,20 @@ namespace ALYSLC
 			const bool isFurniture = baseObj->As<RE::TESFurniture>();
 			const bool isContainer = baseObj->As<RE::TESObjectCONT>();
 			const bool isCorpse = activationRefrPtr->As<RE::Actor>() && activationRefrPtr->IsDead();
-			const bool isDoor = baseObj->As<RE::TESObjectDOOR>();
+			bool isTeleportDoor = 
+			(
+				(
+					baseObj->Is(RE::FormType::Door, RE::FormType::Activator) &&
+					activationRefrPtr->extraList.HasType<RE::ExtraTeleport>()
+				) || 
+				(
+					baseObj->As<RE::TESObjectDOOR>() &&
+					!baseObj->As<RE::TESObjectDOOR>()->randomTeleports.empty()
+				)
+			);
 			holdToActivate = 
 			(
-				(isPlayer || isDoor || isFurniture) || 
+				(isPlayer || isTeleportDoor || isFurniture) || 
 				(
 					(isCorpse || isContainer) && 
 					(!ALYSLC::QuickLootCompat::g_installed || glob.isInCoopCombat)
@@ -16855,7 +17243,17 @@ namespace ALYSLC
 				// or force a player into an animation (containers, doors, furniture) 
 				// until the activation bind is held for at least the minimum hold time 
 				// and then released.
-				if (isPlayer)
+
+				if (cycleSelectionWithLS)
+				{
+					// Inform the player that they've cycle-selected an object.
+					activationMessage = fmt::format
+					(
+						"P{}: {}", 
+						playerID + 1, activationRefrPtr->GetDisplayFullName()
+					);
+				}
+				else if (isPlayer)
 				{
 					// Open gift menu to give items to this player after holding the bind
 					// for at least the minimum hold time and then releasing.
@@ -17028,7 +17426,6 @@ namespace ALYSLC
 					}
 					else
 					{
-						auto boundObj = activationRefrPtr->GetBaseObject();
 						// Player can activate this refr.
 						// Set activation text to the refr's name 
 						// if no text is available.
@@ -17039,19 +17436,29 @@ namespace ALYSLC
 							activationRefrPtr.get(),
 							hasActivationText
 						);
-							SI_Error err = SI_OK;
-						if (hasActivationText)
+						if (cycleSelectionWithLS)
+						{
+							// Inform the player that they've cycle-selected an object.
+							activationMessage = fmt::format
+							(
+								"P{}: {}", 
+								playerID + 1, activationRefrPtr->GetDisplayFullName()
+							);
+						}
+						else if (hasActivationText)
 						{
 							// Show regular message for primary activation action,
 							// or custom message for secondary activation action.
 							// Full credits to po3 (must have 'Use Or Take' installed):
 							// https://github.com/powerof3/UseOrTake
-
+							
+							auto boundObj = activationRefrPtr->GetBaseObject();
 							RE::BSFixedString activationLabel = "Use"sv;
 							bool hasSecondaryActivation = true;
 							if (performSecondaryActivationAction && 
 								ALYSLC::UseOrTakeCompat::g_installed)
 							{
+								SI_Error err = SI_OK;
 								CSimpleIniA ini{ };
 								ini.SetUnicode();
 
@@ -17314,6 +17721,7 @@ namespace ALYSLC
 							}
 							else
 							{
+								DBG("GUBBO BUBBO");
 								activationMessage = fmt::format
 								(
 									"P{}: Interact with {}",
@@ -18350,7 +18758,7 @@ namespace ALYSLC
 			);
 
 			// REMOVE when done debugging.
-			/*DBG
+			DBG
 			(
 				"{}: {} is homing: {}, passing target: {}, ang between vel and target: {}, "
 				"dist to target: {}, hit target: {}, ttt: {}, t: {}. Hit refrs count: {}. "
@@ -18367,7 +18775,7 @@ namespace ALYSLC
 				hitRefrFIDs.size(),
 				objectPos.GetDistance(releasePos),
 				fabsf(objectPos.z - releasePos.z)
-			);*/
+			);
 		}
 
 		// If still homing in after updating the flag, set the new homing velocity.

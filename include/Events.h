@@ -386,6 +386,7 @@ namespace ALYSLC
 		
 		static void ProcessModifyButtonBarEvent(QuickLoot::API::ModifyButtonBarEvent* a_event);
 		static void ProcessModifyInventoryEvent(QuickLoot::API::ModifyInventoryEvent* a_event);
+		static void ProcessOpenLootMenuHandler(QuickLoot::API::OpenLootMenuEvent* a_event);
 		static void ProcessSelectedItemEvent(QuickLoot::API::SelectItemEvent* a_event);
 	
 	private:

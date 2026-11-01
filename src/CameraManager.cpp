@@ -92,8 +92,6 @@ namespace ALYSLC
 		camBaseTargetPosYaw = camTargetPosYaw = 0.0f;
 		camCurrentPitchToFocus = camCurrentYawToFocus = 0.0f;
 		camMaxPitchAngMag = 89.0f * PI / 180.0f;
-		movementPitchRunningTotal = movementYawToCamRunningTotal = 0.0f;
-		numMovementPitchReadings = numMovementYawToCamReadings = 0;
 		// Other floats.
 		camFOV = 75.0f;
 		// Player IDs.
@@ -206,12 +204,17 @@ namespace ALYSLC
 			(
 				"Target pos: {}, focus: {}, centroid: {}, "
 				"pitches: ({}, {}, {}), yaws: ({}, {}, {}), "
-				"leading cam PID: {}, movement pitch/yaw offsets: {}, {}.",
+				"leading cam PID: {}, movement pitch/yaw offsets: {}, {}. "
+				"Trailing distance: target, true: {}, {}, saved, actual offset: {}, {}",
 				camTargetPos, camFocusPoint, camCentroidPoint, camBaseTargetPosPitch, 
 				camTargetPosPitch * TO_DEGREES, camPitch * TO_DEGREES, 
 				camBaseTargetPosYaw * TO_DEGREES, camTargetPosYaw * TO_DEGREES, 
 				camYaw * TO_DEGREES, leadingCamPID, movementPitchOffset * TO_DEGREES, 
-				movementYawOffset * TO_DEGREES
+				movementYawOffset * TO_DEGREES,
+				camTargetRadialDistance,
+				camTrueRadialDistance,
+				camSavedRadialDistanceOffset,
+				camRadialDistanceOffset
 			);
 		}*/
 		
@@ -2784,6 +2787,7 @@ namespace ALYSLC
 			) / 
 			lockOnIndicatorOscillationInterpData->secsInterpToMaxInterval
 		);
+		/*
 		float rotAng1 = Util::NormalizeAng0To2Pi(3.0f * PI / 4.0f + lockOnIndicatorRotOffset);
 		float rotAng2 = Util::NormalizeAng0To2Pi(PI / 4.0f + lockOnIndicatorRotOffset);
 		float rotAng3 = Util::NormalizeAng0To2Pi(-PI / 4.0f + lockOnIndicatorRotOffset);
@@ -2795,7 +2799,80 @@ namespace ALYSLC
 			0xFFFFFFFF,
 			0x000000FF,
 			0xFFFFFFFF
+		};*/
+
+		float thicknessRatio = (2.0f * lockOnIndicatorOscillationInterpData->value - 2.0f) + 2.0f;
+		// Inner, body, outer.
+		std::vector<uint32_t> elementColors = 
+		{
+			0xFFFFFFFF,
+			0xBBBBBBFF,
+			0x000000FF
 		};
+		// Dorito time!
+		uint32_t numSegments = 3;
+		DebugAPI::QueueCircle2D
+		(
+			center,
+			elementColors[2],
+			numSegments,
+			false,
+			(thicknessRatio * thickness) + gapDelta,
+			thickness,
+			lockOnIndicatorRotOffset,
+			0.0f
+		);
+		thicknessRatio = (2.0f * (1.0f - lockOnIndicatorOscillationInterpData->value));
+		DebugAPI::QueueCircle2D
+		(
+			center,
+			elementColors[1],
+			numSegments,
+			false,
+			(thicknessRatio * thickness) + gapDelta,
+			thickness,
+			lockOnIndicatorRotOffset,
+			0.0f
+		);
+		DebugAPI::QueueCircle2D
+		(
+			center,
+			elementColors[0],
+			numSegments,
+			false,
+			gapDelta,
+			thickness,
+			lockOnIndicatorRotOffset,
+			0.0f
+		);
+
+		// Better 'pop' by creating some contrast within outline of the diamond.
+		DebugAPI::QueueCircle2D
+		(
+			center,
+			(elementColors[2] & 0xFFFFFF00) + 
+			(elementColors[2] & 0xFF) / 2,
+			numSegments,
+			false,
+			0.8f * gapDelta,
+			min(0.2f * gapDelta, thickness),
+			lockOnIndicatorRotOffset,
+			0.0f
+		);
+		DebugAPI::QueueCircle2D
+		(
+			center,
+			(elementColors[0] & 0xFFFFFF00) + 
+			(elementColors[0] & 0xFF) / 2,
+			numSegments,
+			false,
+			0.5f * gapDelta,
+			min(0.25f * gapDelta, thickness),
+			lockOnIndicatorRotOffset,
+			0.0f
+		);
+
+		/*
 		// Retract arrows when not facing target.
 		radius *= lockOnIndicatorOscillationInterpData->value;
 		if (radius != 0.0f)
@@ -2908,6 +2985,7 @@ namespace ALYSLC
 			thickness,
 			0.0f
 		);
+		*/
 
 		// Outline with two circles if near the edge of the screen for better visibility.
 		const float buffer = DebugAPI::screenResY / 25.0f;
@@ -2916,6 +2994,7 @@ namespace ALYSLC
 			center.y < buffer || 
 			center.y > DebugAPI::screenResY - buffer)
 		{
+			numSegments = std::clamp(static_cast<int>(gapDelta * 3), 8, 48);
 			DebugAPI::QueueCircle2D
 			(
 				center, 
@@ -2929,7 +3008,7 @@ namespace ALYSLC
 			DebugAPI::QueueCircle2D
 			(
 				center, 
-				elementColors[1], 
+				elementColors[2], 
 				numSegments,
 				false,
 				gapDelta + radius,
@@ -4142,10 +4221,6 @@ namespace ALYSLC
 		{
 			ERR("Could not get player cam.");
 		}
-
-		// Set rotation-related data.
-		movementPitchRunningTotal = movementYawToCamRunningTotal = 0.0f;
-		numMovementPitchReadings = numMovementYawToCamReadings = 0;
 
 		// Positions.
 		// Set focus point to the origin point.
@@ -6260,7 +6335,17 @@ namespace ALYSLC
 			camRadialDistanceOffset = 0.0f;
 		}
 
-		camMaxZoomOutDist = Settings::fMaxRaycastAndZoomOutDistance;
+		// Use the given clip distance for interior cells, as long as it's not 0 (why?).
+		// Use pre-defined max zoom distance otherwise.
+		camMaxZoomOutDist = 
+		(
+			currentCell && 
+			!exteriorCell && 
+			currentCell->cellData.interior && 
+			currentCell->cellData.interior->clipDist > 0.0f ?
+			currentCell->cellData.interior->clipDist :
+			Settings::fMaxRaycastAndZoomOutDistance
+		);
 
 		// If not using auto-zoom, we can set the target radial distance directly here 
 		// and return early.
@@ -6281,12 +6366,14 @@ namespace ALYSLC
 			return;
 		}
 
+		// IMPORTANT:
 		// Raycast hits and on-screen checks seem inconsistent 
 		// when zoomed out beyond a variable distance (likely the cell's clip distance).
 		// Zooming out beyond this distance will result in the game 
 		// considering all players offscreen (and no raycast hits),
 		// even though their positions are in front of the camera and visually in view.
 		// Get approximation for the max settable radial distance by binary searching a range.
+
 		const uint32_t maxIterations = 
 		(
 			log2f(Settings::fMaxRaycastAndZoomOutDistance / Settings::fMinAutoZoomDelta) + 1
@@ -6328,6 +6415,11 @@ namespace ALYSLC
 			Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kZoom
 		);
 		uint32_t i = 0;
+
+		// NOTE:
+		// Guaranteed to find the current clip distance, but is performance intensive (18 loops).
+		// Commented out for now unless using the interior cell data's reported clip distance 
+		// proves inconsistent.
 		// To be safe, we'll cap it to prevent an infinite loop.
 		/*
 		while (!minDiffReached && i <= maxIterations)
@@ -6631,7 +6723,7 @@ namespace ALYSLC
 			"Target: {} from ({}, {}, {}) and prev {}. True: {}. Is colliding: {}. "
 			"Outside: {}, delayed: {}, {}, offset: {}, max zoom out dist: {}, can adjust: {}. "
 			"Just started: {}, can zoom in: {}, can zoom out: {}, diff: {}, trying to zoom {}. "
-			"Lock on target: {}, use player positions: {}",
+			"Lock on target: {}, use player positions: {}. Max iterations: {}. Clip dist: {}.",
 			camTargetRadialDistance, 
 			radialDistanceRangeMin,
 			radialDistanceRangeMid,
@@ -6661,7 +6753,11 @@ namespace ALYSLC
 			Util::HandleIsValid(camLockOnTargetHandle) ?
 			camLockOnTargetHandle.get()->GetName() : 
 			"NONE",
-			usePlayerPositions
+			usePlayerPositions,
+			maxIterations,
+			currentCell && currentCell->cellData.interior ?
+			currentCell->cellData.interior->clipDist :
+			-1.0f
 		);*/
 
 		// Interp from previous when zooming in.

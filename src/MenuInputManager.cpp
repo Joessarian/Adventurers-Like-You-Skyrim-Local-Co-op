@@ -7566,7 +7566,8 @@ namespace ALYSLC
 		{
 			return resolvedPID;
 		}
-
+		
+		DBG("Menu {} is open: {}.", a_menuName, ui->IsMenuOpen(a_menuName));
 		// Must be a supported menu or the Lockpicking Menu, 
 		// which is not handled by the MIM, but supports input from companion players 
 		// via a special lockpicking task (multiple player inputs simultaneously).
@@ -7827,6 +7828,7 @@ namespace ALYSLC
 							isSameRefr = 
 							{
 								(assocRefrPtr == refrPtr) ||
+								(Util::IsLinkedRefr(assocRefrPtr.get(), refrPtr.get())) || 
 								(
 									baseObj->Is
 									(
@@ -7865,8 +7867,8 @@ namespace ALYSLC
 								break;
 							}
 
-							RE::TESObjectREFR* refrPtr = bookMenu->GetTargetReference(); 
-							if (!refrPtr)
+							RE::TESObjectREFR* refr = bookMenu->GetTargetReference(); 
+							if (!refr)
 							{
 								break;
 							}
@@ -7874,13 +7876,14 @@ namespace ALYSLC
 							auto baseObj = assocRefrPtr->GetObjectReference();
 							isSameRefr = 
 							{
-								(assocRefrPtr.get() == refrPtr) ||
+								(assocRefrPtr.get() == refr) ||
+								(Util::IsLinkedRefr(assocRefrPtr.get(), refr)) || 
 								(
 									baseObj->Is
 									(
 										RE::FormType::Activator, RE::FormType::TalkingActivator
 									) &&
-									Hash(assocRefrPtr->GetName()) == Hash(refrPtr->GetName())
+									Hash(assocRefrPtr->GetName()) == Hash(refr->GetName())
 								)
 							};
 							if (isSameRefr)
@@ -7956,21 +7959,27 @@ namespace ALYSLC
 									break;
 								}
 
-								// Check if the associated refrs match 
-								// or if the extra ash pile refr matches 
-								// the request's associated refr.
+								// Check if the associated refrs match, 
+								// if the extra ash pile refr matches he request's associated refr,
+								// or if the associated refr is a mannequin activator 
+								// and the container refr is a mannequin.
 								auto baseObj = assocRefrPtr->GetObjectReference();
 								auto extraAshPile = assocRefrPtr->extraList.GetAshPileRef();
 								isSameRefr = 
 								{
 									(assocRefrPtr == refrPtr) ||
 									(Util::GetRefrPtrFromHandle(extraAshPile) == refrPtr) ||
+									(Util::IsLinkedRefr(assocRefrPtr.get(), refrPtr.get())) || 
 									(
 										baseObj->Is
 										(
 											RE::FormType::Activator, RE::FormType::TalkingActivator
 										) &&
 										Hash(assocRefrPtr->GetName()) == Hash(refrPtr->GetName())
+									) ||
+									(
+										baseObj->formID == 0xD750D && 
+										Util::IsMannequin(refrPtr.get(), refrPtr->GetBaseObject())
 									)
 								};
 								if (isSameRefr)
@@ -7983,7 +7992,8 @@ namespace ALYSLC
 									);
 								}
 							}
-
+							
+							 
 							break;
 						}
 						case Hash
@@ -8085,6 +8095,8 @@ namespace ALYSLC
 							{
 								(speakerPtr && speakerPtr == assocRefrPtr) ||
 								(lastSpeakerPtr && lastSpeakerPtr == assocRefrPtr) ||
+								(Util::IsLinkedRefr(assocRefrPtr.get(), speakerPtr.get())) || 
+								(Util::IsLinkedRefr(assocRefrPtr.get(), lastSpeakerPtr.get())) || 
 								(
 									baseObj->Is
 									(
@@ -8238,8 +8250,8 @@ namespace ALYSLC
 								break;
 							}
 
-							auto refrPtr = lockpickingMenu->GetTargetReference(); 
-							if (!refrPtr)
+							auto refr = lockpickingMenu->GetTargetReference(); 
+							if (!refr)
 							{
 								break;
 							}
@@ -8247,13 +8259,14 @@ namespace ALYSLC
 							auto baseObj = assocRefrPtr->GetObjectReference();
 							isSameRefr = 
 							{
-								(assocRefrPtr.get() == refrPtr) || 
+								(assocRefrPtr.get() == refr) || 
+								(Util::IsLinkedRefr(assocRefrPtr.get(), refr)) || 
 								(
 									baseObj->Is
 									(
 										RE::FormType::Activator, RE::FormType::TalkingActivator
 									) && 
-									Hash(assocRefrPtr->GetName()) == Hash(refrPtr->GetName())
+									Hash(assocRefrPtr->GetName()) == Hash(refr->GetName())
 								) 
 							};
 							if (isSameRefr)
@@ -8399,6 +8412,7 @@ namespace ALYSLC
 							isSameRefr = 
 							{ 
 								(assocRefrPtr.get() == trainer) || 
+								(Util::IsLinkedRefr(assocRefrPtr.get(), trainer)) || 
 								(
 									baseObj->Is
 									(
@@ -8535,6 +8549,12 @@ namespace ALYSLC
 							{ 
 								(assocRefrPtr == reqContainerRefrPtr) ||
 								(ashPileRefPtr && ashPileRefPtr == reqContainerRefrPtr) ||
+								(
+									Util::IsLinkedRefr
+									(
+										assocRefrPtr.get(), reqContainerRefrPtr.get()
+									)
+								) || 
 								(
 									baseObj->Is
 									(

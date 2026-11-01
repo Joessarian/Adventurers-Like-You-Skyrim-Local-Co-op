@@ -355,6 +355,9 @@ namespace ALYSLC
 		// Handle positioning and scaling of QuickLootIE's menu.
 		void HandleQuickLootMenu();
 
+		// Make sure the stealth meter is hidden while the co-op camera is active.
+		void HandleStealthMeter();
+
 		// Sources requesting to hide menu.
 		static std::vector<std::string> hiddenSources;
 

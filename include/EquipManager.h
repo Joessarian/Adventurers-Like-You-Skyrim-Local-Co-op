@@ -705,12 +705,6 @@ namespace ALYSLC
 			RE::TESForm* a_form, const EquipIndex& a_preferredIndex
 		) const;
 
-		// Get the equip slot for the given form at the given equip index.
-		RE::BGSEquipSlot* GetEquipSlotForForm
-		(
-			RE::TESForm* a_form, const EquipIndex& a_index
-		) const;
-		
 		// Used to cycle-equip favorited items that have multiple favorited extra data lists.
 		// LISTS LISTS LISTS, I LOVE LISTS.
 		// 

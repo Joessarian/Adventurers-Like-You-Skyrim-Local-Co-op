@@ -66,11 +66,11 @@ namespace ALYSLC
 		if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1) 
 		{
 			// Record P1 essential status each time a save is loaded.
+			glob.p1IsEssential = p1->IsEssential();
 			DBG
 			(
-				"P1 is essential when loading a save: {}.", p1->IsEssential()
+				"P1 is essential when loading a save: {}.", glob.p1IsEssential
 			);
-			glob.p1IsEssential = p1->IsEssential();
 
 			// NOTE: 
 			// The game fails to save P1's perks properly at times,
@@ -115,6 +115,7 @@ namespace ALYSLC
 				"3. Press and release the 'Pause/Journal' bind on Player 1's controller.\n\n"
 				"The summoning menu will open and a tri-colored border overlay will indicate "
 				"which player has control of the menu.\n"
+				"If only one controller is plugged in, the co-op camera will remain disabled.\n"
 				"See the mod's MCM for additional information and to customize settings.\n"
 				"Have fun!"
 			);
@@ -7503,7 +7504,9 @@ namespace ALYSLC
 			glob.dragonHolesShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x4CEC8);
 			glob.dragonSoulAbsorbShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x280C0);
 			glob.ghostFXShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x64D67);
-			glob.recklessLungeShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x10DEAA);//0x56AC9);
+			glob.recklessLungeShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x10DEAA);
+			glob.teleportFadeInShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0xEC354);
+			glob.teleportFadeOutShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0xEC355); 
 
 			// Spells.
 			glob.tarhielsGaleSpell = 
@@ -7929,14 +7932,21 @@ namespace ALYSLC
 		// to allow death mods to set P1 as essential.
 		// If done on loading a save (kPostLoadGame), mods' scripts have not had the opportunity 
 		// to change this flag.
+		// Only set the first time starting co-op after a save is loaded.
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		if (p1)
 		{
-			glob.p1IsEssential = p1 && p1->IsEssential();
+			if (glob.checkIfP1IsEssential)
+			{
+				glob.p1IsEssential = p1->IsEssential();
+			}
+
 			DBG
 			(
-				"P1 is essential when starting co-op: {}.", p1->IsEssential()
+				"P1 is essential when starting co-op: {}. Updated: {}.",
+				glob.p1IsEssential, glob.checkIfP1IsEssential
 			);
+			glob.checkIfP1IsEssential = false;
 		}
 
 		// Reset menu DIDs/PIDs.
@@ -13422,6 +13432,272 @@ namespace ALYSLC
 		glob.cam->ToggleCoopCamera(true);
 	}
 
+	void GlobalCoopData::SummonPlayerCharacterTask(RE::ActorHandle a_playerActorHandle)
+	{
+		// 1. Fix 'stuttering' animations bug where an actor's walk and run cycle hitches
+		// and their attacks stop partially through the animation while also hitting multiple times.
+		// Usually occurs after summoning an unloaded character 
+		// or changing cells while having a 2H weapon equipped:
+		// Bandaid workaround because the cause hasn't been determined fully.
+		// 2. If for summoning (not P1), move to P1 and play a shader.
+
+		// Who is them?
+		auto actorPtr = Util::GetActorPtrFromHandle(a_playerActorHandle);
+		if (!actorPtr)
+		{
+			return;
+		}
+		
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (!p1)
+		{
+			return;
+		}
+		
+		DBG("FIX EM, SUMMON EM: {}.", actorPtr->GetName());
+		auto& glob = GetSingleton();
+		Util::NativeFunctions::ClearKeepOffsetFromActor(actorPtr.get());
+		Util::NativeFunctions::SetDontMove(actorPtr.get(), true);
+
+		const bool wasLoaded = actorPtr->Is3DLoaded() && actorPtr->parentCell == p1->parentCell;
+		const bool shouldSummonCompanionPlayer = !actorPtr->IsPlayerRef();
+		if (shouldSummonCompanionPlayer && wasLoaded)
+		{
+			Util::AddSyncedTask
+			(
+				[&glob, &actorPtr]()
+				{
+					Util::StopAllEffectShaders(actorPtr.get());
+					Util::StartEffectShader(actorPtr.get(), glob.teleportFadeOutShader, 0.5f);
+				}
+			);
+		}
+
+		std::this_thread::sleep_for(0.5s);
+
+		RE::TESForm* lhObj = actorPtr->GetEquippedObject(true);
+		RE::ExtraDataList* lhExData = 
+		(
+			lhObj ? Util::GetEquippedExtraData(actorPtr.get(), lhObj, true) : nullptr
+		);
+		if (lhObj)
+		{
+			Util::AddSyncedTask
+			(
+				[&actorPtr, lhObj, lhExData]()
+				{
+					if (auto spell = lhObj->As<RE::SpellItem>())
+					{
+						Util::NativeFunctions::UnequipSpell(actorPtr.get(), spell, 0);
+					}
+					else if (auto boundObj = lhObj->As<RE::TESBoundObject>(); boundObj)
+					{
+						Util::UnequipObject
+						(
+							actorPtr.get(),
+							boundObj, 
+							Util::GetEquippedExtraData(actorPtr.get(), lhObj, true),
+							1,
+							Util::GetEquipSlotForForm(lhObj, EquipIndex::kLeftHand)
+						);
+					}
+				}
+			);
+			
+			std::this_thread::sleep_for(0.1s);
+		}
+		
+		RE::TESForm* rhObj = actorPtr->GetEquippedObject(false);
+		RE::ExtraDataList* rhExData = 
+		(
+			rhObj ? Util::GetEquippedExtraData(actorPtr.get(), rhObj, false) : nullptr
+		);
+		if (rhObj)
+		{
+			Util::AddSyncedTask
+			(
+				[&actorPtr, rhObj, rhExData]()
+				{
+					if (auto spell = rhObj->As<RE::SpellItem>())
+					{
+						Util::NativeFunctions::UnequipSpell(actorPtr.get(), spell, 1);
+					}
+					else if (auto boundObj = rhObj->As<RE::TESBoundObject>(); boundObj)
+					{
+						Util::UnequipObject
+						(
+							actorPtr.get(),
+							boundObj, 
+							Util::GetEquippedExtraData(actorPtr.get(), rhObj, true),
+							1,
+							Util::GetEquipSlotForForm(rhObj, EquipIndex::kRightHand)
+						);
+					}
+				}
+			);
+			
+			std::this_thread::sleep_for(0.1s);
+		}
+	
+		SteadyClock::time_point waitTP = SteadyClock::now();
+		float secsWaited = 0.0f;
+		float secsSinceCall = FLT_MAX;
+		while (!actorPtr->IsDisabled() && secsWaited < 2.0f)
+		{
+			if (secsSinceCall > 0.5f)
+			{
+				Util::AddSyncedTask
+				(
+					[&actorPtr]()
+					{
+						actorPtr->Disable();
+					}
+				);
+				secsSinceCall = 0.0f;
+			}
+
+			std::this_thread::sleep_for
+			(
+				std::chrono::milliseconds(static_cast<long long>(*g_deltaTimeRealTime * 1000.0f))
+			);
+			secsSinceCall += *g_deltaTimeRealTime;
+			secsWaited = Util::GetElapsedSeconds(waitTP);
+		}
+	
+		if (shouldSummonCompanionPlayer)
+		{
+			Util::AddSyncedTask
+			(
+				[&glob, &actorPtr, p1, wasLoaded]()
+				{
+					if (wasLoaded)
+					{
+						actorPtr->SetPosition(p1->data.location, true);
+					}
+					else
+					{
+						actorPtr->MoveTo(p1);
+					}
+				}
+			);
+		}
+
+		std::this_thread::sleep_for(0.1s);
+
+		waitTP = SteadyClock::now();
+		secsWaited = 0.0f;
+		while (actorPtr->IsDisabled() && secsWaited < 2.0f)
+		{
+			if (secsSinceCall > 0.5f)
+			{
+				Util::AddSyncedTask([&actorPtr](){ actorPtr->Enable(false); });
+				secsSinceCall = 0.0f;
+			}
+
+			std::this_thread::sleep_for
+			(
+				std::chrono::milliseconds(static_cast<long long>(*g_deltaTimeRealTime * 1000.0f))
+			);
+			secsSinceCall += *g_deltaTimeRealTime;
+			secsWaited = Util::GetElapsedSeconds(waitTP);
+		}
+
+		if (shouldSummonCompanionPlayer)
+		{
+			Util::AddSyncedTask
+			(
+				[&glob, &actorPtr]()
+				{
+					Util::StartEffectShader(actorPtr.get(), glob.teleportFadeInShader, 0.5f);
+				}
+			);
+		}
+
+		std::this_thread::sleep_for(0.1s);
+
+		if (lhObj)
+		{
+			Util::AddSyncedTask
+			(
+				[&glob, &actorPtr, lhObj, lhExData]()
+				{
+					auto aem = RE::ActorEquipManager::GetSingleton();
+					if (!aem)
+					{
+						return;
+					}
+
+					if (auto spell = lhObj->As<RE::SpellItem>())
+					{
+						auto equipSlot = spell->equipSlot;
+						if (equipSlot == glob.rightHandEquipSlot || 
+							equipSlot == glob.eitherHandEquipSlot)
+						{
+							equipSlot = glob.leftHandEquipSlot;
+						}
+
+						aem->EquipSpell(actorPtr.get(), spell, equipSlot);
+					}
+					else
+					{
+						Util::EquipObject
+						(
+							actorPtr.get(),
+							lhObj->As<RE::TESBoundObject>(), 
+							lhExData,
+							1,
+							Util::GetEquipSlotForForm(lhObj, EquipIndex::kLeftHand)
+						);
+					}
+				}
+			);
+			
+			std::this_thread::sleep_for(0.1s);
+		}
+
+		if (rhObj)
+		{
+			Util::AddSyncedTask
+			(
+				[&glob, &actorPtr, rhObj, rhExData]()
+				{
+					auto aem = RE::ActorEquipManager::GetSingleton();
+					if (!aem)
+					{
+						return;
+					}
+
+					if (auto spell = rhObj->As<RE::SpellItem>())
+					{
+						auto equipSlot = spell->equipSlot;
+						if (equipSlot == glob.leftHandEquipSlot || 
+							equipSlot == glob.eitherHandEquipSlot)
+						{
+							equipSlot = glob.rightHandEquipSlot;
+						}
+
+						aem->EquipSpell(actorPtr.get(), spell, equipSlot);
+					}
+					else
+					{
+						Util::EquipObject
+						(
+							actorPtr.get(),
+							rhObj->As<RE::TESBoundObject>(), 
+							rhExData,
+							1,
+							Util::GetEquipSlotForForm(rhObj, EquipIndex::kRightHand)
+						);
+					}
+				}
+			);
+			
+			std::this_thread::sleep_for(0.1s);
+		}
+
+		Util::NativeFunctions::SetDontMove(actorPtr.get(), false);
+	}
+
 	void GlobalCoopData::TeleportToP1OrAwayTask(RE::ActorHandle a_playerActorHandle, bool a_toP1)
 	{
 		// Teleport this companion player to P1 to start co-op or to their editor location 
@@ -13433,20 +13709,20 @@ namespace ALYSLC
 			return;
 		}
 
-		const auto& playerActor = Util::GetActorPtrFromHandle(a_playerActorHandle);
-		if (!playerActor)
+		const auto& playerActorPtr = Util::GetActorPtrFromHandle(a_playerActorHandle);
+		if (!playerActorPtr)
 		{
 			return;
 		}
 
 		if (a_toP1)
 		{
-			DBG("{} has been summoned from their home universe.", playerActor->GetName());
+			DBG("{} will be summoned from their home universe.", playerActorPtr->GetName());
 		}
 		else
 		{
-			DBG("{} is returning to their home universe. Their people need them.",
-				playerActor->GetName());
+			DBG("{} will return to their home universe. Their people need them.",
+				playerActorPtr->GetName());
 		}
 	
 		auto p1 = RE::PlayerCharacter::GetSingleton();
@@ -13455,29 +13731,51 @@ namespace ALYSLC
 			ERR
 			(
 				"ERR: Player 1 is invalid. Cannot teleport {} to {}.",
-				playerActor->GetName(), a_toP1 ? "P1" : "their editor location"
+				playerActorPtr->GetName(), a_toP1 ? "P1" : "their editor location"
 			);
 		}
 
 		// Don't move before teleporting.
-		Util::NativeFunctions::SetDontMove(playerActor.get(), true);
+		Util::NativeFunctions::SetDontMove(playerActorPtr.get(), true);
 		// Get portal form.
 		auto teleportalActivator = RE::TESForm::LookupByID<RE::TESObjectACTI>(0x7CD55); 
 		if (a_toP1)
 		{
-			// Move invisible player in front of P1 and place down the portal.
 			Util::AddSyncedTask
 			(
-				[&glob, p1, playerActor, teleportalActivator]() 
+				[&glob, p1, playerActorPtr, teleportalActivator]() 
+				{
+					// playerActorPtr->Disable();
+					if (!playerActorPtr->Is3DLoaded() || 
+						playerActorPtr->parentCell != p1->parentCell)
+					{
+						playerActorPtr->MoveTo(p1); 
+						DBG("{} was moved to P1.", playerActorPtr->GetName());
+					}
+					else
+					{
+						playerActorPtr->SetPosition(p1->data.location, true);
+						DBG("{} was placed at P1's position.", playerActorPtr->GetName());
+					}
+
+					// playerActorPtr->Enable(false);
+				}
+			);
+
+			// Move invisible player in front of P1 and place down the portal.
+			/*
+			Util::AddSyncedTask
+			(
+				[&glob, p1, playerActorPtr, teleportalActivator]() 
 				{
 					if (teleportalActivator)
 					{
 						playerActor->PlaceObjectAtMe(teleportalActivator, false);
 					}
 
-					playerActor->Disable();
-					playerActor->MoveTo(p1); 
-					playerActor->SetPosition
+					playerActorPtr->Disable();
+					playerActorPtr->MoveTo(p1); 
+					playerActorPtr->SetPosition
 					(
 						p1->data.location + 
 						100.0f * 
@@ -13498,29 +13796,97 @@ namespace ALYSLC
 			// Then enable the player and play the teleportation shader.
 			Util::AddSyncedTask
 			(
-				[&glob, p1, playerActor, teleportalActivator]() 
+				[&glob, p1, playerActorPtr]() 
 				{
-					playerActor->Enable(false);
+					playerActorPtr->Enable(false);
 					// Play the use-portal shader.
-					Util::StartEffectShader(playerActor.get(), glob.ghostFXShader, 1.0f);
-					DBG("{} was moved to P1.", playerActor->GetName());
+					Util::StartEffectShader(playerActorPtr.get(), glob.ghostFXShader, 1.0f);
+					DBG("{} was moved to P1.", playerActorPtr->GetName());
 				}
 			);
+			*/
+
+			/*
+			Util::AddSyncedTask
+			(
+				[&glob, p1, playerActorPtr]() 
+				{
+					
+					Util::StartEffectShader
+					(
+						playerActorPtr.get(), glob.teleportFadeOutShader, 0.5f
+					);
+				}
+			);
+			
+			// Wait a bit to allow the effect to play.
+			std::this_thread::sleep_for(0.25s);
+
+			Util::AddSyncedTask
+			(
+				[&glob, p1, playerActorPtr, teleportalActivator]() 
+				{
+					// playerActorPtr->Disable();
+					if (!playerActorPtr->Is3DLoaded() || 
+						playerActorPtr->parentCell != p1->parentCell)
+					{
+						playerActorPtr->MoveTo(p1); 
+						DBG("{} was moved to P1.", playerActorPtr->GetName());
+					}
+					else
+					{
+						playerActorPtr->SetPosition(p1->data.location, true);
+						DBG("{} was placed at P1's position.", playerActorPtr->GetName());
+					}
+
+					// playerActorPtr->Enable(false);
+				}
+			);
+			
+			// Wait a bit to allow the latent function to execute.
+			std::this_thread::sleep_for(0.25s);
+
+			// Then enable the player and play the teleportation shaders.
+			Util::AddSyncedTask
+			(
+				[&glob, p1, playerActorPtr]() 
+				{
+					//playerActorPtr->Enable(false);
+					// Play the fade-in shader.
+					Util::StartEffectShader
+					(
+						playerActorPtr.get(), glob.teleportFadeInShader, 0.5f
+					);
+				}
+			);
+			*/
 		}
 		else
 		{
-			// Move to the character's default location where the inventory chest is.
-			// Place the exit portal at the target.
 			Util::AddSyncedTask
 			(
-				[&glob, a_toP1, teleportalActivator, p1, playerActor]() 
+				[&glob, p1, playerActorPtr, teleportalActivator]() 
+				{
+					// Need a refr target, so move to P1's inventory chest,
+					// which is located at the player's editor location.
+					playerActorPtr->MoveTo(glob.coopInventoryChests[0].get());
+					DBG("{} was moved to their editor location.", playerActorPtr->GetName()); 
+				}
+			);
+			
+			// Move to the character's default location where the inventory chest is.
+			// Place the exit portal at the target.
+			/*
+			Util::AddSyncedTask
+			(
+				[&glob, a_toP1, teleportalActivator, p1, playerActorPtr]() 
 				{
 					// Play the use-portal shader.
-					Util::StartEffectShader(playerActor.get(), glob.ghostFXShader, 1.0f);
+					Util::StartEffectShader(playerActorPtr.get(), glob.ghostFXShader, 1.0f);
 					// Pop open the portal.
 					if (teleportalActivator)
 					{
-						playerActor->PlaceObjectAtMe(teleportalActivator, false);
+						playerActorPtr->PlaceObjectAtMe(teleportalActivator, false);
 					}
 				}
 			);
@@ -13529,18 +13895,46 @@ namespace ALYSLC
 			// Move away to the player's editor location.
 			Util::AddSyncedTask
 			(
-				[&glob, playerActor]() 
+				[&glob, playerActorPtr]() 
 				{
 					// Need a refr target, so move to P1's inventory chest,
 					// which is located at the player's editor location.
-					playerActor->MoveTo(glob.coopInventoryChests[0].get());
-					DBG("{} was moved to their editor location.", playerActor->GetName()); 
+					playerActorPtr->MoveTo(glob.coopInventoryChests[0].get());
+					DBG("{} was moved to their editor location.", playerActorPtr->GetName()); 
 				}
 			);
+			*/
+			
+			/*
+			Util::AddSyncedTask
+			(
+				[&glob, p1, playerActorPtr]() 
+				{
+					Util::StartEffectShader
+					(
+						playerActorPtr.get(), glob.teleportFadeOutShader, 0.5f
+					);
+				}
+			);
+
+			// Wait a bit to allow the effect to play.
+			std::this_thread::sleep_for(0.5s);
+
+			Util::AddSyncedTask
+			(
+				[&glob, p1, playerActorPtr, teleportalActivator]() 
+				{
+					// Need a refr target, so move to P1's inventory chest,
+					// which is located at the player's editor location.
+					playerActorPtr->MoveTo(glob.coopInventoryChests[0].get());
+					DBG("{} was moved to their editor location.", playerActorPtr->GetName()); 
+				}
+			);
+			*/
 		}
 		
 		// Can move again.
-		Util::NativeFunctions::SetDontMove(playerActor.get(), false);
+		Util::NativeFunctions::SetDontMove(playerActorPtr.get(), false);
 	}
 
 	void GlobalCoopData::YouDiedTask(RE::ActorHandle a_deadPlayerHandle)
@@ -13861,8 +14255,15 @@ namespace ALYSLC
 								{
 									Util::AddSyncedTask
 									(
-										[p1, &killTaskWaitTP, &glob]()
+										[p1, ui, &killTaskWaitTP, &glob]()
 										{
+											if ((glob.loadingASave) ||
+												(ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) ||
+												(ui->IsMenuOpen(RE::FaderMenu::MENU_NAME)))
+											{
+												return;
+											}
+
 											killTaskWaitTP = SteadyClock::now();
 											// Set health to 1 and then to 0 to trigger death.
 											if (glob.p1IsEssential)

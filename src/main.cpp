@@ -71,6 +71,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		ALYSLC::DebugOverlayMenu::Load();
 		// Reset P1 essential state when starting a new game.
 		auto& glob = ALYSLC::GlobalCoopData::GetSingleton();
+		glob.checkIfP1IsEssential = true;
 		glob.p1IsEssential = false;
 		// Initialize when starting a new game.
 		ALYSLC::GlobalCoopData::OnLoadGame();
@@ -112,6 +113,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		// Stop any active co-op session and indicate that the game is loading.
 		auto& glob = ALYSLC::GlobalCoopData::GetSingleton();
 		glob.loadingASave = true;
+		glob.checkIfP1IsEssential = true;
 		break;
 	}
 	case SKSE::MessagingInterface::kSaveGame:
@@ -124,7 +126,8 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		// if P1 is not in co-op and falls below 0 health.
 		// Guarantees a clean slate upon loading a save and allows death alternative mods
 		// to re-apply their changes to P1's essential status.
-		if (!glob.p1IsEssential && p1 && p1->IsEssential())
+		//if (!glob.p1IsEssential && p1 && p1->IsEssential())
+		if (p1 && p1->IsEssential())
 		{
 			INF("Clear essential flag for P1 before the game saves.");
 			ALYSLC::Util::ChangeEssentialStatus(p1, false);

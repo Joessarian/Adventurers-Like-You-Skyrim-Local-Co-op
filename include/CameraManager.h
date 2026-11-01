@@ -806,36 +806,6 @@ namespace ALYSLC
 			}
 		}
 
-		// Update movement pitch running total and number of readings, or reset both.
-		inline void SetMovementPitchRunningTotal(bool a_reset)
-		{
-			if (!a_reset)
-			{
-				movementPitchRunningTotal += GetAutoRotateAngle(true);
-				++numMovementPitchReadings;
-			}
-			else
-			{
-				movementPitchRunningTotal = 0.0f;
-				numMovementPitchReadings = 0;
-			}
-		}
-
-		// Update movement yaw running total and number of readings, or reset both.
-		inline void SetMovementYawToCamRunningTotal(bool a_reset) 
-		{
-			if (!a_reset) 
-			{
-				movementYawToCamRunningTotal += GetAutoRotateAngle(false);
-				++numMovementYawToCamReadings;
-			}
-			else
-			{
-				movementYawToCamRunningTotal = 0.0f;
-				numMovementYawToCamReadings = 0;
-			}
-		}
-
 		// Return true if the current lock on/dialogue target should be considered as a player
 		// for camera origin point, target position, and auto-zoom calculations.
 		// Since rotation assistance does not auto-zoom to keep the target in frame, 
@@ -1286,12 +1256,8 @@ namespace ALYSLC
 		float lockOnIndicatorRotOffset;
 		// Current movement-based pitch offset to set.
 		float movementPitchOffset;
-		// Movement pitch angle total for all players since the last update.
-		float movementPitchRunningTotal;
 		// Current movement-based yaw offset to set.
 		float movementYawOffset;
-		// Movement yaw angle total for all players since the last update.
-		float movementYawToCamRunningTotal;
 		// Previous pitch/yaw interp ratio.
 		float prevRotInterpRatio;
 		// Seconds since LOS to lock on target was checked.
@@ -1317,10 +1283,6 @@ namespace ALYSLC
 		// Then the camera target position is once again derived from raycasts starting from 
 		// all active player's focus points and the camera focus point.
 		int32_t softFocalPID;
-		// Number of movement pitch angle readings made since the last update.
-		uint32_t numMovementPitchReadings;
-		// Number of movement yaw angle readings made since the last update.
-		uint32_t numMovementYawToCamReadings;
 		// P1 cam toggle bind bitmask.
 		uint16_t camToggleXIMask;
 	};

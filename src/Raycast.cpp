@@ -165,11 +165,11 @@ namespace Raycast
 		}
 		else
 		{
+			auto baseObject = hit.hitRefr ? hit.hitRefr->GetBaseObject() : nullptr;
 			// Consider all hits but filter with formtype or object 3D lists exclusively instead.
 			// Form type filters.
 			if (hit.hitRefr && !formTypesToFilter.empty())
 			{
-				auto baseObject = hit.hitRefr ? hit.hitRefr->GetBaseObject() : nullptr;
 				for (const auto& filteredFormType : formTypesToFilter)
 				{
 					if (isIncludeFilter)
@@ -257,6 +257,18 @@ namespace Raycast
 					{
 						return;
 					}
+				}
+			}
+
+			// Skip markers since they are not visible and block LOS 
+			// on objects within them otherwise.
+			if (baseObject)
+			{
+				auto asStatic = baseObject->As<RE::TESObjectSTAT>();
+				if ((asStatic) && 
+					((asStatic->formFlags & RE::TESObjectSTAT::RecordFlags::kIsMarker) != 0))
+				{
+					return;
 				}
 			}
 

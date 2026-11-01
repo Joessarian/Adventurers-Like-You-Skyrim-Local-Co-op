@@ -10017,7 +10017,7 @@ namespace ALYSLC
 			);
 			auto currentFocalPlayerPtr = 
 			(
-				Settings::bFocalPlayerMode && glob.cam->focalPID != -1 ?
+				glob.cam->focalPID != -1 ?
 				glob.coopPlayers[glob.cam->focalPID]->coopActor :
 				nullptr
 			);
@@ -10031,7 +10031,6 @@ namespace ALYSLC
 			bool newFocalPlayerTarget = 
 			(
 				targetActorValidity && 
-				Settings::bFocalPlayerMode &&
 				targetPlayerPID != -1 &&
 				!glob.coopPlayers[targetPlayerPID]->isDowned &&
 				targetActorPtr != currentFocalPlayerPtr
@@ -10068,7 +10067,10 @@ namespace ALYSLC
 
 					glob.cam->lockOnTargetInSight = true;
 					glob.cam->lockOnShouldAutoRotate = true;
-					glob.cam->facingLockOnTarget = !targetActorPtr->IsFlying();
+					if (targetActorPtr->IsFlying())
+					{
+						glob.cam->facingLockOnTarget = false;
+					}
 
 					// Inform the player.
 					if (glob.cam->facingLockOnTarget)
@@ -10100,23 +10102,6 @@ namespace ALYSLC
 					// Face the target/party directly afterward.
 					glob.cam->FaceLockOnTarget(a_p->playerID);
 				}
-				else
-				{
-					glob.cam->focalPID = targetPlayerPID;
-					a_p->tm->ClearActivationTargetData();
-					a_p->tm->DeactivateCrosshair();
-					// Inform the player.
-					a_p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kCamera,
-						fmt::format
-						(
-							"P{}: Gave P{} camera focus", 
-							a_p->playerID + 1,
-							glob.coopPlayers[targetPlayerPID]->playerID + 1
-						)
-					);
-				}
 			}
 			else if (targetActorValidity)
 			{
@@ -10131,15 +10116,6 @@ namespace ALYSLC
 					(
 						CrosshairMessageType::kCamera,
 						fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1)
-					);
-				}
-				else if (targetActorPtr == currentFocalPlayerPtr)
-				{
-					glob.cam->focalPID = -1;
-					a_p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Reset camera focus", a_p->playerID + 1)
 					);
 				}
 			}
@@ -10168,8 +10144,6 @@ namespace ALYSLC
 					);
 				}
 
-				// Clear focal player and current lock-on target if not targeting anything.
-				glob.cam->focalPID = -1;
 				// Send a request to clear the cam lock-on target
 				// and reset the cam state to auto-trail.
 				glob.cam->camState = CamState::kAutoTrail;
@@ -10209,7 +10183,7 @@ namespace ALYSLC
 			if (glob.cam->camState != CamState::kManualPositioning)
 			{
 				// Clear focal player if switching to manual positioning.
-				if (glob.cam->camState == CamState::kLockOn && glob.cam->focalPID != -1)
+				if (glob.cam->focalPID != -1)
 				{
 					glob.cam->focalPID = -1;
 				}
@@ -10219,7 +10193,7 @@ namespace ALYSLC
 					CrosshairMessageType::kCamera,
 					fmt::format
 					(
-						"P{}: Camera manual positioning mode. Press again to unfreeze.", 
+						"P{}: Enabled static camera and froze time. Press again to unfreeze.", 
 						a_p->playerID + 1
 					)
 				);
@@ -10236,7 +10210,12 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Resuming the flow of time.", a_p->playerID + 1)
+						fmt::format
+						(
+							"P{}: Resuming the flow of time. "
+							"Press again to follow the party.", 
+							a_p->playerID + 1
+						)
 					);
 					glob.cam->manualPositioningTimeFrozen = false;
 					Util::ToggleFreezeTime(false);
@@ -10247,7 +10226,7 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1)
+						fmt::format("P{}: Following the party again", a_p->playerID + 1)
 					);
 					glob.cam->camState = CamState::kAutoTrail;
 					glob.cam->manualPositioningTimeFrozen = false;
@@ -10635,6 +10614,63 @@ namespace ALYSLC
 			// Disable co-op camera and reset to the normal Third Person cam which follows P1.
 			
 			// Clear lock-on target and reset adjustment mode before waiting for toggle.
+
+			// !!!TEMPORARY!!! until the new bind 'CamToggledSharedControl' (focal player) is added.
+			const auto& inputs = 
+			(
+				a_p->pam->paParamsList
+				[!InputAction::kDisableCoopCam - !InputAction::kFirstAction].composingInputs
+			);
+			if (inputs.size() >= 2)
+			{
+				const auto& firstInputHoldTime = 
+				(
+					glob.cdh->GetInputState(a_p->deviceID, inputs[0]).heldTimeSecs
+				);
+				const auto& secondInputHoldTime = 
+				(
+					glob.cdh->GetInputState(a_p->deviceID, inputs[1]).heldTimeSecs
+				);
+				if (secondInputHoldTime > firstInputHoldTime)
+				{
+					// Set focal PID to this player if there is no current focal player.
+					// Clear focal PID and re-enable shared camera control otherwise.
+					if (glob.cam->focalPID == -1)
+					{
+						glob.cam->focalPID = a_p->playerID;
+						a_p->tm->ClearActivationTargetData();
+						a_p->tm->DeactivateCrosshair();
+						// Inform the player.
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kCamera,
+							fmt::format
+							(
+								"P{}: Shared camera control: "
+								"<font color=\"#FF0000\">[Disabled]</font>", 
+								a_p->playerID + 1
+							)
+						);	
+					}
+					else
+					{
+						glob.cam->focalPID = -1;
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kCamera,
+							fmt::format
+							(
+								"P{}: Shared camera control: "
+								"<font color=\"#00FF00\">[Enabled]</font>", 
+								a_p->playerID + 1
+							)
+						);
+					}
+				
+					return;
+				}
+			}
+
 			glob.cam->camAdjMode = CamAdjustmentMode::kNone;
 			glob.cam->ClearLockOnData();
 			glob.cam->SetWaitForToggle(true);
@@ -10647,7 +10683,8 @@ namespace ALYSLC
 				fmt::format
 				(
 					"P{}: <font color=\"#E66100\">"
-					"Hold 'Sneak' and tap 'Toggle POV' with P1 to restart the co-op camera.</font>", 
+					"Hold 'Sneak' and tap 'Toggle POV' with P1 "
+					"to restart the co-op camera.</font>", 
 					a_p->playerID + 1
 				),
 				Settings::fSecsBetweenDiffCrosshairMsgs * 2.0f,
@@ -10692,7 +10729,7 @@ namespace ALYSLC
 			if (Settings::bUseDashDodgeSystem) 
 			{
 				// Shhhh! Secret mechanic.
-				a_p->tm->bumpDamagedActorFIDs.clear();
+				a_p->tm->bumpDamagedRefrFIDs.clear();
 				// Reset to default package first.
 				bool occupyingFurniture = 
 				(
@@ -11151,10 +11188,6 @@ namespace ALYSLC
 		{
 			// Reset camera orientation by resetting radial distance and height offsets.
 			
-			// Unfreeze time, just in case.
-			glob.cam->manualPositioningTimeFrozen = false;
-			Util::ToggleFreezeTime(false);
-
 			// Skip if another player is adjusting the camera.
 			if (glob.cam->camAdjMode != CamAdjustmentMode::kNone)
 			{
@@ -11166,11 +11199,21 @@ namespace ALYSLC
 				return;
 			}
 			
+			// Unfreeze time and switch back to auto-trail mode, just in case.
+			if (glob.cam->manualPositioningTimeFrozen)
+			{
+				glob.cam->camState = CamState::kAutoTrail;
+			}
+
+			glob.cam->manualPositioningTimeFrozen = false;
+			Util::ToggleFreezeTime(false);
+
 			// Zoom back in to place the camera behind the dialogue player.
 			glob.cam->adjustedAfterReachingDialoguePos = false;
 			glob.cam->camRadialDistanceOffset = 
 			glob.cam->camSavedRadialDistanceOffset =
 			glob.cam->camBaseHeightOffset = 0.0f;
+			
 			// Inform the player of switch back to auto-trail mode.
 			a_p->tm->SetCrosshairMessageRequest
 			(
@@ -11233,7 +11276,7 @@ namespace ALYSLC
                     bool succ = a_p->coopActor->NotifyAnimationGraph("SkyParkour_Slide");
 					if (succ)
 					{
-						a_p->tm->bumpDamagedActorFIDs.clear();
+						a_p->tm->bumpDamagedRefrFIDs.clear();
 						// Stamina cost equal to generic equipped-weight-based cost.
 						a_p->pam->ExpendStamina(a_p->pam->GetEquippedWeightStaminaCost());
 					}
@@ -11929,7 +11972,7 @@ namespace ALYSLC
 					return;
 				}
 
-				// Clear grabbed/released refr if activating it, 
+				// Clear grabbed/released refr if looting it, 
 				// as its 3D will be removed once picked up
 				// and will no longer need to be tracked in the targeting manager.
 				if (a_p->tm->rmm->IsManaged(activationRefrHandle, true) ||

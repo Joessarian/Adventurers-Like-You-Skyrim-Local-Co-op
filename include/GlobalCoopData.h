@@ -1188,7 +1188,7 @@ namespace ALYSLC
 		// Copy the highest shared skill level among all players 
 		// to this player for all shared skills.
 		static void CopyOverSharedSkillAVs(RE::Actor* a_playerActor);
-
+		
 		// Assign linked controller ID for P1 via a prompt to press a certain button.
 		// Workaround until finding direct way of accessing P1's controller's XInput index. 
 		static void PromptForPlayer1CIDTask();
@@ -1204,6 +1204,18 @@ namespace ALYSLC
 
 		// Pause and then restart the co-op camera manager.
 		static void RestartCoopCameraTask();
+
+		// Unused for now.
+		// 1. Fix 'stuttering' animations bug where an actor's walk and run cycle hitches
+		// and their attacks stop partially through the animation while also hitting multiple times.
+		// Usually occurs after summoning an unloaded character 
+		// or changing cells while having a 2H weapon equipped:
+		// Bandaid workaround because the cause hasn't been determined fully.
+		// 2. If for summoning (not P1), move to P1 and play a shader.
+		static void SummonPlayerCharacterTask
+		(
+			RE::ActorHandle a_playerActorHandle
+		);
 
 		// Teleport this companion player to P1 to start co-op or to their editor location 
 		// if they are being dismissed when co-op ends or before co-op starts.
@@ -1254,6 +1266,13 @@ namespace ALYSLC
 		// regardless of what menu opens next.
 		static constexpr inline std::string_view RETAIN_MENU_CONTROL = 
 		"ALYSLC Retain Menu Control"sv;
+
+		// Attached Papyrus script names.
+		static constexpr inline auto MINING_SCRIPT_NAME = "MineOreFurnitureScript";
+		// Mannequin actorbase: 0x89A85
+		// Mannequin activator: 0xD750D
+		static constexpr inline auto MANNEQUIN_SCRIPT_NAME = "MannequinActivatorSCRIPT";
+		static constexpr inline auto WEAPON_RACK_SCRIPT_NAME = "WeaponRackTriggerSCRIPT ";
 
 		// Keyboard key allowing P1 to override companion player menu input when held
 		// in tandem with other keypresses.
@@ -2264,6 +2283,8 @@ namespace ALYSLC
 		RE::TESEffectShader* dragonSoulAbsorbShader;
 		RE::TESEffectShader* ghostFXShader;
 		RE::TESEffectShader* recklessLungeShader;
+		RE::TESEffectShader* teleportFadeInShader;
+		RE::TESEffectShader* teleportFadeOutShader;
 		// Current and potential follower factions.
 		RE::TESFaction* currentFollowerFaction;
 		RE::TESFaction* nwsFollowerFaction;
@@ -2428,6 +2449,8 @@ namespace ALYSLC
 
 		// All players constructed.
 		bool allPlayersInit = false;
+		// Check if P1 is essential the first time when starting co-op after loading a save.
+		bool checkIfP1IsEssential;
 		// Co-op session started (all players summoned and session cleanup
 		// and player dismissal are not finished).
 		bool coopSessionActive = false;

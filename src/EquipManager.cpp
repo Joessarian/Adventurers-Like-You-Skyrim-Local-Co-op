@@ -144,7 +144,7 @@ namespace ALYSLC
 		DBG("P{}", playerID + 1);
 
 		if (!p->isPlayer1)
-		{
+		{	
 			// For companion players, move everything that isn't equipped 
 			// and already present in the inventory chest to the inventory chest
 			// if resuming after awaiting refresh or if uninitialized.
@@ -156,6 +156,7 @@ namespace ALYSLC
 				// So we skip equip processing.
 				skipEquipProcessing = true;
 				PrepInventoriesForCoop();
+				Util::StartEffectShader(coopActor.get(), glob.teleportFadeInShader, 0.5f);
 				skipEquipProcessing = false;
 			}
 		}
@@ -238,8 +239,16 @@ namespace ALYSLC
 		coopActor->SetActorValue(RE::ActorValue::kWeaponSpeedMult, 0.0f);
 		// Ensure player is visible.
 		coopActor->SetAlpha(1.0f);
-		// Clear all lingering shader effects.
-		Util::StopAllEffectShaders(coopActor.get());
+		// Clear all lingering shader effects if not summoning.
+		if (!glob.isSummoningPlayers)
+		{
+			DBG("{}: Clearing effect shaders.", coopActor->GetName());
+			Util::StopAllEffectShaders(coopActor.get());
+		}
+		else
+		{
+			DBG("{}: Not clearing effect shaders.", coopActor->GetName());
+		}
 
 		// Draw weapons/magic if data was refreshed.
 		/*if (currentState != ManagerState::kPaused)
@@ -3160,54 +3169,6 @@ namespace ALYSLC
 		return a_preferredIndex;
 	}
 
-	RE::BGSEquipSlot* EquipManager::GetEquipSlotForForm
-	(
-		RE::TESForm* a_form, const EquipIndex& a_index
-	) const
-	{
-		// Resolve equip slot for the given form with the requested equip index.
-
-		DBG
-		(
-			"{}: form: {}, index: {}.", 
-			coopActor->GetName(),
-			a_form ? a_form->GetName() : "NONE",
-			a_index
-		);
-
-		if (!a_form || !a_form->As<RE::BGSEquipType>()) 
-		{
-			return nullptr;
-		}
-		
-		auto equipSlot = glob.eitherHandEquipSlot;
-		auto asEquipType = a_form->As<RE::BGSEquipType>();
-		if ((asEquipType->equipSlot == glob.bothHandsEquipSlot) && 
-			(a_index == EquipIndex::kLeftHand || a_index == EquipIndex::kRightHand))
-		{
-			equipSlot = glob.bothHandsEquipSlot;
-		}
-		else if ((asEquipType->equipSlot == glob.shieldEquipSlot) && 
-				(a_index == EquipIndex::kLeftHand || a_index == EquipIndex::kRightHand))
-		{
-			equipSlot = glob.shieldEquipSlot;
-		}
-		else if (a_index == EquipIndex::kLeftHand)
-		{
-			equipSlot = glob.leftHandEquipSlot;
-		}
-		else if (a_index == EquipIndex::kRightHand)
-		{
-			equipSlot = glob.rightHandEquipSlot;
-		}
-		else
-		{
-			equipSlot = asEquipType->equipSlot;
-		}
-
-		return equipSlot;
-	}
-
 	std::string_view EquipManager::FavMagCyclingCategoryToString
 	(
 		const FavMagicCyclingCategory& a_category
@@ -3838,7 +3799,7 @@ namespace ALYSLC
 				ClearDesiredEquippedForm
 				(
 					desiredForms[!EquipIndex::kLeftHand],
-					GetEquipSlotForForm
+					Util::GetEquipSlotForForm
 					(
 						desiredForms[!EquipIndex::kLeftHand],
 						EquipIndex::kLeftHand
@@ -3848,7 +3809,7 @@ namespace ALYSLC
 				ClearDesiredEquippedForm
 				(
 					desiredForms[!EquipIndex::kRightHand],
-					GetEquipSlotForForm
+					Util::GetEquipSlotForForm
 					(
 						desiredForms[!EquipIndex::kRightHand],
 						EquipIndex::kRightHand
@@ -3901,7 +3862,7 @@ namespace ALYSLC
 					ClearDesiredEquippedForm
 					(
 						desiredForms[!EquipIndex::kLeftHand],
-						GetEquipSlotForForm
+						Util::GetEquipSlotForForm
 						(
 							desiredForms[!EquipIndex::kLeftHand],
 							EquipIndex::kLeftHand
@@ -3914,7 +3875,7 @@ namespace ALYSLC
 					ClearDesiredEquippedForm
 					(
 						desiredForms[!EquipIndex::kRightHand],
-						GetEquipSlotForForm
+						Util::GetEquipSlotForForm
 						(
 							desiredForms[!EquipIndex::kRightHand],
 							EquipIndex::kRightHand
@@ -4724,7 +4685,7 @@ namespace ALYSLC
 			{
 			case RE::FormType::Weapon:
 			{
-				EquipForm(a_form, a_index, a_exData, 1, GetEquipSlotForForm(a_form, a_index));
+				EquipForm(a_form, a_index, a_exData, 1, Util::GetEquipSlotForForm(a_form, a_index));
 
 				break;
 			}
@@ -4737,7 +4698,7 @@ namespace ALYSLC
 			}
 			case RE::FormType::Spell:
 			{
-				EquipSpell(a_form, a_index, GetEquipSlotForForm(a_form, a_index));
+				EquipSpell(a_form, a_index, Util::GetEquipSlotForForm(a_form, a_index));
 
 				break;
 			}
@@ -4915,7 +4876,7 @@ namespace ALYSLC
 			{
 			case RE::FormType::Weapon:
 			{
-				UnequipForm(a_form, a_index, 1, GetEquipSlotForForm(a_form, a_index));
+				UnequipForm(a_form, a_index, 1, Util::GetEquipSlotForForm(a_form, a_index));
 
 				break;
 			}
@@ -5062,7 +5023,7 @@ namespace ALYSLC
 		{
 		case RE::FormType::Weapon:
 		{
-			auto equipSlot = GetEquipSlotForForm(a_form, a_index);
+			auto equipSlot = Util::GetEquipSlotForForm(a_form, a_index);
 			if (auto currentFormInHand = equippedForms[!a_index]; a_form != currentFormInHand)
 			{
 				EquipForm(a_form, a_index, a_exData, 1, equipSlot);
@@ -5184,7 +5145,7 @@ namespace ALYSLC
 
 			if (shouldEquip)
 			{
-				EquipSpell(a_form, a_index, GetEquipSlotForForm(a_form, a_index));
+				EquipSpell(a_form, a_index, Util::GetEquipSlotForForm(a_form, a_index));
 			}
 			else
 			{
@@ -6813,7 +6774,7 @@ namespace ALYSLC
 		}
 		
 		const auto equipIndex = a_rhSlot ? EquipIndex::kRightHand : EquipIndex::kLeftHand;
-		auto equipSlot = GetEquipSlotForForm(handForm, equipIndex);
+		auto equipSlot = Util::GetEquipSlotForForm(handForm, equipIndex);
 		// If a 2H form, unequip and re-equip from both hands instead.
 		if (equipSlot == glob.bothHandsEquipSlot)
 		{
@@ -6892,7 +6853,7 @@ namespace ALYSLC
 		else
 		{
 			// Anything else gets equipped normally to the hand slot.
-			equipSlot = GetEquipSlotForForm(handForm, equipIndex);
+			equipSlot = Util::GetEquipSlotForForm(handForm, equipIndex);
 			if (p->isPlayer1)
 			{
 				Util::EquipObject
@@ -7027,7 +6988,7 @@ namespace ALYSLC
 		{
 			if (auto rhSpell = rhForm->As<RE::SpellItem>(); rhSpell)
 			{
-				equipSlot = GetEquipSlotForForm(rhForm, EquipIndex::kRightHand);
+				equipSlot = Util::GetEquipSlotForForm(rhForm, EquipIndex::kRightHand);
 				if (p->isPlayer1)
 				{
 					if (auto aem = RE::ActorEquipManager::GetSingleton(); aem) 
@@ -7084,7 +7045,7 @@ namespace ALYSLC
 			else
 			{
 				// Anything else gets equipped normally to the RH slot.
-				equipSlot = GetEquipSlotForForm(rhForm, EquipIndex::kRightHand);
+				equipSlot = Util::GetEquipSlotForForm(rhForm, EquipIndex::kRightHand);
 				if (p->isPlayer1)
 				{
 					DBG
@@ -7118,7 +7079,7 @@ namespace ALYSLC
 		{
 			if (auto lhSpell = lhForm->As<RE::SpellItem>(); lhSpell)
 			{
-				equipSlot = GetEquipSlotForForm(lhForm, EquipIndex::kLeftHand);
+				equipSlot = Util::GetEquipSlotForForm(lhForm, EquipIndex::kLeftHand);
 				if (p->isPlayer1)
 				{
 					if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
@@ -7175,7 +7136,7 @@ namespace ALYSLC
 			else
 			{
 				// Everything else gets equipped normally to the LH slot.
-				equipSlot = GetEquipSlotForForm(lhForm, EquipIndex::kLeftHand);
+				equipSlot = Util::GetEquipSlotForForm(lhForm, EquipIndex::kLeftHand);
 				if (p->isPlayer1)
 				{
 					DBG

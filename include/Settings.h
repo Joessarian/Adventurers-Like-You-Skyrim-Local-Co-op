@@ -53,7 +53,7 @@ namespace ALYSLC
 		// Useful when the camera is stuck in a bad spot
 		// or for assisting straggling players in finding other players
 		// without resorting to teleportation.
-		static inline bool bFocalPlayerMode = false;
+		static inline bool bFocalPlayerMode = true;
 		// Use interpolation to smooth the camera's origin point path 
 		// (the path the point equidistant to all players takes).
 		static inline bool bOriginPointSmoothing = true;

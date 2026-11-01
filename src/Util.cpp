@@ -302,7 +302,7 @@ namespace ALYSLC
 			}
 
 			// Do not activate other players in co-op.
-			if (glob.coopSessionActive && GlobalCoopData::IsCoopCharacter(a_interactionTarget))
+			if (glob.coopSessionActive && GlobalCoopData::IsCoopPlayer(a_interactionTarget))
 			{
 				return;
 			}
@@ -4141,6 +4141,50 @@ namespace ALYSLC
 			return nullptr;
 		}
 
+		RE::BGSEquipSlot* GetEquipSlotForForm(RE::TESForm* a_form, const EquipIndex& a_index)
+		{
+			// Resolve equip slot for the given form with the requested equip index.
+
+			DBG
+			(
+				"Form: {}, index: {}.", 
+				a_form ? a_form->GetName() : "NONE",
+				a_index
+			);
+
+			if (!a_form || !a_form->As<RE::BGSEquipType>()) 
+			{
+				return nullptr;
+			}
+		
+			auto equipSlot = glob.eitherHandEquipSlot;
+			auto asEquipType = a_form->As<RE::BGSEquipType>();
+			if ((asEquipType->equipSlot == glob.bothHandsEquipSlot) && 
+				(a_index == EquipIndex::kLeftHand || a_index == EquipIndex::kRightHand))
+			{
+				equipSlot = glob.bothHandsEquipSlot;
+			}
+			else if ((asEquipType->equipSlot == glob.shieldEquipSlot) && 
+					(a_index == EquipIndex::kLeftHand || a_index == EquipIndex::kRightHand))
+			{
+				equipSlot = glob.shieldEquipSlot;
+			}
+			else if (a_index == EquipIndex::kLeftHand)
+			{
+				equipSlot = glob.leftHandEquipSlot;
+			}
+			else if (a_index == EquipIndex::kRightHand)
+			{
+				equipSlot = glob.rightHandEquipSlot;
+			}
+			else
+			{
+				equipSlot = asEquipType->equipSlot;
+			}
+
+			return equipSlot;
+		}
+
 		RE::NiPoint3 GetEulerAnglesFromRotMatrix(const RE::NiMatrix3& a_matrix)
 		{
 			// Get the rotation matrix's Euler angles 
@@ -4892,6 +4936,8 @@ namespace ALYSLC
 				pos = refr3DPtr->world.translate;
 				if (pos.Length() == 0.0f)
 				{
+					// Worldbound center position is very erratic for rapidly rotating objects
+					// like certain projectiles.
 					pos = refr3DPtr->worldBound.center;
 					if (pos.Length() == 0.0f)
 					{
@@ -6434,7 +6480,16 @@ namespace ALYSLC
 					bounds.second = lookingAtLoc.z - a_observer->GetHeight() * 1.25f;
 				}
 			}
-			
+
+			std::vector<RE::FormType> filteredOutTypes{ };
+			// Filter out activators if the targeted refr is not an activator.
+			if ((!a_targetRefr->As<RE::TESObjectACTI>()) && 
+				(!a_targetRefr->GetBaseObject() || 
+				!a_targetRefr->GetBaseObject()->As<RE::TESObjectACTI>()))
+			{
+				filteredOutTypes.emplace_back(RE::FormType::Activator);
+			}
+
 			Raycast::RayResult result{ };
 			glm::vec4 targetPos = ToVec4(a_targetRefr->data.location);
 			glm::vec4 endPos = targetPos;
@@ -6469,25 +6524,30 @@ namespace ALYSLC
 					startPos, 
 					endPos, 
 					a_excluded3DObjects, 
-					RE::COL_LAYER::kUnidentified, 
-					false
+					filteredOutTypes
 				);
 				auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
 				if (a_showDebugDraws)
 				{
 					DBG
 					(
-						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
-						"Raycast along upper observer axis: [{}] ({}, 0x{:X}, type: {:X}).",
+						"A player HasLOS of {} ({}, 0x{:X}, type {:X}): "
+						"Raycast along upper axis: [{}] ({}, {}, 0x{:X}, 0x{:X}, type: {:X}).",
 						a_targetRefr->GetName(),
+						Util::GetEditorID(a_targetRefr->GetBaseObject()),
 						a_targetRefr->formID,
 						a_targetRefr->GetBaseObject() ? 
 						*a_targetRefr->GetBaseObject()->formType : 
 						RE::FormType::None,
 						result.hit,
-						result.hit,
 						hitRefrPtr ? hitRefrPtr->GetName() : "NONE",
+						hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
+						Util::GetEditorID(hitRefrPtr->GetObjectReference()) : 
+						"NONE",
 						hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
+						hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
+						hitRefrPtr->GetObjectReference()->formID :
+						0xDEAD,
 						hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
 						*hitRefrPtr->GetObjectReference()->formType : 
 						RE::FormType::None
@@ -6527,6 +6587,9 @@ namespace ALYSLC
 						(
 							result.hitObjectPtr && 
 							IsRefrAccessibleInside3DObject(a_targetRefr, result.hitObjectPtr.get())
+						) ||
+						(
+							Util::IsLinkedRefr(hitRefrPtr.get(), a_targetRefr)	
 						))
 					{
 						return true;
@@ -6559,25 +6622,30 @@ namespace ALYSLC
 					startPos,
 					endPos,
 					a_excluded3DObjects,
-					RE::COL_LAYER::kUnidentified,
-					false
+					filteredOutTypes
 				);
 				auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
 				if (a_showDebugDraws)
 				{
 					DBG
 					(
-						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
-						"Raycast along lower observer axis: [{}] ({}, 0x{:X}, type: {:X}).",
+						"A player HasLOS of {} ({}, 0x{:X}, type {:X}): "
+						"Raycast along lower axis: [{}] ({}, {}, 0x{:X}, 0x{:X}, type: {:X}).",
 						a_targetRefr->GetName(),
+						Util::GetEditorID(a_targetRefr->GetBaseObject()),
 						a_targetRefr->formID,
 						a_targetRefr->GetBaseObject() ? 
-						*a_targetRefr->GetBaseObject()->formType :
+						*a_targetRefr->GetBaseObject()->formType : 
 						RE::FormType::None,
 						result.hit,
-						result.hit,
 						hitRefrPtr ? hitRefrPtr->GetName() : "NONE",
+						hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
+						Util::GetEditorID(hitRefrPtr->GetObjectReference()) : 
+						"NONE",
 						hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
+						hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
+						hitRefrPtr->GetObjectReference()->formID :
+						0xDEAD,
 						hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
 						*hitRefrPtr->GetObjectReference()->formType : 
 						RE::FormType::None
@@ -6616,6 +6684,9 @@ namespace ALYSLC
 						(
 							result.hitObjectPtr && 
 							IsRefrAccessibleInside3DObject(a_targetRefr, result.hitObjectPtr.get())
+						) ||
+						(
+							Util::IsLinkedRefr(hitRefrPtr.get(), a_targetRefr)	
 						))
 					{
 						return true;
@@ -6702,15 +6773,19 @@ namespace ALYSLC
 					(
 						result.hitObjectPtr && 
 						IsRefrAccessibleInside3DObject(a_targetRefr, result.hitObjectPtr.get())
+					) ||
+					(
+						Util::IsLinkedRefr(hitRefrPtr.get(), a_targetRefr)	
 					)
 				);
 				if (a_showDebugInfo)
 				{
 					DBG
 					(
-						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
-						"Raycast to crosshair pos: [{}] ({}, 0x{:X}, type: {:X}).",
+						"A player HasLOS of {} ({}, 0x{:X}, type {:X}): [{}]. "
+						"Raycast to crosshair pos: [{}] ({}, {}, 0x{:X}, 0x{:X}, type: {:X}).",
 						a_targetRefr->GetName(),
+						Util::GetEditorID(a_targetRefr->GetBaseObject()),
 						a_targetRefr->formID,
 						a_targetRefr->GetBaseObject() ? 
 						*a_targetRefr->GetBaseObject()->formType : 
@@ -6718,7 +6793,13 @@ namespace ALYSLC
 						hasLOS,
 						result.hit,
 						hitRefrPtr ? hitRefrPtr->GetName() : "NONE",
+						hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
+						Util::GetEditorID(hitRefrPtr->GetObjectReference()) : 
+						"NONE",
 						hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
+						hitRefrPtr && hitRefrPtr->GetObjectReference() ?
+						hitRefrPtr->GetObjectReference()->formID :
+						0xDEAD,
 						hitRefrPtr && hitRefrPtr->GetObjectReference() ?
 						*hitRefrPtr->GetObjectReference()->formType :
 						RE::FormType::None
@@ -6781,15 +6862,19 @@ namespace ALYSLC
 				(
 					result.hitObjectPtr && 
 					IsRefrAccessibleInside3DObject(a_targetRefr, result.hitObjectPtr.get())
+				) ||
+				(
+					Util::IsLinkedRefr(hitRefrPtr.get(), a_targetRefr)	
 				)
 			);
 			if (a_showDebugInfo)
 			{
 				DBG
 				(
-					"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
-					"Raycast to data location pos: [{}] ({}, 0x{:X}, type: {:X}).",
+					"A player HasLOS of {} ({}, 0x{:X}, type {:X}): [{}]. "
+					"Raycast to data location pos: [{}] ({}, {}, 0x{:X}, 0x{:X}, type: {:X}).",
 					a_targetRefr->GetName(),
+					Util::GetEditorID(a_targetRefr->GetBaseObject()),
 					a_targetRefr->formID,
 					a_targetRefr->GetBaseObject() ? 
 					*a_targetRefr->GetBaseObject()->formType : 
@@ -6797,9 +6882,15 @@ namespace ALYSLC
 					hasLOS,
 					result.hit,
 					hitRefrPtr ? hitRefrPtr->GetName() : "NONE",
-					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
 					hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
-					*hitRefrPtr->GetObjectReference()->formType : 
+					Util::GetEditorID(hitRefrPtr->GetObjectReference()) : 
+					"NONE",
+					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
+					hitRefrPtr && hitRefrPtr->GetObjectReference() ?
+					hitRefrPtr->GetObjectReference()->formID :
+					0xDEAD,
+					hitRefrPtr && hitRefrPtr->GetObjectReference() ?
+					*hitRefrPtr->GetObjectReference()->formType :
 					RE::FormType::None
 				);
 				DebugAPI::QueueArrow3D
@@ -6865,15 +6956,19 @@ namespace ALYSLC
 				(
 					result.hitObjectPtr && 
 					IsRefrAccessibleInside3DObject(a_targetRefr, result.hitObjectPtr.get())
+				) ||
+				(
+					Util::IsLinkedRefr(hitRefrPtr.get(), a_targetRefr)	
 				)
 			);
 			if (a_showDebugInfo)
 			{
 				DBG
 				(
-					"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
-					"Raycast to 3D bound center position: [{}] ({}, 0x{:X}, type: {:X}).",
+					"A player HasLOS of {} ({}, 0x{:X}, type {:X}): [{}]. "
+					"Raycast to 3D center position: [{}] ({}, {}, 0x{:X}, 0x{:X}, type: {:X}).",
 					a_targetRefr->GetName(),
+					Util::GetEditorID(a_targetRefr->GetBaseObject()),
 					a_targetRefr->formID,
 					a_targetRefr->GetBaseObject() ? 
 					*a_targetRefr->GetBaseObject()->formType : 
@@ -6881,9 +6976,15 @@ namespace ALYSLC
 					hasLOS,
 					result.hit,
 					hitRefrPtr ? hitRefrPtr->GetName() : "NONE",
-					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
 					hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
-					*hitRefrPtr->GetObjectReference()->formType : 
+					Util::GetEditorID(hitRefrPtr->GetObjectReference()) : 
+					"NONE",
+					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
+					hitRefrPtr && hitRefrPtr->GetObjectReference() ?
+					hitRefrPtr->GetObjectReference()->formID :
+					0xDEAD,
+					hitRefrPtr && hitRefrPtr->GetObjectReference() ?
+					*hitRefrPtr->GetObjectReference()->formType :
 					RE::FormType::None
 				);
 				DebugAPI::QueueArrow3D
@@ -6945,15 +7046,19 @@ namespace ALYSLC
 				(
 					result.hitObjectPtr && 
 					IsRefrAccessibleInside3DObject(a_targetRefr, result.hitObjectPtr.get())
+				) ||
+				(
+					Util::IsLinkedRefr(hitRefrPtr.get(), a_targetRefr)	
 				)
 			);
 			if (a_showDebugInfo)
 			{
 				DBG
 				(
-					"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
-					"Raycast to 3D world position: [{}] ({}, 0x{:X}, type: {:X}).",
+					"A player HasLOS of {} ({}, 0x{:X}, type {:X}): [{}]. "
+					"Raycast to 3D world position: [{}] ({}, {}, 0x{:X}, 0x{:X}, type: {:X}).",
 					a_targetRefr->GetName(),
+					Util::GetEditorID(a_targetRefr->GetBaseObject()),
 					a_targetRefr->formID,
 					a_targetRefr->GetBaseObject() ? 
 					*a_targetRefr->GetBaseObject()->formType : 
@@ -6961,9 +7066,15 @@ namespace ALYSLC
 					hasLOS,
 					result.hit,
 					hitRefrPtr ? hitRefrPtr->GetName() : "NONE",
-					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
 					hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
-					*hitRefrPtr->GetObjectReference()->formType : 
+					Util::GetEditorID(hitRefrPtr->GetObjectReference()) : 
+					"NONE",
+					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
+					hitRefrPtr && hitRefrPtr->GetObjectReference() ?
+					hitRefrPtr->GetObjectReference()->formID :
+					0xDEAD,
+					hitRefrPtr && hitRefrPtr->GetObjectReference() ?
+					*hitRefrPtr->GetObjectReference()->formType :
 					RE::FormType::None
 				);
 				DebugAPI::QueueArrow3D
@@ -7483,6 +7594,25 @@ namespace ALYSLC
 				(
 					baseObj->As<RE::TESObjectLIGH>() && 
 					baseObj->As<RE::TESObjectLIGH>()->CanBeCarried()
+				)
+			);
+		}
+
+		bool IsMannequin(RE::TESObjectREFR* a_refr, RE::TESBoundObject* a_object)
+		{
+			// Return true if the given refr/base object is a mannequin.
+
+			if (!a_refr || !a_object)
+			{
+				return false;
+			}
+
+			return
+			(
+				a_object->formID == 0x89A85 ||
+				Util::HasAttachedScript
+				(
+					a_object, a_refr, GlobalCoopData::MANNEQUIN_SCRIPT_NAME
 				)
 			);
 		}
@@ -10704,6 +10834,8 @@ namespace ALYSLC
 					HandleIsValid(shaderEffect->target) && 
 					shaderEffect->target.get().get() == a_refr)
 				{
+					DBG("Stop {} shader on {}.", 
+						GetEditorID(shaderEffect->effectData), a_refr->GetName());
 					/*shaderEffect->lifetime = 0.0f;
 					shaderEffect->finished = true;*/
 					tempEffectPtr.reset();
@@ -10742,8 +10874,20 @@ namespace ALYSLC
 					HandleIsValid(hitArtEffect->target) && 
 					hitArtEffect->target.get().get() == a_refr)
 				{
+					// IMPORTANT:
+					// Can crash when called on P1 with certain effects attached to the camera.
 					/*hitArtEffect->lifetime = 0.0f;
 					hitArtEffect->finished = true;*/
+					DBG
+					(
+						"{}: Art Object {} ({}). Flags: 0b{:B}.", 
+						a_refr->GetName(), 
+						hitArtEffect->artObject ? 
+						hitArtEffect->artObject->GetName() :
+						"NONE",
+						Util::GetEditorID(hitArtEffect->artObject),
+						*hitArtEffect->flags
+					);
 					tempEffectPtr.reset();
 				}
 			}
@@ -10951,14 +11095,6 @@ namespace ALYSLC
 				return;
 			}
 
-			// Get the portal object.
-			auto teleportalActivator = RE::TESForm::LookupByID<RE::TESObjectACTI>(0x7CD55);
-			// No portal, no teleportation.
-			if (!teleportalActivator)
-			{
-				return;
-			}
-
 			// Cast downward from the target actor's head height.
 			// If nothing is hit, the player is likely under the map and freefalling.
 			const float lowerBound = 
@@ -11034,7 +11170,7 @@ namespace ALYSLC
 				);
 			}
 
-			const auto exitPortalPos = 
+			const auto exitPos = 
 			(
 				targetActorIsOOB ? p1->data.location : a_target->data.location
 			);
@@ -11069,58 +11205,27 @@ namespace ALYSLC
 				actorToMove = mountPtr.get();
 			}
 
-			auto portalPtr = actorToMove->PlaceObjectAtMe
-			(
-				teleportalActivator, false
-			);
-			// If no portal materializes, don't move the teleporting actor at all.
-			if (portalPtr)
+			DBG("Play teleport fade out shader on player.");
+			Util::StartEffectShader(actorToMove, glob.teleportFadeOutShader, 0.5f);
+			// Move directly to the target actor.
+			if (shouldMoveTo)
 			{
-				if (shouldMoveTo)
-				{
-					actorToMove->MoveTo(portalPtr.get());
-				}
-				else
-				{
-					actorToMove->SetPosition(portalPtr.get()->data.location, true);
-				}
-			}
-
-			// Set down the exit portal at the target's location first.
-			portalPtr = a_target->PlaceObjectAtMe(teleportalActivator, false);
-			if (portalPtr)
-			{
-				// Move the portal to the teleport destination location
-				// before moving the teleporting actor to it.
-				portalPtr->SetPosition(exitPortalPos);
-				if (shouldMoveTo)
-				{
-					actorToMove->MoveTo(portalPtr.get());
-				}
-				else
-				{
-					actorToMove->SetPosition(portalPtr.get()->data.location, true);
-				}
+				actorToMove->MoveTo(a_target); 
 			}
 			else
 			{
-				// If no portal materializes, move to the target actor's location instead.
-				if (shouldMoveTo)
-				{
-					actorToMove->MoveTo(a_target);
-				}
-				else
-				{
-					actorToMove->SetPosition(a_target->data.location, true);
-				}
-
-				// Then move to the place where the exit portal failed to spawn
-				// if the target actor is out of bounds.
-				if (targetActorIsOOB)
-				{
-					actorToMove->SetPosition(exitPortalPos, true);
-				}
+				actorToMove->SetPosition(a_target->data.location, true);
 			}
+
+			// Then move to the place where the exit portal failed to spawn
+			// if the target actor is in free-fall.
+			if (targetActorIsOOB)
+			{
+				actorToMove->SetPosition(exitPos, true);
+			}
+		
+			DBG("Play teleport fade in shader on player.");
+			Util::StartEffectShader(actorToMove, glob.teleportFadeInShader, 0.5f);
 
 			// Re-enable movement for the teleporting actor when done.
 			NativeFunctions::SetDontMove(a_teleportingActor, false);

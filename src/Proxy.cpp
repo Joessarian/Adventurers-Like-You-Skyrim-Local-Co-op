@@ -1154,7 +1154,6 @@ namespace ALYSLC
 					actorBase, RE::ACTOR_BASE_DATA::Flag::kDoesntBleed, false, false
 				);
 				Util::StopAllEffectShaders(p->coopActor.get());
-				Util::StopAllHitArtEffects(p->coopActor.get());
 			}
 		}
 	}
@@ -1190,6 +1189,8 @@ namespace ALYSLC
 
 	void CoopLib::TeleportToP1OrAway(RE::StaticFunctionTag*, RE::Actor* a_playerActor, bool a_toP1)
 	{
+		// Move an player character to P1 or to their editor location.
+
 		DBG
 		(
 			"Move {} {} P1.",

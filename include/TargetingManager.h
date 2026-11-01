@@ -2090,6 +2090,12 @@ namespace ALYSLC
 		// Returns true if the given refr is within the player's activation range.
 		bool RefrIsInActivationRange(RE::ObjectRefHandle a_refrHandle) const;
 
+		// Returns true if the given refr is within range of the given position.
+		bool RefrIsInRange
+		(
+			RE::ObjectRefHandle a_refrHandle, const RE::NiPoint3& a_originPos, const float& a_range
+		) const;
+
 		// Reset all time points to the current time.
 		void ResetTPs();
 
@@ -2260,8 +2266,8 @@ namespace ALYSLC
 		std::mutex crosshairMessageMutex;
 		// Mutex for modifying selected/aim correction/aim target linked refrs.
 		std::mutex targetingMutex;
-		// Form IDs for actors damaged by the currently occuring power slide/headbutt charge.
-		std::set<RE::FormID> bumpDamagedActorFIDs;
+		// Form IDs for refrs damaged by the currently occuring power slide/headbutt charge.
+		std::set<RE::FormID> bumpDamagedRefrFIDs;
 		// This player's crosshair text entry to display when the full crosshair message updates.
 		std::string crosshairTextEntry;
 		// Player and selected target refr's motion info.

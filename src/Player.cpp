@@ -378,13 +378,22 @@ namespace ALYSLC
 								if (mm->movementActorPtr != coopActor)
 								{
 									mm->movementActorPtr->MoveTo(p1);
+									Util::StartEffectShader
+									(
+										mm->movementActorPtr.get(), glob.teleportFadeInShader, 0.5f
+									);
 								}
 
 								coopActor->MoveTo(p1);
-								if (isDowned)
+								if (isDowned || coopActor->IsDisabled())
 								{
 									coopActor->Enable(false);
 								}
+
+								Util::StartEffectShader
+								(
+									coopActor.get(), glob.teleportFadeInShader, 0.5f
+								);
 							}
 						);
 					}
@@ -3981,7 +3990,7 @@ namespace ALYSLC
 			);
 		}
 
-		const auto exitPortalPos = 
+		const auto exitPos = 
 		(
 			targetActorIsOOB ? p1->data.location : targetActorPtr->data.location
 		);
@@ -4016,11 +4025,9 @@ namespace ALYSLC
 			}*/
 		}
 
-		// Get portal form.
-		auto teleportalActivator = RE::TESForm::LookupByID<RE::TESObjectACTI>(0x7CD55); 
-		if (!teleportalActivator || !mm->movementActorPtr)
+		if (!mm->movementActorPtr)
 		{
-			// No portal or player/mount, no teleportation, it's that simple, 
+			// No player/mount, no teleportation, it's that simple, 
 			// but ensure the player can move afterward.
 			Util::NativeFunctions::SetDontMove(coopActor.get(), false);
 			return;
@@ -4045,101 +4052,65 @@ namespace ALYSLC
 			(targetActor->parentCell->IsAttached() && !coopActor->Is3DLoaded())
 		);
 
-		// Place down the entry portal and set position to the entry portal.
 		Util::AddSyncedTask
 		(
-			[this, teleportalActivator]() 
+			[this]() 
 			{
-				DBG("Place entry portal and move player.");
-				const auto entryPortalPtr = mm->movementActorPtr->PlaceObjectAtMe
+				DBG("Play teleport fade out shader on player.");
+				Util::StartEffectShader
 				(
-					teleportalActivator, false
+					mm->movementActorPtr.get(), glob.teleportFadeOutShader, 0.5f
 				);
-				if (!entryPortalPtr)
-				{
-					return;
-				}
-
-				mm->movementActorPtr->SetPosition(entryPortalPtr.get()->data.location, true);
 			}
 		);
 
-		// Let it materialize.
-		std::this_thread::sleep_for(0.25s);
-		// Then place the exit portal at the target.
-		RE::TESObjectREFRPtr exitPortalPtr{ };
-		Util::AddSyncedTask
-		(
-			[this, &exitPortalPtr, &exitPortalPos, targetActor, teleportalActivator]() 
-			{
-				DBG("Move exit portal.");
-				exitPortalPtr = targetActor->PlaceObjectAtMe(teleportalActivator, false);
-				if (exitPortalPtr)
-				{
-					exitPortalPtr->SetPosition(exitPortalPos);
-				}
-			}
-		);
-		std::this_thread::sleep_for(0.25s);
-
-		// If the portal was successfully placed, move the player to the exit portal.
-		if (exitPortalPtr)
+		std::this_thread::sleep_for(0.5s);
+		// Move directly to the target actor.
+		if (shouldMoveTo)
 		{
-			if (shouldMoveTo)
-			{
-				Util::AddSyncedTask
-				(
-					[this, &exitPortalPtr]() { mm->movementActorPtr->MoveTo(exitPortalPtr.get()); }
-				);
-			}
-			else
-			{
-				Util::AddSyncedTask
-				(
-					[this, &exitPortalPtr]() 
-					{
-						mm->movementActorPtr->SetPosition(exitPortalPtr->data.location, true);
-					}
-				);
-			}
+			Util::AddSyncedTask
+			(
+				[this, targetActor]() 
+				{
+					mm->movementActorPtr->MoveTo(targetActor); 
+				}
+			);
 		}
 		else
 		{
-			// Move directly to the target actor otherwise.
-			if (shouldMoveTo)
-			{
-				Util::AddSyncedTask
-				(
-					[this, targetActor]() 
-					{
-						mm->movementActorPtr->MoveTo(targetActor); 
-					}
-				);
-			}
-			else
-			{
-				Util::AddSyncedTask
-				(
-					[this, targetActor]() 
-					{
-						mm->movementActorPtr->SetPosition(targetActor->data.location, true);
-					}
-				);
-			}
-
-			// Then move to the place where the exit portal failed to spawn
-			// if the target actor is in free-fall.
-			if (targetActorIsOOB)
-			{
-				Util::AddSyncedTask
-				(
-					[this, targetActor, &exitPortalPos]() 
-					{
-						mm->movementActorPtr->SetPosition(exitPortalPos, true);
-					}
-				);
-			}
+			Util::AddSyncedTask
+			(
+				[this, targetActor]() 
+				{
+					mm->movementActorPtr->SetPosition(targetActor->data.location, true);
+				}
+			);
 		}
+
+		// Then move to the place where the exit portal failed to spawn
+		// if the target actor is in free-fall.
+		if (targetActorIsOOB)
+		{
+			Util::AddSyncedTask
+			(
+				[this, targetActor, &exitPos]() 
+				{
+					mm->movementActorPtr->SetPosition(exitPos, true);
+				}
+			);
+		}
+		
+		Util::AddSyncedTask
+		(
+			[this]() 
+			{
+				DBG("Play teleport fade in shader on player.");
+				Util::StartEffectShader
+				(
+					mm->movementActorPtr.get(), glob.teleportFadeInShader, 0.5f
+				);
+			}
+		);
 
 		std::this_thread::sleep_for(0.25s);
 		// Can move again.

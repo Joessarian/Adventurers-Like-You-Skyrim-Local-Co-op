@@ -390,9 +390,8 @@ namespace ALYSLC
 				},
 				// CamManualPos
 				{ 
-					InputAction::kRShoulder, 
-					InputAction::kLThumb,
-					InputAction::kRThumb
+					InputAction::kRThumb,
+					InputAction::kLShoulder
 				},
 				// CastLH
 				{ 
@@ -530,7 +529,8 @@ namespace ALYSLC
 				},
 				// GrabRotateYZ
 				{ 
-					InputAction::kPowerAttackRH,
+					InputAction::kRShoulder,
+					InputAction::kLShoulder,
 					InputAction::kRThumb, 
 					InputAction::kRS 
 				},
@@ -591,12 +591,13 @@ namespace ALYSLC
 				// ResetAim
 				{
 					InputAction::kRShoulder,
+					InputAction::kLShoulder,
 					InputAction::kRThumb
 				},
 				// ResetCamOrientation
 				{
 					InputAction::kRThumb,
-					InputAction::kLThumb
+					InputAction::kRShoulder
 				},
 				// RotateCam
 				{
@@ -818,7 +819,7 @@ namespace ALYSLC
 			// QuickSlotItem
 			PerfType::kOnRelease,
 			// ResetAim
-			PerfType::kOnPress,
+			PerfType::kOnRelease,
 			// ResetCamOrientation
 			PerfType::kOnRelease,
 			// RotateCam
@@ -1036,7 +1037,8 @@ namespace ALYSLC
 			// DisableCoopCam
 			TriggerFlags
 			(
-				TriggerFlag::kLoneAction
+				TriggerFlag::kBlockOnConditionFailure,
+				TriggerFlag::kDoNotUseCompActionsOrdering
 			),
 			// Dismount
 			TriggerFlags
@@ -1136,8 +1138,7 @@ namespace ALYSLC
 			// ResetAim
 			TriggerFlags
 			(
-				TriggerFlag::kMinHoldTime,
-				TriggerFlag::kIgnoreConflictingActions
+				TriggerFlag::kDefault
 			),
 			// ResetCamOrientation
 			TriggerFlags

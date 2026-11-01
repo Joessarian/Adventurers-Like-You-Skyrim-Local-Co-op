@@ -1625,6 +1625,8 @@ namespace ALYSLC
 		// No AdvanceMovie() (UI thread) hook for custom menus, like QuickLoot, 
 		// so we'll perform our processing here.
 		HandleQuickLootMenu();
+		// Disable or sync the stealth meter.
+		HandleStealthMeter();
 	}
 
 	void DebugOverlayMenu::HandleQuickLootMenu()
@@ -1797,6 +1799,63 @@ namespace ALYSLC
 			menuRoot.SetMember("_y", y);
 			menuRoot.SetMember("_xScale", xScale);
 			menuRoot.SetMember("_yScale", yScale);
+		}
+	}
+
+	void DebugOverlayMenu::HandleStealthMeter()
+	{
+		// Make sure the stealth meter is hidden while the co-op camera is active.
+
+		auto ui = RE::UI::GetSingleton();
+		if (!ui)
+		{
+			return;
+		}
+		
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (!p1)
+		{
+			return;
+		}
+
+		auto hud = ui->GetMenu(RE::HUDMenu::MENU_NAME);
+		if (!hud || !hud->uiMovie)
+		{
+			return;
+		}
+
+		const auto& view = hud->uiMovie;
+		RE::GFxValue stealthMeterInstance{ };
+		view->GetVariable
+		(
+			std::addressof(stealthMeterInstance), "HUDMovieBaseInstance.StealthMeterInstance"
+		);
+		if (stealthMeterInstance.IsUndefined() || stealthMeterInstance.IsNull())
+		{
+			return;
+		}
+
+		RE::GFxValue::DisplayInfo displayInfo{ };
+		stealthMeterInstance.GetDisplayInfo(std::addressof(displayInfo));
+		// Set alpha to 0 while the co-op camera is active to hide the meter.
+		if (glob.globalDataInit && glob.coopSessionActive && glob.cam->IsRunning())
+		{
+			displayInfo.SetAlpha(0.0);
+			stealthMeterInstance.SetDisplayInfo(displayInfo);
+			view->SetVariable
+			(
+				"HUDMovieBaseInstance.StealthMeterInstance", std::addressof(stealthMeterInstance)
+			);
+		}
+		else if (p1->IsSneaking() && displayInfo.GetAlpha() == 0.0)
+		{
+			// Restore alpha when sneaking while the co-op camera is disabled.
+			displayInfo.SetAlpha(100.0);
+			stealthMeterInstance.SetDisplayInfo(displayInfo);
+			view->SetVariable
+			(
+				"HUDMovieBaseInstance.StealthMeterInstance", std::addressof(stealthMeterInstance)
+			);
 		}
 	}
 }

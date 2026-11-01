@@ -7991,7 +7991,8 @@ namespace ALYSLC
 		{
 			a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal ||
 			a_p->IsAwaitingRefresh() ||
-			a_p->coopActor->IsWeaponDrawn()
+			a_p->coopActor->IsWeaponDrawn() ||
+			a_p->mm->isParagliding
 		};
 
 		if (rotatingHand)
@@ -9849,14 +9850,12 @@ namespace ALYSLC
 					a_p->coopActor->IsWeaponDrawn()
 				) ||
 				a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal ||
+				a_p->mm->isParagliding ||
 				a_p->IsAwaitingRefresh()
 			};
 			// Rotation was modified if the player has adjusted their aim pitch
 			// or if they are dash dodging on the ground.
-			torsoData->rotationModified = 
-			{
-				(!a_p->mm->isParagliding) && (a_p->mm->aimPitchAdjusted || a_p->mm->isDashDodging)
-			};
+			torsoData->rotationModified = a_p->mm->aimPitchAdjusted || a_p->mm->isDashDodging;
 
 			// Update blend state after modifying the rotation flags
 			// and before setting current and target rotations.

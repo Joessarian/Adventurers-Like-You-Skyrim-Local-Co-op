@@ -2687,6 +2687,7 @@ namespace ALYSLC
 
 		QuickLoot::API::QuickLootAPI::RegisterModifyButtonBarHandler(ProcessModifyButtonBarEvent);
 		QuickLoot::API::QuickLootAPI::RegisterModifyInventoryHandler(ProcessModifyInventoryEvent);
+		QuickLoot::API::QuickLootAPI::RegisterOpenLootMenuHandler(ProcessOpenLootMenuHandler);
 		QuickLoot::API::QuickLootAPI::RegisterSelectItemHandler(ProcessSelectedItemEvent);
 	}
 
@@ -2696,6 +2697,12 @@ namespace ALYSLC
 	)
 	{
 		if (!a_event || !glob.globalDataInit || !glob.coopSessionActive || glob.menuPID < 0)
+		{
+			return;
+		}
+		
+		auto gSettings = RE::GameSettingCollection::GetSingleton();
+		if (!gSettings)
 		{
 			return;
 		}
@@ -2781,27 +2788,68 @@ namespace ALYSLC
 							fid,
 							isOffLimits
 						);
-						if (isOffLimits)
+						for (auto& button : a_event->buttons)
 						{
-							for (auto& button : a_event->buttons)
+							DBG
+							(
+								"Button label {} has art index 0x{:X}, "
+								"action: {}, stealing: {}.",
+								button.label,
+								button.buttonArtIndex,
+								!button.action,
+								button.stealing
+							);
+
+							// Only changes the color of the buttons in the button bar.
+							if (button.stealing != isOffLimits)
 							{
-								DBG
-								(
-									"Button label {} has art index 0x{:X}, "
-									"action: {}, stealing: {}.",
-									button.label,
-									button.buttonArtIndex,
-									!button.action,
-									button.stealing
-								);
-								if (button.stealing != isOffLimits)
+								button.stealing = isOffLimits;
+							}
+
+							// Credits to the QuickLootIE devs:
+							// https://github.com/MissCorruption/QuickLootIE/blob/0afe2bad52d4c491a3fa56c77637be2c749e5697/src/LootMenu.cpp#L739
+							// Trying to mirror their handling to force the labels to change
+							// since they do not change when 'isStealing' is modified.
+							const auto takeSetting = gSettings->GetSetting("sTake");
+							const auto stealSetting = gSettings->GetSetting("sSteal");
+							const auto searchSetting = gSettings->GetSetting("sSearch");
+							const auto stealFromSetting = gSettings->GetSetting("sStealFrom");
+							RE::BSString takeStr = takeSetting ? takeSetting->GetString() : "Take";
+							RE::BSString stealStr = 
+							(
+								stealSetting ? stealSetting->GetString() : "Steal"
+							);
+							RE::BSString searchStr = 
+							(
+								searchSetting ? searchSetting->GetString() : "Search"
+							);
+							RE::BSString stealFromStr = 
+							(
+								stealFromSetting ? stealFromSetting->GetString() : "Steal From"
+							);
+							if (isOffLimits)
+							{
+								if (button.label == takeStr)
 								{
-									button.stealing = isOffLimits;
+									button.label = stealStr;
+								}
+								else if (button.label == searchStr)
+								{
+									button.label = stealFromStr;
+								}
+							}
+							else
+							{
+								if (button.label == stealStr)
+								{
+									button.label = takeStr;
+								}
+								else if (button.label == stealFromStr)
+								{
+									button.label = searchStr;
 								}
 							}
 						}
-
-						break;
 					}
 				}
 			}
@@ -2821,7 +2869,7 @@ namespace ALYSLC
 		QuickLoot::API::ModifyInventoryEvent* a_event
 	)
 	{
-		if (!a_event || !glob.globalDataInit || !glob.coopSessionActive || glob.menuPID < 0)
+		if (!a_event || !glob.globalDataInit || !glob.coopSessionActive)
 		{
 			return;
 		}
@@ -2844,14 +2892,17 @@ namespace ALYSLC
 
 					DBG
 					(
-						"Container {} has item stack inv entry {}, owner {}, count {}.", 
+						"Container {} has item stack inv entry {}, owner {} (0x{:X}), count {}.", 
 						Util::HandleIsValid(a_event->container) ? 
 						a_event->container.get()->GetName() :
 						"NONE",
 						itemStack.entry->GetDisplayName(),
-						itemStack.entry->GetOwner()? 
+						itemStack.entry->GetOwner() ? 
 						itemStack.entry->GetOwner()->GetName() :
 						"NONE",
+						itemStack.entry->GetOwner() ? 
+						itemStack.entry->GetOwner()->formID :
+						0xDEAD,
 						itemStack.entry->countDelta
 					);
 
@@ -2874,6 +2925,31 @@ namespace ALYSLC
 				);
 			}
 		}
+	}
+
+	void QuickLootEventsHandler::ProcessOpenLootMenuHandler
+	(
+		QuickLoot::API::OpenLootMenuEvent* a_event
+	)
+	{
+		if (!a_event || !glob.globalDataInit || !glob.coopSessionActive)
+		{
+			return;
+		}
+
+		if (a_event->container != glob.lootBuddyChest->GetHandle())
+		{
+			return;
+		}
+
+		DBG("QuickLoot IE Menu opening. Menu PID: {}. Container: {}.",
+			glob.menuPID, 
+			Util::HandleIsValid(a_event->container) ? a_event->container.get()->GetName() : "NONE");
+
+		// Refresh on opening to display the correct initial steal/take labels in the button bar.
+		// Still requires correction when the selected item changes, 
+		// which we do in the other event handlers.
+		QuickLoot::API::QuickLootAPI::RefreshLootMenu();
 	}
 
 	void QuickLootEventsHandler::ProcessSelectedItemEvent(QuickLoot::API::SelectItemEvent* a_event)
