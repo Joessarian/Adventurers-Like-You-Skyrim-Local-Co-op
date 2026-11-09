@@ -1207,17 +1207,9 @@ namespace ALYSLC
 		(
 			"Data/MCM/Config/ALYSLC/settings.ini"
 		);
-		static inline const std::filesystem::path defaultFilePathEnderal = 
-		(
-			"Data/MCM/Config/ALYSLC Enderal/settings.ini"
-		);
 		static inline const std::filesystem::path userSettingsFilePathSSE = 
 		(
 			"Data/MCM/Settings/ALYSLC.ini"
-		);
-		static inline const std::filesystem::path userSettingsFilePathEnderal =
-		(
-			"Data/MCM/Settings/ALYSLC Enderal.ini"
 		);
 		
 		// Check if the given setting key exists in the given ini section.

@@ -49,7 +49,7 @@ namespace ALYSLC
 		const ManagerState ShouldSelfPause() override;
 		const ManagerState ShouldSelfResume() override;
 		void Update() override;
-
+		
 		// Get player's current mount. Can be none.
 		inline RE::ActorPtr GetCurrentMount()
 		{
@@ -94,7 +94,7 @@ namespace ALYSLC
 		// Set as dismissed, pause all managers, reset revive/downed/transformation state,
 		// and send dismissal event to script to handle cleanup.
 		void DismissPlayer();
-		
+
 		// Get health/magicka/stamina stat notification text for this player.
 		// Empty string if health/magicka/stamina are all full or if the player is downed.
 		std::string GetHMSStatNotificationText();

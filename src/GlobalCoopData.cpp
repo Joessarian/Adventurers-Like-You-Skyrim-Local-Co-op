@@ -129,26 +129,75 @@ namespace ALYSLC
 		// had a preset applied while their 3D was still loaded,
 		// Unhandled exception "EXCEPTION_ACCESS_VIOLATION" at 0x7FFC71A57B70 skee64.dll+00C7B70:
 		// and rax, [rdi+0x20]
+		auto taskInterface = SKSE::GetTaskInterface(); 
 		for (const auto playerActorPtr : glob.coopPlayerCharacters)
 		{
-			if (!playerActorPtr)
+			if (!playerActorPtr || playerActorPtr->IsPlayerRef())
 			{
 				continue;
 			}
 
 			//ImportSavedAppearance(playerActorPtr.get());
 			
-			// Have to re-apply voice type since it isn't saved.
 			const auto iter = glob.serializablePlayerData.find(playerActorPtr->formID);
 			if (iter == glob.serializablePlayerData.end())
 			{
 				continue;
 			}
 
+			// NEEDS TESTING.
+			// May cause crash when loading subsequent saves after applying the base appearance
+			// and a preset.
 			auto currentActorBase = playerActorPtr->GetActorBase();
+
+			/*if (iter->second->chosenRace && playerActorPtr->race != iter->second->chosenRace)
+			{
+				INF("Set {}'s race to {}.",
+					playerActorPtr->GetName(), iter->second->chosenRace->GetName());
+				Util::SetActorRace(playerActorPtr.get(), iter->second->chosenRace);
+			}*/
+
+			
+			if (iter->second->chosenNPCAppearancePreset)
+			{
+				if (iter->second->chosenNPCAppearancePreset != currentActorBase)
+				{
+					INF
+					(
+						"Import {}'s chosen NPC preset appearance ({}).",
+						playerActorPtr->GetName(), 
+						iter->second->chosenNPCAppearancePreset->GetName()
+					);
+					Util::CopyBaseAppearanceToActor
+					(
+						playerActorPtr.get(), 
+						iter->second->chosenNPCAppearancePreset, 
+						iter->second->usesOppositeGenderAnims
+					);
+				}
+			}
+			else
+			{
+				INF("Import default racial appearance for {}.", playerActorPtr->GetName());
+				Util::CopyDefaultRacialAppearanceToActor
+				(
+					playerActorPtr.get(),
+					iter->second->isFemale, 
+					iter->second->usesOppositeGenderAnims
+				);
+			}
+			
+			// Next, import saved RaceMenu preset, if available.
+			if (ALYSLC::RaceMenuCompat::g_installed)
+			{
+				GlobalCoopData::LoadOrSaveRaceMenuPreset(playerActorPtr.get(), true);
+			}
+
+			// Lastly, have to re-apply voice type since it isn't saved.
 			if (currentActorBase)
 			{
-				if (iter->second->chosenVoiceType)
+				if (iter->second->chosenVoiceType && 
+					currentActorBase->voiceType != iter->second->chosenVoiceType)
 				{
 					DBG
 					(
@@ -178,10 +227,49 @@ namespace ALYSLC
 				DBG("ERR: Could not get current actor base for {}.", playerActorPtr->GetName());
 			}
 
-			// Lastly, import saved RaceMenu preset, if available.
-			if (ALYSLC::RaceMenuCompat::g_installed)
+			
+			auto taskInterface = SKSE::GetTaskInterface();
+			if (!taskInterface)
 			{
-				GlobalCoopData::LoadOrSaveRaceMenuPreset(playerActorPtr.get(), true);
+				return;
+			}
+
+			// Will retain old head parts, eg. male face after changing gender to female, 
+			// unless 3D is reset.
+			if (taskInterface)
+			{
+				taskInterface->AddTask
+				(
+					[playerActorPtr]()
+					{
+						if (!playerActorPtr)
+						{
+							return;
+						}
+
+						// No need to reset if the player actor's 3D is not loaded anymore.
+						if (playerActorPtr->Is3DLoaded())
+						{
+							DBG("{}: Reset3D.", playerActorPtr->GetName());
+							playerActorPtr->DoReset3D(true);
+						}
+
+						auto actorBase = playerActorPtr->GetActorBase();
+						if (!actorBase)
+						{
+							return;
+						}
+					
+						// IMPORTANT:
+						// Needs to be run in a task.
+						// Have the game serialize our changes via changeflags
+						// so we don't need to re-import each time a save is loaded.
+						DBG("{}: Set Change Flags.", playerActorPtr->GetName());
+						actorBase->AddChange(RE::TESNPC::ChangeFlags::kFace);
+						actorBase->AddChange(RE::TESNPC::ChangeFlags::kGender);
+						actorBase->AddChange(RE::TESNPC::ChangeFlags::kRace);
+					}
+				);
 			}
 		}
 	}
@@ -3289,35 +3377,6 @@ namespace ALYSLC
 			DBG("ERR: Could not get current actor base for {}.", a_coopActor->GetName());
 		}
 		
-		// Lastly, import saved RaceMenu preset, if available.
-		if (ALYSLC::RaceMenuCompat::g_installed)
-		{
-			auto taskInterface = SKSE::GetTaskInterface();
-			if (taskInterface)
-			{
-				RE::ActorHandle actorHandle = a_coopActor->GetHandle();
-				taskInterface->AddTask
-				(
-					[actorHandle]()
-					{
-						auto actorPtr = Util::GetActorPtrFromHandle(actorHandle);
-						if (!actorPtr)
-						{
-							return;
-						}
-
-						auto actorBase = actorPtr->GetActorBase();
-						if (!actorBase)
-						{
-							return;
-						}
-
-						GlobalCoopData::LoadOrSaveRaceMenuPreset(actorPtr.get(), true);
-					}
-				);
-			}
-		}
-		
 		// REMOVE when done debugging.
 		DBG
 		(
@@ -3328,19 +3387,44 @@ namespace ALYSLC
 			genderChange,
 			faceChange
 		);
+		
+		auto taskInterface = SKSE::GetTaskInterface();
+		if (taskInterface)
+		{
+			RE::ActorHandle actorHandle = a_coopActor->GetHandle();
+			taskInterface->AddTask
+			(
+				[actorHandle]()
+				{
+					auto actorPtr = Util::GetActorPtrFromHandle(actorHandle);
+					if (!actorPtr)
+					{
+						return;
+					}
 
-		// IMPORTANT:
-		// DO NOT set any change flag without there being an accompanying change
-		// or the game may crash when loading data from the player character's actor base 
-		// after exiting to the main menu and loading a save.
-		// For example, setting the 'kFactions' change flag after modifying the factions 
-		// for a companion player when summoning and then loading a save from the main menu.
-		// Don't be dumb, please.
-		// 
-		// Maintain the appearance changes when the game saves.
-		currentActorBase->AddChange(RE::TESNPC::ChangeFlags::kFace);
-		currentActorBase->AddChange(RE::TESNPC::ChangeFlags::kGender);
-		currentActorBase->AddChange(RE::TESNPC::ChangeFlags::kRace);
+					auto actorBase = actorPtr->GetActorBase();
+					if (!actorBase)
+					{
+						return;
+					}
+						
+					// Lastly, import saved RaceMenu preset, if available.
+					if (ALYSLC::RaceMenuCompat::g_installed)
+					{
+						GlobalCoopData::LoadOrSaveRaceMenuPreset(actorPtr.get(), true);
+					}
+					
+					// IMPORTANT:
+					// Needs to be run in a task.
+					// Have the game serialize our changes via changeflags
+					// so we don't need to re-import each time a save is loaded.
+					DBG("{}: Set Change Flags.", actorPtr->GetName());
+					actorBase->AddChange(RE::TESNPC::ChangeFlags::kFace);
+					actorBase->AddChange(RE::TESNPC::ChangeFlags::kGender);
+					actorBase->AddChange(RE::TESNPC::ChangeFlags::kRace);
+				}
+			);
+		}
 	}
 
 	void GlobalCoopData::ImportUnlockedPerks(RE::Actor* a_coopActor)
@@ -4145,6 +4229,17 @@ namespace ALYSLC
 		// and interfere with the preset-defined ones.
 		if (a_shouldLoad)
 		{
+			const auto& presetName = iter->second->raceMenuPresetName;
+			if (presetName.empty() || presetName == "NONE")
+			{
+				INF
+				(
+					"No preset found for {} on save {}.",
+					a_playerActor->GetName(), saveMgr->lastFileName
+				);
+				return;
+			}
+
 			if (auto msgIntfc = SKSE::GetMessagingInterface(); msgIntfc)
 			{
 				InterfaceExchangeMessage msg{ };
@@ -4165,17 +4260,6 @@ namespace ALYSLC
 						overlayInterface->EraseOverlays(a_playerActor);
 					}
 				}
-			}
-
-			const auto& presetName = iter->second->raceMenuPresetName;
-			if (presetName.empty() || presetName == "NONE")
-			{
-				INF
-				(
-					"No preset found for {} on save {}.",
-					a_playerActor->GetName(), saveMgr->lastFileName
-				);
-				return;
 			}
 
 			INF
@@ -6813,39 +6897,39 @@ namespace ALYSLC
 			// Co-op companion player actors.
 			glob.coopPlayerCharacters.emplace_back
 			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[1], PLUGIN_NAME)
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_RAW_FIDS[1], PLUGIN_NAME)
 			);
 			glob.coopPlayerCharacters.emplace_back
 			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[2], PLUGIN_NAME)
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_RAW_FIDS[2], PLUGIN_NAME)
 			);
 			glob.coopPlayerCharacters.emplace_back
 			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[3], PLUGIN_NAME)
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_RAW_FIDS[3], PLUGIN_NAME)
 			);
 			glob.coopPlayerCharacters.emplace_back
 			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[4], PLUGIN_NAME)
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_RAW_FIDS[4], PLUGIN_NAME)
 			);
 			glob.coopPlayerCharacters.emplace_back
 			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[5], PLUGIN_NAME)
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_RAW_FIDS[5], PLUGIN_NAME)
 			);
 			glob.coopPlayerCharacters.emplace_back
 			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[6], PLUGIN_NAME)
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_RAW_FIDS[6], PLUGIN_NAME)
 			);
 			glob.coopPlayerCharacters.emplace_back
 			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[7], PLUGIN_NAME)
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_RAW_FIDS[7], PLUGIN_NAME)
 			);
 			glob.coopPlayerCharacters.emplace_back
 			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[8], PLUGIN_NAME)
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_RAW_FIDS[8], PLUGIN_NAME)
 			);
 			glob.coopPlayerCharacters.emplace_back
 			(
-				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_FIDS[9], PLUGIN_NAME)
+				dataHandler->LookupForm<RE::Actor>(PLAYER_CHARACTER_RAW_FIDS[9], PLUGIN_NAME)
 			);
 
 			for (auto i = 0; i < glob.coopPlayerCharacters.size(); ++i)
@@ -6869,19 +6953,13 @@ namespace ALYSLC
 				}
 			}
 
-			// Loot buddies.
-			// NPC.
-			glob.lootBuddy = RE::ActorPtr
-			(
-				dataHandler->LookupForm<RE::Actor>(0x8B7, PLUGIN_NAME)
-			);
-			// Chest.
+			// Loot buddy chest.
 			glob.lootBuddyChest = RE::TESObjectREFRPtr
 			(
 				dataHandler->LookupForm<RE::TESObjectREFR>(0x8C1, PLUGIN_NAME)
 			);
 
-			// One inventory chest per player.
+			// One inventory chest per player based on character ID.
 			glob.coopInventoryChests.emplace_back
 			(
 				dataHandler->LookupForm<RE::TESObjectREFR>(0x822, PLUGIN_NAME)
@@ -7863,46 +7941,6 @@ namespace ALYSLC
 				{
 					p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kNone;
 				}
-				
-				/*
-				// Loot Buddy NPC requires high favor with P1 to open the Gift Menu.
-				const auto scriptFactory = 
-				(
-					RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
-				);
-				const auto script = 
-				(
-					scriptFactory ? scriptFactory->Create() : nullptr
-				);
-				if (p1 && script)
-				{
-					DBG("JSDJFDSFJDFJSS");
-					script->SetCommand
-					(
-						fmt::format("setrelationshiprank {:X} 3", glob.lootBuddy->formID)
-					);
-					script->CompileAndRun(p1);
-					script->SetCommand
-					(
-						fmt::format("setrelationshiprank {:X} 3", p1->formID)
-					);
-					script->CompileAndRun(glob.lootBuddy.get());
-					delete script;
-				}
-
-				// Gift Menu does not open the first time the request is made for an actor 
-				// that has an empty inventory.
-				const auto gold = 
-				(
-					RE::BGSDefaultObjectManager::GetSingleton()->objects
-					[RE::DEFAULT_OBJECTS::kGold]->As<RE::TESBoundObject>()
-				);
-				glob.lootBuddy->AddObjectToContainer(gold, nullptr, 1, nullptr);
-				glob.lootBuddy->RemoveItem
-				(
-					gold, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
-				);
-				*/
 			}
 		);
 			
@@ -9140,23 +9178,7 @@ namespace ALYSLC
 		if (a_playerActor->IsPlayerRef())
 		{
 			const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
-			if (iter != glob.serializablePlayerData.end())
-			{
-				auto& data = iter->second;
-				// Ensure player 1's character ID is always 0.
-				if (data->GetPlayerCharacterID() != 0)
-				{
-					DBG
-					(
-						"Changed P1 {} (0x{:X})'s character ID to 0.",
-						a_playerActor->GetName(), a_playerActor->formID
-					);
-					data->SetPlayerCharacterID(0);
-				}
-
-				return true;
-			}
-			else
+			if (iter == glob.serializablePlayerData.end())
 			{
 				// Major problem: P1 does not have any serialized data.
 				ERR
@@ -9165,6 +9187,10 @@ namespace ALYSLC
 					a_playerActor->GetName(), a_playerActor->formID
 				);
 				return false;
+			}
+			else
+			{
+				return true;
 			}
 		}
 
@@ -9185,6 +9211,12 @@ namespace ALYSLC
 		// and update the node's form ID to the actor's.
 		for (auto& [fidKey, data] : glob.serializablePlayerData)
 		{
+			// Skip P1 since we've already handled their case above.
+			if (fidKey == 0x14)
+			{
+				continue;
+			}
+
 			// The serialized data FID key's mod index-independent portion 
 			// and corresponding portion of the key for the actor differ.
 			bool diffRawFID = 
@@ -9199,60 +9231,48 @@ namespace ALYSLC
 			);
 			DBG
 			(
-				"FID key: 0x{:X}, {}'s FID: 0x{:X}, character IDs: saved: {}, current: {}. "
+				"FID key: 0x{:X}, {}'s FID: 0x{:X}, character ID: {}. "
 				"Different raw ID: {}, new load index: {}",
 				fidKey,
 				a_playerActor->GetName(),
 				a_playerActor->formID, 
-				data->GetPlayerCharacterID(),
 				characterID,
 				diffRawFID,
 				newModLoadIndex
 			);
 
-			// First, check to see if a companion player has been assigned P1's character ID (0),
-			// meaning the data was not read in properly on load.
-			const auto& savedCharacterID = data->GetPlayerCharacterID();
-			if (savedCharacterID == 0 && fidKey != 0x14)
+			uint8_t serializedCharacterID = -1; 
+			for (auto i = 0; i < GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS.size(); ++i)
 			{
-				if (newModLoadIndex || fidKey == a_playerActor->formID)
+				if ((fidKey & 0xFFF) == GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS[i])
 				{
-					DBG
-					(
-						"Companion player {}'s character ID was invalid ({}). "
-						"New mod load index: {}, same FID key: {}, updated to {}.",
-						a_playerActor->GetName(),
-						savedCharacterID,
-						newModLoadIndex,
-						fidKey == a_playerActor->formID,
-						characterID
-					);
-					data->SetPlayerCharacterID(characterID);
-				}
-				else
-				{
-					// The saved character ID is invalid and the raw form ID of this actor
-					// does not match the key's, so we have no way of linking the actor 
-					// to this serialized dataset, so we'll continue.
-					DBG
-					(
-						"Cannot link companion player {} (0x{:X}, {}) "
-						"to the serialized data set (0x{:X}, {}).",
-						a_playerActor->GetName(),
-						a_playerActor->formID,
-						characterID,
-						fidKey,
-						savedCharacterID
-					);
-					continue;
+					serializedCharacterID = i;
+					break;
 				}
 			}
 
+			// Raw FID does not match that of a character, a major problem.
+			// Can see if the FID key matches an actorbases' raw FID,
+			// but if there's no match there, skip this FID.
+			if (serializedCharacterID == -1)
+			{
+				ERR
+				(
+					"ERR: No character has FID 0x{:X}. Skipping. "
+					"Game will likely crash when ALYSLC accesses this serialized data. "
+					"Please inform the mod author of their incompetence.",
+					fidKey
+				);
+				continue;
+			}
+
 			// Only update if there is a clear link between this FID key and the actor.
+			// Second case should not happen as the raw FIDs will not change
+			// without direct modification of the placed actors themselves in ALYSLC.esp.
 			bool shouldUpdateFIDKey = 
 			(
 				(newModLoadIndex) || 
-				(diffRawFID && characterID == data->GetPlayerCharacterID())
+				(diffRawFID && characterID == serializedCharacterID)
 			);
 			if (!shouldUpdateFIDKey)
 			{
@@ -9286,7 +9306,7 @@ namespace ALYSLC
 				"FID key: 0x{:X}, character ID: {}.",
 				a_playerActor->GetName(),
 				a_playerActor->formID, 
-				iter->second->GetPlayerCharacterID()
+				characterID
 			);
 		}
 		else

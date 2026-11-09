@@ -569,8 +569,8 @@ namespace ALYSLC
 						em->Has2HMeleeWeapEquipped()
 					) ||
 					(
-						em->HandIsEmpty(false) && 
-						!em->HandIsEmpty(true) && 
+						em->HandEmpty(false) && 
+						!em->HandEmpty(true) && 
 						!em->HasRHStaffEquipped()
 					)
 				)
@@ -1221,11 +1221,11 @@ namespace ALYSLC
 				else if (a_p->coopActor->IsWeaponDrawn())
 				{
 					if ((em->HasRHMeleeWeapEquipped() || 
-							 em->IsUnarmed() || 
-							 em->Has2HMeleeWeapEquipped() ||
-							 em->Has2HRangedWeapEquipped() ||
-							 em->HasTorchEquipped()) ||
-							 (em->HasLHMeleeWeapEquipped() && em->HandIsEmpty(true)))
+						em->IsUnarmed() || 
+						em->Has2HMeleeWeapEquipped() ||
+						em->Has2HRangedWeapEquipped() ||
+						em->HasTorchEquipped()) ||
+						(em->HasLHMeleeWeapEquipped() && em->HandEmpty(true)))
 					{
 						// Block if the RH has a weapon,
 						// if unarmed, 
@@ -1503,7 +1503,7 @@ namespace ALYSLC
 					return 
 					(
 						(a_p->em->IsUnarmed() || a_p->em->HasLHMeleeWeapEquipped()) ||
-						(a_p->em->LHEmpty() && a_p->em->HasRHSpellEquipped())
+						(a_p->em->HandEmpty(false) && a_p->em->HasRHSpellEquipped())
 					);
 				}
 				case InputAction::kPowerAttackRH:
@@ -1512,7 +1512,7 @@ namespace ALYSLC
 					return 
 					(
 						a_p->em->IsUnarmed() || 
-						a_p->em->RHEmpty() || 
+						a_p->em->HandEmpty(true) || 
 						a_p->em->HasRHMeleeWeapEquipped() || 
 						a_p->em->Has2HMeleeWeapEquipped()
 					);
@@ -6375,7 +6375,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					if (a_p->em->LHEmpty() && a_p->em->GetRHWeapon())
+					if (a_p->em->HandEmpty(false) && a_p->em->GetRHWeapon())
 					{
 						// Prevents blocking when there is a weapon in the RH.
 						Util::PlayIdle("H2HLeftHandPowerAttack", a_p->coopActor.get());
@@ -6385,7 +6385,7 @@ namespace ALYSLC
 						if (ALYSLC::MCOCompat::g_installed)
 						{
 							Util::PlayIdle("LeftHandAttack", a_p->coopActor.get());
-							if (a_p->em->LHEmpty())
+							if (a_p->em->HandEmpty(false))
 							{
 								// Prevents blocking when there is a weapon in the RH.
 								Util::PlayIdle("H2HLeftHandPowerAttack", a_p->coopActor.get());
@@ -6466,7 +6466,7 @@ namespace ALYSLC
 					// The default unarmed right power attack fails to trigger 
 					// via action command at times if using MCO.
 					// Play the corresponding MCO idle instead.
-					if (a_p->em->RHEmpty())
+					if (a_p->em->HandEmpty(true))
 					{
 						if (ALYSLC::MCOCompat::g_installed) 
 						{
@@ -6525,7 +6525,7 @@ namespace ALYSLC
 						{
 							Util::PlayIdle("ADXP_NPCPowerAttack", a_p->coopActor.get());
 						}
-
+						
 						Util::RunPlayerActionCommand
 						(
 							RE::DEFAULT_OBJECT::kActionRightPowerAttack, a_p->coopActor.get()
@@ -10635,7 +10635,20 @@ namespace ALYSLC
 				{
 					// Set focal PID to this player if there is no current focal player.
 					// Clear focal PID and re-enable shared camera control otherwise.
-					if (glob.cam->focalPID == -1)
+					if (glob.cam->focalPID == a_p->playerID)
+					{
+						glob.cam->focalPID = -1;
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kCamera,
+							fmt::format
+							(
+								"P{}: Shared camera active", 
+								a_p->playerID + 1
+							)
+						);	
+					}
+					else
 					{
 						glob.cam->focalPID = a_p->playerID;
 						a_p->tm->ClearActivationTargetData();
@@ -10646,22 +10659,7 @@ namespace ALYSLC
 							CrosshairMessageType::kCamera,
 							fmt::format
 							(
-								"P{}: Shared camera control: "
-								"<font color=\"#FF0000\">[Disabled]</font>", 
-								a_p->playerID + 1
-							)
-						);	
-					}
-					else
-					{
-						glob.cam->focalPID = -1;
-						a_p->tm->SetCrosshairMessageRequest
-						(
-							CrosshairMessageType::kCamera,
-							fmt::format
-							(
-								"P{}: Shared camera control: "
-								"<font color=\"#00FF00\">[Enabled]</font>", 
+								"P{}: Personal camera active",
 								a_p->playerID + 1
 							)
 						);
@@ -12720,7 +12718,7 @@ namespace ALYSLC
 					// Play attack idle instead of running an action command, 
 					// which would cause the player to start blocking 
 					// because of MCO's alterations to left hand attack behavior.
-					if (a_p->em->LHEmpty())
+					if (a_p->em->HandEmpty(false))
 					{
 						Util::PlayIdle("AttackLeftH2H", a_p->coopActor.get());
 					}

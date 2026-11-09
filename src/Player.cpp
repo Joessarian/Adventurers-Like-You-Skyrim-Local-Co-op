@@ -951,6 +951,10 @@ namespace ALYSLC
 			(actorBase->UsesOppositeGenderAnims() && !a_setOppositeGenderAnims) || 
 			(!actorBase->UsesOppositeGenderAnims() && a_setOppositeGenderAnims)
 		);
+		// Remove all the player's current headparts.
+		Util::RemoveAllHeadParts(coopActor.get());
+		// Add new headparts from NPC to the player.
+		Util::ImportHeadPartsFromBase(a_baseToCopy, actorBase);
 		// Update race and gender before importing headparts from the new actor base.
 		Util::SetActorRaceAndGender
 		(
@@ -959,10 +963,6 @@ namespace ALYSLC
 			a_baseToCopy->GetSex() == RE::SEX::kFemale, 
 			a_setOppositeGenderAnims
 		);
-		// Remove all the player's current headparts.
-		Util::RemoveAllHeadParts(coopActor.get());
-		// Add new headparts from NPC to the player.
-		Util::ImportHeadPartsFromBase(a_baseToCopy, actorBase);
 		DBG
 		(
 			"Imported {}'s appearance to {}", a_baseToCopy->GetName(), coopActor->GetName()

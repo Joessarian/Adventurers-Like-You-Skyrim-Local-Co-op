@@ -576,7 +576,7 @@ namespace ALYSLC
 										(equipSlotToUse == glob.leftHandEquipSlot) ||
 										(
 											equipSlotToUse == glob.eitherHandEquipSlot &&
-											p->em->HandIsEmpty(false)
+											p->em->HandEmpty(false)
 										)
 									)
 								) &&
@@ -600,7 +600,7 @@ namespace ALYSLC
 										(equipSlotToUse == glob.rightHandEquipSlot) ||
 										(
 											equipSlotToUse == glob.eitherHandEquipSlot &&
-											p->em->HandIsEmpty(true)
+											p->em->HandEmpty(true)
 										)
 									)
 								) &&
@@ -3812,61 +3812,6 @@ namespace ALYSLC
 				);
 			}
 
-			/*
-			auto ui = RE::UI::GetSingleton();
-			const auto p1 = RE::PlayerCharacter::GetSingleton();
-			if (glob.coopSessionActive && 
-				glob.menuPID != -1 &&
-				p1 && 
-				ui && 
-				a_this == glob.lootBuddy.get())
-			{
-				const auto& menuP = glob.coopPlayers[glob.menuPID];
-				bool canPickup = false;
-				if (ui->IsMenuOpen(RE::GiftMenu::MENU_NAME))
-				{
-					RE::NiPointer<RE::TESObjectREFR> inventoryRefrPtr{ };
-					RE::TESObjectREFR::LookupByHandle
-					(
-						RE::GiftMenu::GetTargetRefHandle(), inventoryRefrPtr
-					);
-					canPickup = inventoryRefrPtr && a_this == inventoryRefrPtr.get();
-				}
-				else if (ui->IsMenuOpen(GlobalCoopData::LOOT_MENU))
-				{
-					canPickup = a_this->GetHandle() == glob.reqQuickLootContainerHandle;
-				}
-				else if (ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME))
-				{
-					RE::NiPointer<RE::TESObjectREFR> containerRefrPtr{ };
-					RE::TESObjectREFR::LookupByHandle
-					(
-						RE::ContainerMenu::GetTargetRefHandle(), containerRefrPtr
-					);
-					canPickup = containerRefrPtr && a_this == containerRefrPtr.get();
-				}
-
-				if (canPickup)
-				{
-					menuP->tm->LootNearbyItemsMenuRefr(a_item, a_extraList, a_count);
-				}
-
-				// Remove from container but not to a player.
-				return _RemoveItem
-				(
-					a_this, 
-					a_handleOut,
-					a_item, 
-					a_count,
-					a_reason,
-					a_extraList, 
-					nullptr, 
-					a_dropLoc, 
-					a_rotate
-				);
-			}
-			*/
-
 			if (const auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this); pIndex > 0)
 			{
 				// Moving an object back to self in this way has led to a ton of crashes 
@@ -4343,6 +4288,8 @@ namespace ALYSLC
 				// Unsure if there's another way of checking if an actor 
 				// is currently a P1 follower.
 				// CurrentFollowerFaction or nwsFF_FollwerFac.
+				// No such factions in Enderal, so toggle dormant state when entering/exiting co-op 
+				// instead.
 				bool isFollower = 
 				(
 					(a_this->IsInFaction(glob.currentFollowerFaction)) ||
@@ -4357,17 +4304,37 @@ namespace ALYSLC
 						)
 					)
 				);
-				// Sometimes not set as follower 
-				// (removed from actor followers list in ExFollower data)
-				// when running a combat override package. Ugh. Why?
-				// So we'll check to see if they're running a vanilla follower package.
-				if (isFollower && 
-					actorBase->actorData.actorBaseFlags.any
+				bool setDormant = 
+				(
 					(
-						RE::ACTOR_BASE_DATA::Flag::kInvulnerable, 
-						RE::ACTOR_BASE_DATA::Flag::kIsGhost,
-						RE::ACTOR_BASE_DATA::Flag::kDoesntBleed
-					))
+						(!ALYSLC::EnderalCompat::g_installed && !isFollower)  ||
+						(
+							(ALYSLC::EnderalCompat::g_installed) &&
+							(!glob.coopSessionActive || !GlobalCoopData::IsCoopPlayer(a_this))
+						)
+					) && 
+					(
+						!actorBase->actorData.actorBaseFlags.all
+						(
+							RE::ACTOR_BASE_DATA::Flag::kInvulnerable, 
+							RE::ACTOR_BASE_DATA::Flag::kIsGhost,
+							RE::ACTOR_BASE_DATA::Flag::kDoesntBleed
+						)
+					)
+				);
+				bool resetDormant = 
+				(
+					(!ALYSLC::EnderalCompat::g_installed && isFollower) && 
+					(
+						actorBase->actorData.actorBaseFlags.any
+						(
+							RE::ACTOR_BASE_DATA::Flag::kInvulnerable, 
+							RE::ACTOR_BASE_DATA::Flag::kIsGhost,
+							RE::ACTOR_BASE_DATA::Flag::kDoesntBleed
+						)
+					)
+				);
+				if (resetDormant)
 				{
 					DBG
 					(
@@ -4378,13 +4345,7 @@ namespace ALYSLC
 					);
 					Util::ToggleActorDormantState(a_this, false);
 				}
-				else if (!isFollower && 
-						 !actorBase->actorData.actorBaseFlags.all
-						 (
-							 RE::ACTOR_BASE_DATA::Flag::kInvulnerable, 
-							 RE::ACTOR_BASE_DATA::Flag::kIsGhost,
-							 RE::ACTOR_BASE_DATA::Flag::kDoesntBleed
-						 ))
+				else if (setDormant)
 				{
 					// Set as dormant when not listed as a follower and also not a player teammate
 					// to avoid the situation where a run-once package is running,
@@ -4398,7 +4359,11 @@ namespace ALYSLC
 					);
 					Util::ToggleActorDormantState(a_this, true);
 				}
-
+				
+				// Sometimes not set as follower 
+				// (removed from actor followers list in ExFollower data)
+				// when running a combat override package. Ugh. Why?
+				// So we'll check to see if they're running a vanilla follower package.
 				/*if (isFollower && !runningFollowerPackage)
 				{
 					DBG
@@ -4432,8 +4397,8 @@ namespace ALYSLC
 				{
 					a_this->AddToFaction(glob.currentFollowerFaction, 0);
 				}
-
-				int32_t characterID = Util::GetEditorID(actorBase).back() - '0';
+				
+				const auto characterID = Util::GetCharacterID(a_this->GetActorBase());
 				if (characterID <= 0 || 2 * characterID + 1 >= glob.coopPackageFormlists.size())
 				{
 					ERR
@@ -9473,82 +9438,34 @@ namespace ALYSLC
 						);
 						if (canGiveControlOfContainer)
 						{
-							// Do not open container to the Loot Buddy's inventory. 
-							// Leave him alone, he's suffered enough.
-							/*
-							if (glob.reqQuickLootContainerHandle == 
-								glob.lootBuddy->GetHandle())
+							// Send Container Menu request for the player controlling menus.
+							bool shouldOpenContainer = 
+							(
+								(
+									glob.menuPID != -1 && 
+									Util::HandleIsValid(glob.reqQuickLootContainerHandle)
+								) &&
+								(glob.menuPID == 0 || companionPlayerMenuInput)
+							);
+							if (shouldOpenContainer)
 							{
-								// No gifts for you if Loot Buddy is 6 feet under.
-								if (glob.lootBuddy->IsDead())
-								{
-									glob.lootBuddy->formFlags &= 
-									(
-										~RE::Actor::RecordFlags::kStartsDead
-									);
-									glob.lootBuddy->Resurrect(true, false);
-								}
-
-								isBlockedLootMenuEvent = true;
-								// Open the Gift Menu instead.
-								bool succ = glob.moarm->InsertRequest
+								glob.moarm->InsertRequest
 								(
 									glob.menuPID, 
 									InputAction::kActivate, 
-									SteadyClock::now(), 
-									ALYSLC::QuickLootCompat::g_installed ? 
-									GlobalCoopData::LOOT_MENU : 
-									RE::GiftMenu::MENU_NAME,
-									glob.lootBuddy->GetHandle()
-								);	
-								if (succ)
-								{
-									// Close the QuickLoot Menu first.
-									Util::SendCrosshairEvent(nullptr, -1);
-									glob.gifteePlayerHandle = 
-									glob.gifterPlayerHandle = RE::ActorHandle();
-									Util::Papyrus::ShowGiftMenu
-									(
-										glob.lootBuddy.get(),
-										false,
-										nullptr,
-										true,
-										false
-									);
-								}
-							}
-							else
-							*/
-							{
-								// Send Container Menu request for the player controlling menus.
-								bool shouldOpenContainer = 
-								(
-									(
-										glob.menuPID != -1 && 
-										Util::HandleIsValid(glob.reqQuickLootContainerHandle)
-									) &&
-									(glob.menuPID == 0 || companionPlayerMenuInput)
+									SteadyClock::now(),
+									RE::ContainerMenu::MENU_NAME,
+									glob.reqQuickLootContainerHandle
 								);
-								if (shouldOpenContainer)
-								{
-									glob.moarm->InsertRequest
-									(
-										glob.menuPID, 
-										InputAction::kActivate, 
-										SteadyClock::now(),
-										RE::ContainerMenu::MENU_NAME,
-										glob.reqQuickLootContainerHandle
-									);
-									// Issues with opening the container,
-									// even though the crosshair pick refr 
-									// is set to the requested object,
-									// means that I'm going to force the issue here.
-									// Open the container directly.
-									glob.reqQuickLootContainerHandle.get()->OpenContainer
-									(
-										!RE::ContainerMenu::ContainerMode::kLoot
-									);
-								}
+								// Issues with opening the container,
+								// even though the crosshair pick refr 
+								// is set to the requested object,
+								// means that I'm going to force the issue here.
+								// Open the container directly.
+								glob.reqQuickLootContainerHandle.get()->OpenContainer
+								(
+									!RE::ContainerMenu::ContainerMode::kLoot
+								);
 							}
 						}
 						else if (!companionPlayerControllingMenus && isCancelBind)
@@ -17101,64 +17018,6 @@ namespace ALYSLC
 			auto strings = RE::InterfaceStrings::GetSingleton();
 			auto ui = RE::UI::GetSingleton();
 
-			// REMOVE when done debugging.
-			/*if (glob.globalDataInit && 
-				glob.coopSessionActive &&
-				ui && 
-				ui->IsMenuOpen(a_this->MENU_NAME) &&
-				glob.menuPID > -1)
-			{
-				RE::NiPointer<RE::TESObjectREFR> containerRefrPtr{ };
-				bool succ = RE::TESObjectREFR::LookupByHandle
-				(
-					RE::ContainerMenu::GetTargetRefHandle(), containerRefrPtr
-				);
-				if (containerRefrPtr == glob.lootBuddy)
-				{
-					if (a_this->itemList)
-					{
-						for (auto item : a_this->itemList->items)
-						{
-							if (!item)
-							{
-								continue;
-							}
-
-							RE::NiPointer<RE::TESObjectREFR> ownerPtr{ };
-							bool succ = RE::TESObjectREFR::LookupByHandle
-							(
-								item->data.owner, ownerPtr
-							);
-							if (succ)
-							{
-								DBG("{}: 1: {} ({}, 0x{:X})", 
-									item->data.GetName(),
-									ownerPtr ? 
-									Util::GetEditorID(ownerPtr.get()) :
-									"NONE",
-									ownerPtr ? 
-									ownerPtr->GetName() : 
-									"NONE", 
-									ownerPtr ? ownerPtr->formID : 0xDEAD);
-								if (item->data.objDesc)
-								{
-									auto formOwner = item->data.objDesc->GetOwner();
-									DBG("{}: 2: {} ({}, 0x{:X})", 
-										item->data.GetName(),
-										formOwner ? 
-										Util::GetEditorID(formOwner) :
-										"NONE",
-										formOwner ?
-										formOwner->GetName() : 
-										"NONE", 
-										formOwner ? formOwner->formID : 0xDEAD);
-								}
-							}
-						}
-					}
-				}
-			}*/
-
 			if (glob.globalDataInit &&
 				glob.coopSessionActive &&
 				glob.menuPID > 0 &&
@@ -18190,32 +18049,6 @@ namespace ALYSLC
 			{
 				// Get result first to open the menu and populate Gift Menu target ref handle.
 				auto result = _ProcessMessage(a_this, a_message);
-				/*
-				RE::NiPointer<RE::TESObjectREFR> inventoryRefrPtr{ };
-				bool succ = RE::TESObjectREFR::LookupByHandle
-				(
-					RE::GiftMenu::GetTargetRefHandle(), inventoryRefrPtr
-				);
-				if (succ)
-				{
-					if (inventoryRefrPtr == glob.lootBuddy)
-					{
-						glob.lastResolvedMenuPID = glob.moarm->ResolveMenuPlayerID
-						(
-							a_this->MENU_NAME, false
-						);
-						DBG("Result: {}, PID: {}.", result, glob.lastResolvedMenuPID);
-						return result;
-					}
-				}
-
-				// Nothing to copy over if not giving items to another player.
-				if (!glob.mim->PlayerToPlayerGiftMenuOpen())
-				{
-					return result;
-				}
-				*/
-
 				// Do not modify the requests queue,
 				// since the menu input manager still needs this info
 				// when setting the request and menu player IDs when this menu opens/closes.

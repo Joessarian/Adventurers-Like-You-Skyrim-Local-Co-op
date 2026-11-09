@@ -697,39 +697,39 @@ namespace ALYSLC
 				{
 					dataHandler->LookupForm<RE::Actor>
 					(
-						GlobalCoopData::PLAYER_CHARACTER_FIDS[1], GlobalCoopData::PLUGIN_NAME
+						GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS[1], GlobalCoopData::PLUGIN_NAME
 					),
 					dataHandler->LookupForm<RE::Actor>
 					(
-						GlobalCoopData::PLAYER_CHARACTER_FIDS[2], GlobalCoopData::PLUGIN_NAME
+						GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS[2], GlobalCoopData::PLUGIN_NAME
 					),
 					dataHandler->LookupForm<RE::Actor>
 					(
-						GlobalCoopData::PLAYER_CHARACTER_FIDS[3], GlobalCoopData::PLUGIN_NAME
+						GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS[3], GlobalCoopData::PLUGIN_NAME
 					),
 					dataHandler->LookupForm<RE::Actor>
 					(
-						GlobalCoopData::PLAYER_CHARACTER_FIDS[4], GlobalCoopData::PLUGIN_NAME
+						GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS[4], GlobalCoopData::PLUGIN_NAME
 					),
 					dataHandler->LookupForm<RE::Actor>
 					(
-						GlobalCoopData::PLAYER_CHARACTER_FIDS[5], GlobalCoopData::PLUGIN_NAME
+						GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS[5], GlobalCoopData::PLUGIN_NAME
 					),
 					dataHandler->LookupForm<RE::Actor>
 					(
-						GlobalCoopData::PLAYER_CHARACTER_FIDS[6], GlobalCoopData::PLUGIN_NAME
+						GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS[6], GlobalCoopData::PLUGIN_NAME
 					),
 					dataHandler->LookupForm<RE::Actor>
 					(
-						GlobalCoopData::PLAYER_CHARACTER_FIDS[7], GlobalCoopData::PLUGIN_NAME
+						GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS[7], GlobalCoopData::PLUGIN_NAME
 					),
 					dataHandler->LookupForm<RE::Actor>
 					(
-						GlobalCoopData::PLAYER_CHARACTER_FIDS[8], GlobalCoopData::PLUGIN_NAME
+						GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS[8], GlobalCoopData::PLUGIN_NAME
 					),
 					dataHandler->LookupForm<RE::Actor>
 					(
-						GlobalCoopData::PLAYER_CHARACTER_FIDS[9], GlobalCoopData::PLUGIN_NAME
+						GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS[9], GlobalCoopData::PLUGIN_NAME
 					)
 				}
 			);
@@ -1426,6 +1426,40 @@ namespace ALYSLC
 		(
 			glob.coopPlayers[a_playerID]->coopActor.get(), a_baseToCopy, a_setOppositeGenderAnims
 		);
+		
+		auto taskInterface = SKSE::GetTaskInterface();
+		if (!taskInterface)
+		{
+			return;
+		}
+			
+		const auto handle = glob.coopPlayers[a_playerID]->coopActor->GetHandle();
+		taskInterface->AddTask
+		(
+			[handle]()
+			{
+				auto playerActorPtr = handle.get();
+				if (!playerActorPtr)
+				{
+					return;
+				}
+
+				auto actorBase = playerActorPtr->GetActorBase();
+				if (!actorBase)
+				{
+					return;
+				}
+
+				// IMPORTANT:
+				// Needs to be run in a task.
+				// Have the game serialize our changes via changeflags
+				// so we don't need to re-import each time a save is loaded.
+				DBG("{}: Set Change Flags.", playerActorPtr->GetName());
+				actorBase->AddChange(RE::TESNPC::ChangeFlags::kFace);
+				actorBase->AddChange(RE::TESNPC::ChangeFlags::kGender);
+				actorBase->AddChange(RE::TESNPC::ChangeFlags::kRace);
+			}
+		);
 	}
 	
 	void CoopLib::CharacterCustomization::CopyDefaultRacialAppearanceToPlayer
@@ -1459,6 +1493,40 @@ namespace ALYSLC
 			glob.coopPlayers[a_playerID]->coopActor.get(),
 			a_setFemale, 
 			a_setOppositeGenderAnims
+		);
+
+		auto taskInterface = SKSE::GetTaskInterface();
+		if (!taskInterface)
+		{
+			return;
+		}
+			
+		const auto handle = glob.coopPlayers[a_playerID]->coopActor->GetHandle();
+		taskInterface->AddTask
+		(
+			[handle]()
+			{
+				auto playerActorPtr = handle.get();
+				if (!playerActorPtr)
+				{
+					return;
+				}
+
+				auto actorBase = playerActorPtr->GetActorBase();
+				if (!actorBase)
+				{
+					return;
+				}
+
+				// IMPORTANT:
+				// Needs to be run in a task.
+				// Have the game serialize our changes via changeflags
+				// so we don't need to re-import each time a save is loaded.
+				DBG("{}: Set Change Flags.", playerActorPtr->GetName());
+				actorBase->AddChange(RE::TESNPC::ChangeFlags::kFace);
+				actorBase->AddChange(RE::TESNPC::ChangeFlags::kGender);
+				actorBase->AddChange(RE::TESNPC::ChangeFlags::kRace);
+			}
 		);
 	}
 	
@@ -1517,15 +1585,12 @@ namespace ALYSLC
 				);
 				
 				Util::ImportActorBaseAppearanceData(p1, actorPtr.get());
+					
 				// IMPORTANT:
-				// DO NOT set any change flag without there being an accompanying change
-				// or the game may crash when loading data from the player character's actor base 
-				// after exiting to the main menu and loading a save.
-				// For example, setting the 'kFactions' change flag after modifying the factions 
-				// for a companion player when summoning and then loading a save from the main menu.
-				// Don't be dumb, please.
-				// 
-				// Maintain the appearance changes when the game saves.
+				// Needs to be run in a task.
+				// Have the game serialize our changes via changeflags
+				// so we don't need to re-import each time a save is loaded.
+				DBG("{}: Set Change Flags.", actorPtr->GetName());
 				actorBase->AddChange(RE::TESNPC::ChangeFlags::kFace);
 				actorBase->AddChange(RE::TESNPC::ChangeFlags::kGender);
 				actorBase->AddChange(RE::TESNPC::ChangeFlags::kRace);

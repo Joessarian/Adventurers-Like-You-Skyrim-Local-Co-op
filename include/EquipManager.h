@@ -186,17 +186,6 @@ namespace ALYSLC
 			return nullptr;
 		}
 
-		// Check if the given hand is empty or not.
-		inline bool HandIsEmpty(const bool& a_rightHand) const
-		{
-			return 
-			(
-				a_rightHand ? 
-				!equippedForms[!EquipIndex::kRightHand] : 
-				!equippedForms[!EquipIndex::kLeftHand]
-			);
-		}
-
 		// Check if the player has a two hand melee weapon equipped.
 		inline bool Has2HMeleeWeapEquipped() const
 		{
@@ -513,22 +502,10 @@ namespace ALYSLC
 			return false;
 		}
 
-		// Check if the player's left hand is empty.
-		inline bool LHEmpty() const 
-		{
-			return !equippedForms[!EquipIndex::kLeftHand];
-		}
-
 		// Check if the player only has melee weapons equipped.
 		inline bool OnlyHasMeleeWeapsEquipped() const
 		{
 			return !HasRangedWeapOrSpellEquipped();
-		}
-
-		// Check if the player's right hand is empty.
-		inline bool RHEmpty() const
-		{
-			return !equippedForms[!EquipIndex::kRightHand];
 		}
 
 		// Clear the player's desired forms list and then unequip all forms.
@@ -789,6 +766,9 @@ namespace ALYSLC
 			const EquipIndex& a_index, 
 			bool a_placeholderMagicChanged
 		);
+		
+		// Return true if the player's given hand is empty.
+		bool HandEmpty(bool a_rightHand) const;
 
 		// Checks if the player has a favorited spell in the given category.
 		bool HasCyclableSpellInCategory(const FavMagicCyclingCategory& a_category);

@@ -4,7 +4,6 @@
 namespace ALYSLC_API
 {
 	constexpr const auto ALYSLCPluginName = "ALYSLC.esp";
-	constexpr const auto ALYSLCEnderalPluginName = "ALYSLC Enderal.esp";
 
 	// Available ALYSLC interface versions.
 	enum class InterfaceVersion : uint8_t

@@ -609,7 +609,7 @@ Function PopulateAndShowListMenu(String PrefixTag, Int CustomizationOptionIndex,
         If (StringUtil.GetLength(Name) == 0)
             Name = PO3_SKSEFunctions.GetFormEditorID(FormEntry)
         EndIf
-        ListMenu.AddEntryItem("[" + PrefixTag + "] " + Name)
+        ListMenu.AddEntryItem("[" + PrefixTag + "] " + Name + " ")
         Index += 1
     EndWhile
 

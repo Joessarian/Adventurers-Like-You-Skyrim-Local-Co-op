@@ -31,7 +31,15 @@ namespace ALYSLC
 					);
 					return form;
 				}
+				else
+				{
+					ERR
+					(
+						"Could not find form that has resolved FID (0x{:X}).", a_fid
+					);
+				}
 
+				/*
 				if (!a_dataHandler)
 				{
 					return nullptr;
@@ -63,22 +71,11 @@ namespace ALYSLC
 						return form;
 					}
 				}
+				*/
 			}
-			else if (!succ)
+			else if (a_fid != 0 && !succ)
 			{
-				ERR
-				(
-					"Could not resolve new form ID from retrieved form ID (0x{:X}).", a_fid
-				);
-				return nullptr;
-			}
-			
-			if (a_fid != 0)
-			{
-				ERR
-				(
-					"Could not find form for retrieved form ID (0x{:X}).", a_fid
-				);
+				ERR("Could not resolve new FID from retrieved form ID (0x{:X}).", a_fid);
 			}
 
 			return nullptr;
@@ -123,6 +120,31 @@ namespace ALYSLC
 					);
 					return;
 				}
+				
+				// Set default data for all players if there is a major error preventing retrieval
+				// of serialized data for a companion player.
+				bool shouldResetAllData = false;
+				RE::FormID basePlayerCharacterFormIDMask = 0xFE000800;
+				auto lightModLoadIndex = dataHandler->GetLoadedLightModIndex
+				(
+					GlobalCoopData::PLUGIN_NAME
+				);
+				if (!lightModLoadIndex.has_value())
+				{
+					ERR("Could not get light mod load index for ALYSLC.esp. Setting default data.");
+					shouldResetAllData = true;
+				}
+				else
+				{
+					// All companion player characters have a form ID in the range 
+					// 0xFEXXX800 - 0xFEXXX8FF, where 'XXX' is the light mod load index.
+					// Retrieving anything else when reading in a character form ID means the data 
+					// is garbage and we should set default data for all players.
+					basePlayerCharacterFormIDMask = 
+					(
+						0xFE000000 | (lightModLoadIndex.value() << 12) | 0x800
+					);
+				}
 
 				// Player form ID serialized as a key for each data type.
 				RE::FormID fid = 0;
@@ -131,7 +153,7 @@ namespace ALYSLC
 				uint32_t version{ };
 				uint32_t length{ };
 				// Read each record which contains data of the read-out type for each player.
-				while (a_intfc->GetNextRecordInfo(type, version, length))
+				while (!shouldResetAllData && a_intfc->GetNextRecordInfo(type, version, length))
 				{
 					if (version != !SerializableDataType::kSerializationVersion)
 					{
@@ -148,8 +170,7 @@ namespace ALYSLC
 					}
 
 					// Skip invalid types.
-					if (type != !SerializableDataType::kPlayerCharacterCoopID &&
-						type != !SerializableDataType::kPlayerAvailablePerkPoints &&
+					if (type != !SerializableDataType::kPlayerAvailablePerkPoints &&
 						type != !SerializableDataType::kPlayerBaseHMSPointsList &&
 						type != !SerializableDataType::kPlayerBaseSkillLevelsList &&
 						type != !SerializableDataType::kPlayerCopiedMagicList &&
@@ -175,19 +196,56 @@ namespace ALYSLC
 						type != !SerializableDataType::kPlayerCharacterChosenRace &&
 						type != !SerializableDataType::kPlayerCharacterVoiceType)
 					{
-						DBG
-						(
-							"Skipping invalid data type {} for player with FID 0x{:X}.",
-							type, fid
-						);
+						DBG("Skipping invalid data type {}.", type);
 						continue;
 					}
 
 					// Per-character data.
+					bool readSucc = false;
+					bool resolveSucc = false;
 					for (auto i = 0; i < ALYSLC_COMPANION_CHARACTERS_COUNT + 1; ++i)
 					{
-						if (!a_intfc->ReadRecordData(fid) || !a_intfc->ResolveFormID(fid, fid))
+						DBG("TYPE {}.", type);
+						readSucc = a_intfc->ReadRecordData(fid);
+						DBG("Read form ID 0x{:X} for player at index {}.", fid, i);
+						resolveSucc = a_intfc->ResolveFormID(fid, fid); 
+						DBG("Resolved form ID 0x{:X} for player at index {}.", fid, i);
+						// Get the FID for the missing companion player character.
+						auto playerActor = 
+						(
+							fid == 0x14 ? 
+							RE::PlayerCharacter::GetSingleton() : 
+							dataHandler->LookupForm<RE::Actor>
+							(
+								fid & 0x00000FFF, GlobalCoopData::PLUGIN_NAME
+							)
+						);
+						if (playerActor)
 						{
+							DBG("Found player actor {} with FID 0x{:X} at index {}.",
+								playerActor->GetName(), fid, i);
+						}
+						else
+						{
+							INF("Invalid player actor for FID 0x{:X} at index {}.", fid, i);	
+						}
+
+						if (!readSucc || !resolveSucc)
+						{
+							INF
+							(
+								"Got FID 0x{:X}. Could not read player form ID ({}) "
+								"or resolve form ID ({}) for record of type {}, version {}, "
+								"length {} when attempting to load serialized data. "
+								"Continuing to next player record of the same type.",
+								fid,
+								!readSucc, 
+								!resolveSucc, 
+								TypeToString(type), 
+								version, 
+								length
+							);
+
 							// P1 is always inserted first and has an FID of 0x14.
 							if (i == 0)
 							{
@@ -195,38 +253,22 @@ namespace ALYSLC
 							}
 							else
 							{
-								// Get the FID for the missing companion player character.
-								fid = dataHandler->LookupFormID
-								(
-									GlobalCoopData::PLAYER_CHARACTER_FIDS[i], 
-									GlobalCoopData::PLUGIN_NAME
-								);
+								if (playerActor)
+								{
+									fid = playerActor->formID;
+								}
+								else
+								{
+									ERR
+									(
+										"Failed to resolve FID {}. "
+										"No player found for character index {}.",
+										fid, i
+									);
+									shouldResetAllData = true;
+									break;
+								}
 							}
-
-							if (fid == 0)
-							{
-								ERR
-								(
-									"Could not get companion character {}'s FID. '{}'",
-									i + 1,
-									GlobalCoopData::PLUGIN_NAME
-								);
-								continue;
-							}
-							
-							ERR
-							(
-								"Could not read player form ID ({}, 0x{:X}) "
-								"or resolve form ID ({}) for record of type {}, version {}, "
-								"length {} when attempting to load serialized data. "
-								"Continuing to next player record of the same type.",
-								!a_intfc->ReadRecordData(fid), 
-								fid,
-								!a_intfc->ResolveFormID(fid, fid), 
-								TypeToString(type), 
-								version, 
-								length
-							);
 
 							// If not inserted into the global co-op data map already,
 							// insert the default data now.
@@ -249,7 +291,27 @@ namespace ALYSLC
 								);
 							}
 
-							continue;
+							//continue;
+						}
+						
+						// Not a valid player FID, so set default data.
+						if (!GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS_SET.contains
+							(
+								fid & 0x00000FFF
+							))
+						{
+							ERR
+							(
+								"Could not get companion character {}'s FID from '{}'. "
+								"Should have retrieved 0x{:X}, retrieved 0x{:X}.",
+								i + 1,
+								GlobalCoopData::PLUGIN_NAME,
+								(basePlayerCharacterFormIDMask & 0xFFFFF000) | 
+								(GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS[i]),
+								fid
+							);
+							shouldResetAllData = true;
+							return;
 						}
 
 						DBG
@@ -257,6 +319,7 @@ namespace ALYSLC
 							"About to retrieve serialized data for player with FID 0x{:X}.", 
 							fid
 						);
+
 						// Insert default data at first.
 						if (glob.serializablePlayerData.empty() ||
 							!glob.serializablePlayerData.contains(fid))
@@ -276,19 +339,7 @@ namespace ALYSLC
 						}
 
 						const auto& data = glob.serializablePlayerData.at(fid);
-						if (type == !SerializableDataType::kPlayerCharacterCoopID)
-						{
-							uint32_t playerCharacterID = 0;
-							RetrieveUInt32Data(a_intfc, playerCharacterID, type);
-							// Serialized as unsigned but deserialized as signed.
-							data->SetPlayerCharacterID(playerCharacterID);
-							DBG
-							(
-								"Player with FID 0x{:X}'s "
-								"character ID is {}.", fid, data->GetPlayerCharacterID()
-							);
-						}
-						else if (type == !SerializableDataType::kPlayerAvailablePerkPoints)
+						if (type == !SerializableDataType::kPlayerAvailablePerkPoints)
 						{
 							RetrieveUInt32Data(a_intfc, data->availablePerkPoints, type);
 							DBG
@@ -770,10 +821,14 @@ namespace ALYSLC
 					}
 				}
 
-				// Set default data if no data was retrieved successfully.
-				if (glob.serializablePlayerData.size() == 0)
+				// Set default data if there was an error or no data was retrieved successfully.
+				if (shouldResetAllData || glob.serializablePlayerData.size() == 0)
 				{
-					DBG("First time retrieval. Setting default data for all players.");
+					INF
+					(
+						"{} retrieval. Setting default data for all players.",
+						shouldResetAllData ? "Error during" : "First-time"
+					);
 					SetDefaultRetrievedData();
 				}
 				else
@@ -946,34 +1001,6 @@ namespace ALYSLC
 
 				// NOTE:
 				// Capitalized data type comments are for easier recognition by my monkey brain.
-
-				// PLAYER CHARACTER CO-OP ID
-				if (a_intfc->OpenRecord
-				(
-					!SerializableDataType::kPlayerCharacterCoopID, 
-					!SerializableDataType::kSerializationVersion
-				))
-				{
-					for (auto& [fid, data] : glob.serializablePlayerData)
-					{
-						DBG
-						(
-							"Serialize PLAYER CHARACTER CO-OP ID for player with FID 0x{:X}: {}.",
-							fid, data->GetPlayerCharacterID()
-						);
-						SerializePlayerUInt32Data
-						(
-							a_intfc, fid, !SerializableDataType::kPlayerCharacterCoopID
-						);
-						// Serialized as unsigned but deserialized as signed.
-						SerializePlayerUInt32Data
-						(
-							a_intfc, 
-							data->GetPlayerCharacterID(), 
-							!SerializableDataType::kPlayerCharacterCoopID
-						);
-					}
-				}
 
 				// AVAILABLE PERK POINTS
 				if (a_intfc->OpenRecord
@@ -2600,8 +2627,7 @@ namespace ALYSLC
 			// Set current level for all players to P1's current level.
 			// First saved level set to 0.
 			auto p1Level = p1->GetLevel();
-			// Player 1's character ID is always 0.
-			uint32_t playerCharacterID = 0;
+			auto actorBase = p1->GetActorBase(); 
 			// Insert P1 first.
 			glob.serializablePlayerData.insert
 			(
@@ -2614,7 +2640,6 @@ namespace ALYSLC
 						std::vector<RE::TESForm*>{ !EquipIndex::kTotal, nullptr },
 						std::vector<RE::TESForm*>(),
 						p1->skills->data->xp, 
-						playerCharacterID,
 						0,
 						0,
 						p1Level,
@@ -2630,24 +2655,24 @@ namespace ALYSLC
 						skillXPList, 
 						std::vector<RE::BGSPerk*>(),
 						std::vector<RE::BGSPerk*>(),
-						p1->GetActorBase() ? 
-						p1->GetActorBase()->IsFemale() : 
+						actorBase ? 
+						actorBase->IsFemale() : 
 						false,
-						p1->GetActorBase() ? 
-						p1->GetActorBase()->UsesOppositeGenderAnims() :
+						actorBase ? 
+						actorBase->UsesOppositeGenderAnims() :
 						false,
 						"NONE",
-						p1->GetActorBase(),
+						actorBase,
 						p1->charGenRace,
-						p1->GetActorBase() ? 
-						p1->GetActorBase()->voiceType :
+						actorBase ? 
+						actorBase->voiceType :
 						nullptr
 					) 
 				}
 			);
 
 			// Insert co-op companions.
-			std::array<RE::Actor*, (size_t)(ALYSLC_COMPANION_CHARACTERS_COUNT)> coopPlayers
+			std::array<RE::Actor*, (size_t)(ALYSLC_COMPANION_CHARACTERS_COUNT)> coopPlayerCharacters
 			{
 				nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr
 			};
@@ -2670,158 +2695,147 @@ namespace ALYSLC
 				); 
 			}
 
-			for (auto i = 0; i < coopPlayers.size(); ++i) 
+			for (auto i = 0; i < coopPlayerCharacters.size(); ++i) 
 			{
-				auto fid = dataHandler->LookupFormID
+				coopPlayerCharacters[i] = dataHandler->LookupForm<RE::Actor>
 				(
-					GlobalCoopData::PLAYER_CHARACTER_FIDS[i + 1],
+					GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS[i + 1],
 					GlobalCoopData::PLUGIN_NAME
 				);
+				const auto playerActor = coopPlayerCharacters[i];
+				if (!playerActor)
+				{
+					ERR
+					(
+						"ERR: Could not find player character with raw FID 0x{:X}. "
+						"Game will likely crash when ALYSLC accesses this serialized data. "
+						"Please inform the mod author of their incompetence.",
+						GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS[i + 1]
+					);
+					continue;
+				}
+
+				auto fid = playerActor->formID;
 				DBG
 				(
 					"Co-op character {}: 0x{:X} -> 0x{:X}.",
 					i + 1,
-					GlobalCoopData::PLAYER_CHARACTER_FIDS[i + 1],
+					GlobalCoopData::PLAYER_CHARACTER_RAW_FIDS[i + 1],
 					fid
 				); 
-				coopPlayers[i] = dataHandler->LookupForm<RE::Actor>
-				(
-					GlobalCoopData::PLAYER_CHARACTER_FIDS[i + 1],
-					GlobalCoopData::PLUGIN_NAME
-				);
-				if (const auto playerActor = coopPlayers[i]; playerActor) 
+				if (fid)
 				{
-					auto fid = playerActor->formID;
-					if (fid)
+					// Set default cleared data first.
+					hmsBasePointsList.fill(100.0f);
+					hmsIncList.fill(0.0f);
+					hotkeyedFormsList.fill(nullptr);
+					skillLegendaryCountList.fill(0);
+					skillBaseLvlList.fill(15.0f);
+					skillIncList.fill(0.0f);
+					// No skill XP to start, unlike for P1.
+					skillXPList.fill(0.0f);
+					// For NPCs, their starting HMS is derived from 
+					// their race's starting health + their actor base's health offset.
+					actorBase = playerActor->GetActorBase(); 
+					if (actorBase && playerActor->race)
 					{
-						// Set default cleared data first.
-						hmsBasePointsList.fill(100.0f);
-						hmsIncList.fill(0.0f);
-						hotkeyedFormsList.fill(nullptr);
-						skillLegendaryCountList.fill(0);
-						skillBaseLvlList.fill(15.0f);
-						skillIncList.fill(0.0f);
-						// No skill XP to start, unlike for P1.
-						skillXPList.fill(0.0f);
-						// For NPCs, their starting HMS is derived from 
-						// their race's starting health + their actor base's health offset.
-						const auto actorBase = playerActor->GetActorBase(); 
-						if (actorBase && playerActor->race)
-						{
-							hmsBasePointsList[0] = 
-							(
-								playerActor->race->data.startingHealth + 
-								actorBase->actorData.healthOffset
-							);
-							hmsBasePointsList[1] =
-							(
-								playerActor->race->data.startingMagicka + 
-								actorBase->actorData.magickaOffset
-							);
-							hmsBasePointsList[2] = 
-							(
-								playerActor->race->data.startingStamina +
-								actorBase->actorData.staminaOffset
-							);
-						}
-						else
-						{
-							// Fall back to the reported base actor value.
-							hmsBasePointsList[0] = p1->GetBaseActorValue(RE::ActorValue::kHealth);
-							hmsBasePointsList[1] = p1->GetBaseActorValue(RE::ActorValue::kMagicka);
-							hmsBasePointsList[2] = p1->GetBaseActorValue(RE::ActorValue::kStamina);
-						}
-
-						// Set initial skill base AVs.
-						auto skillBaseLvlList = Util::GetActorSkillLevels(coopPlayers[i]);
-#ifdef ALYSLC_DEBUG_MODE
-						DBG
+						hmsBasePointsList[0] = 
 						(
-							"{}'s base HMS actor values: ({}, {}, {})",
-							playerActor->GetName(), 
-							hmsBasePointsList[0], 
-							hmsBasePointsList[1], 
-							hmsBasePointsList[2]
+							playerActor->race->data.startingHealth + 
+							actorBase->actorData.healthOffset
 						);
-						for (auto i = 0; i < skillBaseLvlList.size(); ++i)
-						{
-							auto currentSkill = static_cast<Skill>(i);
-							const auto iter = glob.SKILL_TO_AV_MAP.find(currentSkill);
-							if (iter != glob.SKILL_TO_AV_MAP.end())
-							{
-								auto currentAV = iter->second;
-								DBG
-								(
-									"{}'s {} skill base level: {}.", 
-									playerActor->GetName(), 
-									Util::GetActorValueName(currentAV), 
-									skillBaseLvlList[i]
-								);
-							}
-						}
-#endif
-						// Companion player's character IDs are based on 
-						// their actor base's editor ID trailing index.
-						// 1 = NPC with '__CoopCharacter1' as its actor base editor ID.
-						// 2 = NPC with '__CoopCharacter2' as its actor base editor ID.
-						// 3 = NPC with '__CoopCharacter3' as its actor base editor ID.
-						playerCharacterID = i + 1;
-						glob.serializablePlayerData.insert
+						hmsBasePointsList[1] =
 						(
-							{ 
-								fid,
-								std::make_unique<SerializablePlayerData>
-								(
-									copiedMagic,
-									GlobalCoopData::DEFAULT_CYCLABLE_EMOTE_IDLE_EVENTS,
-									std::vector<RE::TESForm*>{ !EquipIndex::kTotal, nullptr },
-									std::vector<RE::TESForm*>(),
-									p1->skills->data->xp,
-									playerCharacterID,
-									0,
-									0,
-									p1Level,
-									0,
-									0,
-									0,
-									hmsBasePointsList,
-									hmsIncList,
-									hotkeyedFormsList,
-									skillLegendaryCountList,
-									skillBaseLvlList,
-									skillIncList,
-									skillXPList,
-									std::vector<RE::BGSPerk*>(),
-									std::vector<RE::BGSPerk*>(),
-									coopPlayers[i]->GetActorBase() ?
-									coopPlayers[i]->GetActorBase()->IsFemale() :
-									false,
-									coopPlayers[i]->GetActorBase() ?
-									coopPlayers[i]->GetActorBase()->UsesOppositeGenderAnims() :
-									false,
-									"NONE",
-									coopPlayers[i]->GetActorBase(),
-									coopPlayers[i]->GetRace(),
-									coopPlayers[i]->GetActorBase() ? 
-									coopPlayers[i]->GetActorBase()->voiceType :
-									nullptr
-								) 
-							}
+							playerActor->race->data.startingMagicka + 
+							actorBase->actorData.magickaOffset
+						);
+						hmsBasePointsList[2] = 
+						(
+							playerActor->race->data.startingStamina +
+							actorBase->actorData.staminaOffset
 						);
 					}
 					else
 					{
-						ERR("Could not get __CoopCharacter{}'s form ID.", i + 1);
+						// Fall back to the reported base actor value.
+						hmsBasePointsList[0] = p1->GetBaseActorValue(RE::ActorValue::kHealth);
+						hmsBasePointsList[1] = p1->GetBaseActorValue(RE::ActorValue::kMagicka);
+						hmsBasePointsList[2] = p1->GetBaseActorValue(RE::ActorValue::kStamina);
 					}
+
+					// Set initial skill base AVs.
+					auto skillBaseLvlList = Util::GetActorSkillLevels(coopPlayerCharacters[i]);
+#ifdef ALYSLC_DEBUG_MODE
+					DBG
+					(
+						"{}'s base HMS actor values: ({}, {}, {})",
+						playerActor->GetName(), 
+						hmsBasePointsList[0], 
+						hmsBasePointsList[1], 
+						hmsBasePointsList[2]
+					);
+					for (auto i = 0; i < skillBaseLvlList.size(); ++i)
+					{
+						auto currentSkill = static_cast<Skill>(i);
+						const auto iter = glob.SKILL_TO_AV_MAP.find(currentSkill);
+						if (iter != glob.SKILL_TO_AV_MAP.end())
+						{
+							auto currentAV = iter->second;
+							DBG
+							(
+								"{}'s {} skill base level: {}.", 
+								playerActor->GetName(), 
+								Util::GetActorValueName(currentAV), 
+								skillBaseLvlList[i]
+							);
+						}
+					}
+#endif
+					glob.serializablePlayerData.insert
+					(
+						{ 
+							fid,
+							std::make_unique<SerializablePlayerData>
+							(
+								copiedMagic,
+								GlobalCoopData::DEFAULT_CYCLABLE_EMOTE_IDLE_EVENTS,
+								std::vector<RE::TESForm*>{ !EquipIndex::kTotal, nullptr },
+								std::vector<RE::TESForm*>(),
+								p1->skills->data->xp,
+								0,
+								0,
+								p1Level,
+								0,
+								0,
+								0,
+								hmsBasePointsList,
+								hmsIncList,
+								hotkeyedFormsList,
+								skillLegendaryCountList,
+								skillBaseLvlList,
+								skillIncList,
+								skillXPList,
+								std::vector<RE::BGSPerk*>(),
+								std::vector<RE::BGSPerk*>(),
+								actorBase ?
+								actorBase->IsFemale() :
+								false,
+								actorBase ?
+								actorBase->UsesOppositeGenderAnims() :
+								false,
+								"NONE",
+								actorBase,
+								playerActor->GetRace(),
+								actorBase ? 
+								actorBase->voiceType :
+								nullptr
+							) 
+						}
+					);
 				}
 				else
 				{
-					ERR
-					(
-						"Could not get __CoopCharacter{}. "
-						"Game will likely crash when summoning other players.",
-						i + 1
-					);
+					ERR("Could not get __CoopCharacter{}'s form ID.", i + 1);
 				}
 			}
 

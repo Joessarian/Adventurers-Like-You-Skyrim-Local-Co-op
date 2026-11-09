@@ -76,13 +76,11 @@ namespace ALYSLC
 		g_installed = static_cast<bool>(GetModuleHandleA("EnderalSE.dll"));
 		if (g_installed)
 		{
-			ALYSLC::GlobalCoopData::PLUGIN_NAME = "ALYSLC Enderal.esp"sv;
 			INF("Enderal SSE installed! Plugin name to use: '{}'.",
 				ALYSLC::GlobalCoopData::PLUGIN_NAME);
 		}
 		else
 		{
-			ALYSLC::GlobalCoopData::PLUGIN_NAME = "ALYSLC.esp"sv;
 			INF("Enderal SSE is not installed. Plugin name to use: '{}'.",
 				ALYSLC::GlobalCoopData::PLUGIN_NAME);
 		}
@@ -96,8 +94,8 @@ namespace ALYSLC
 			(
 				"[ALYSLC]\nERROR: "
 				"More than one ALYSLC '.esp' file is currently loaded.\n"
-				"To avoid issues, please make sure only the '.esp' that matches your game "
-				"(Skyrim or Enderal) is enabled and then restart the game."
+				"To avoid issues, please make sure only the 'ALYSLC.esp' is enabled "
+				"and then restart the game."
 			);
 		}
 	}

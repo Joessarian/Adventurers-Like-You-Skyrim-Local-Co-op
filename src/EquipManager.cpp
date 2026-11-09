@@ -267,7 +267,7 @@ namespace ALYSLC
 		// Get serialized data to initialize some data members.
 		const auto& data = glob.serializablePlayerData.at(coopActor->formID);
 		// Inventory chest.
-		inventoryChest = glob.coopInventoryChests[data->GetPlayerCharacterID()];
+		inventoryChest = glob.coopInventoryChests[Util::GetCharacterID(coopActor->GetActorBase())];
 
 		// Spells and quick slot forms.
 		quickSlotItem = nullptr;
@@ -5379,6 +5379,25 @@ namespace ALYSLC
 		}
 	}
 
+	bool EquipManager::HandEmpty(bool a_rightHand) const
+	{
+		// Return true if the player's given hand is empty.
+
+		// Fists/dummy weapon equipped means the hand is empty too.
+		auto obj = //coopActor->GetEquippedObject(!a_rightHand);
+		(
+			a_rightHand ? 
+			equippedForms[!EquipIndex::kRightHand] :
+			equippedForms[!EquipIndex::kLeftHand]
+		);
+		DBG("{}: {}: {} (0x{:X})", 
+			coopActor->GetName(),
+			a_rightHand ? "RH" : "LH",
+			obj ? obj->GetName() : "NONE",
+			obj ? obj->formID : 0xDEAD);
+		return !obj || obj == glob.fists || obj == glob.dummy1H;
+	}
+
 	bool EquipManager::HasCyclableSpellInCategory(const FavMagicCyclingCategory& a_category)
 	{
 		// Does the given favorited spell category have a cyclable, equipable spell?
@@ -6096,13 +6115,13 @@ namespace ALYSLC
 	{
 		// Return true if the player has no hand forms equipped.
 
+		const auto lhObj = coopActor->GetEquippedObject(true);
+		const auto rhObj = coopActor->GetEquippedObject(false);
 		return 
 		(
-			(!equippedForms[!EquipIndex::kLeftHand] && !equippedForms[!EquipIndex::kRightHand]) ||
-			(
-				equippedForms[!EquipIndex::kLeftHand] == glob.fists && 
-				equippedForms[!EquipIndex::kRightHand] == glob.fists
-			)
+			(!lhObj && !rhObj) || 
+			(lhObj == glob.fists || rhObj == glob.fists) || 
+			(lhObj == glob.dummy1H && rhObj == glob.dummy1H)
 		);
 	}
 

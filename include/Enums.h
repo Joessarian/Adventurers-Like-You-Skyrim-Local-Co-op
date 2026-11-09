@@ -1073,19 +1073,6 @@ namespace ALYSLC
 	// Identifiers for serializable co-op data.
 	enum class SerializableDataType : std::uint32_t
 	{
-		kPlayerCharacterCoopID = 'PCCI',		// Character ID used to identify a player
-												// when (de)serializing data
-												// and linking a serialized FID 
-												// to a current player character's FID 
-												// if it has changed between loads.
-												// 0 = Player 1
-												// 1 = NPC with '__CoopCharacter1'
-												// as its actor base editor ID.
-												// 2 = NPC with '__CoopCharacter2'
-												// as its actor base editor ID.
-												// 3 = NPC with '__CoopCharacter3'
-												// as its actor base editor ID.
-
 		kPlayerFirstSavedLevel = 'PFSL',		// First saved player level in co-op.
 		kPlayerLevel = 'PLVL',					// Current player level.
 		kPlayerLevelXP = 'PLXP',				// Current player XP at the current level.

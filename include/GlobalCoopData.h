@@ -392,7 +392,6 @@ namespace ALYSLC
 		{
 		public:
 			SerializablePlayerData() :
-				playerCharacterID(0),
 				availablePerkPoints(0),
 				firstSavedLevel(0),
 				level(1),
@@ -435,7 +434,6 @@ namespace ALYSLC
 				std::vector<RE::TESForm*> a_equippedForms,
 				std::vector<RE::TESForm*> a_favoritedMagForms,
 				float a_levelXP,
-				uint32_t a_playerCharacterID,
 				uint32_t a_availablePerkPoints, 
 				uint32_t a_firstSavedLevel,
 				uint32_t a_level, 
@@ -462,7 +460,6 @@ namespace ALYSLC
 				cyclableEmoteIdleEvents(a_cyclableEmoteIdleEvents),
 				equippedForms(a_equippedForms),
 				favoritedMagForms(a_favoritedMagForms),
-				playerCharacterID(a_playerCharacterID),
 				levelXP(a_levelXP),
 				availablePerkPoints(a_availablePerkPoints),
 				firstSavedLevel(a_firstSavedLevel),
@@ -512,9 +509,6 @@ namespace ALYSLC
 				unlockedPerksSet.clear();
 				prevTotalUnlockedPerks = 0;
 			}
-
-			// Get the serializable player character ID.
-			inline uint32_t GetPlayerCharacterID(){ return playerCharacterID; }
 
 			// Get set of all shared perks this player has personally unlocked.
 			inline const std::set<RE::BGSPerk*>& GetTakenSharedPerksSet() 
@@ -601,12 +595,6 @@ namespace ALYSLC
 				return removedCount > 0;
 			}
 
-			// Set the serializable player character ID to the given one.
-			inline void SetPlayerCharacterID(const uint32_t& a_playerCharacterID)
-			{
-				playerCharacterID = a_playerCharacterID;
-			}
-			
 			// Set taken shared perks set directly.
 			inline void SetTakenSharedPerks
 			(
@@ -708,15 +696,6 @@ namespace ALYSLC
 
 		private:
 
-			// Character ID used to identify a player  when (de)serializing data
-			// and linking a serialized FID to a current player character's FID 
-			// if it has changed between loads.
-			// 0 = Player 1.
-			// 1 = NPC with '__CoopCharacter1' as its actor base editor ID.
-			// 2 = NPC with '__CoopCharacter2' as its actor base editor ID.
-			// 3 = NPC with '__CoopCharacter3' as its actor base editor ID.
-			// ... etc.
-			uint32_t playerCharacterID;
 			// List of perks that the player has unlocked.
 			std::vector<RE::BGSPerk*> unlockedPerksList;
 			// Set of shared perks that the player has personally spent perk points on.
@@ -2110,8 +2089,24 @@ namespace ALYSLC
 			{ RE::WEAPON_TYPE::kTwoHandSword, RE::WEAPON_TYPE::kOneHandSword }
 		};
 
-		// Starting with player 1, raw (last 3 nibbles) FIDs for each selectable player character.
-		static inline const std::vector<RE::FormID> PLAYER_CHARACTER_FIDS = 
+		// Starting with player 1, raw (last 3 nibbles) FIDs for each selectable player character
+		// or their actorbase.
+
+		static inline const std::vector<RE::FormID> PLAYER_CHARACTER_RAW_FIDS = 
+		{
+			0x07,
+			0x802,
+			0x803,
+			0x804,
+			0x8A4,
+			0x8A5,
+			0x8A6,
+			0x8A7,
+			0x8A8,
+			0x8A9
+		};
+
+		static inline const std::set<RE::FormID> PLAYER_CHARACTER_RAW_FIDS_SET = 
 		{
 			0x14,
 			0x802,
@@ -2203,8 +2198,6 @@ namespace ALYSLC
 		// Handle for the player attempting to open the gift menu to give items to another player.
 		// Cleared when the Gift Menu closes.
 		RE::ActorHandle gifterPlayerHandle;
-		// Loot buddy. He holds nearby items. He is also a naked old man in a far off dimension.
-		RE::ActorPtr lootBuddy;
 		// P1's actor
 		RE::ActorPtr player1Actor;
 		// Glow effect to play on inactive player characters.
@@ -2392,12 +2385,14 @@ namespace ALYSLC
 		std::vector<RE::TESGlobal*> castingGlobVars;
 		// Extra storage space for co-op players.
 		// Also used as temporary storage when swapping inventories.
-		// Indexed by player ID.
+		// !Indexed by character ID!
 		std::vector<RE::TESObjectREFRPtr> coopInventoryChests;
 		// Co-op package formlists used as package override stacks.
 		// Holds the co-op players' packages below.
+		// !Indexed by character ID!
 		std::vector<RE::BGSListForm*> coopPackageFormlists;
 		// Co-op player characters, active or not.
+		// !Indexed by character ID!
 		std::vector<RE::ActorPtr> coopPlayerCharacters;
 		// List of co-op player packages. 
 		// Currently 4 PER player (in order): 

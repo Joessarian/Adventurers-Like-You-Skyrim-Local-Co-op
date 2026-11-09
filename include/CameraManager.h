@@ -873,6 +873,10 @@ namespace ALYSLC
 
 		bool AllPlayersVisibleAtPoint(const RE::NiPoint3& a_point, bool&& a_checkAllNodes);
 	
+		// Calculate the base point equidistant to all players and the average player height.
+		// No collisions accounted for or smoothing applied.	
+		void CalcBasePoint();
+
 		// Calculate the next camera focus points: current, base, and collision.
 		void CalcNextFocusPoint();
 		

@@ -6584,13 +6584,14 @@ namespace ALYSLC
 			bool tooFarAway = 
 			(
 				currentTargetPtr &&
-				Util::GetRefrPosition(currentTargetPtr.get()).GetDistance(playerTorsoPos) > 
+				!RefrIsInActivationRange(a_currentTargetHandle) 
+				/*Util::GetRefrPosition(currentTargetPtr.get()).GetDistance(playerTorsoPos) > 
 				GetMaxActivationDist() * 
 				(
 					currentTargetPtr->As<RE::Actor>() && !currentTargetPtr->IsDead() ? 
 					Settings::fLivingActorActivationDistMult :
 					1.0f
-				)
+				)*/
 			);
 			canSelect |= tooFarAway;
 		}
@@ -7025,7 +7026,7 @@ namespace ALYSLC
 						{
 							angDistFactor = FLT_MAX;
 						}
-
+						
 						factorMap.insert({ angDistFactor, handle });
 					}
 					
@@ -7222,6 +7223,20 @@ namespace ALYSLC
 				closestRefrHandle = refrHandle;
 				choseLastOption = ++iter == factorMap.end();
 				break;
+			}
+			else
+			{
+				DBG
+				(
+					"{}: No LOS on {}, factor: {}, distance: {}, max dist: {}.", 
+					coopActor->GetName(), 
+					refrHandle.get()->GetName(),
+					factor,
+					playerTorsoPos.GetDistance(Util::GetRefrPosition(refrPtr.get())),
+					refrPtr->As<RE::Actor>() && !refrPtr->IsDead() ? 
+					GetMaxActivationDist() * Settings::fLivingActorActivationDistMult :
+					GetMaxActivationDist()
+				);
 			}
 		}
 		
@@ -9116,48 +9131,6 @@ namespace ALYSLC
 
 				// Clear out cached FIDs from the last request.
 				glob.proximityLootItemMap.clear();
-
-				/*auto exDropList = 
-				(
-					glob.lootBuddy->extraList.GetByType<RE::ExtraDroppedItemList>()
-				); 
-				if (exDropList)
-				{
-					exDropList->droppedItemList.clear();
-				}
-				else
-				{	
-					auto* data = RE::BSExtraData::Create<RE::ExtraDroppedItemList>();
-					data->droppedItemList.clear();
-					glob.lootBuddy->extraList.Add(data);
-					exDropList = 
-					(
-						glob.lootBuddy->extraList.GetByType<RE::ExtraDroppedItemList>()
-					); 
-				}
-		
-				DBG
-				(
-					"{}: Found dropped items exData: {}.",
-					a_p->coopActor->GetName(), (bool)exDropList
-				);
-				if (!succ)
-				{
-					lock.unlock();
-					return;
-				}*/
-		
-				// Clear out inventory first to ensure no items remain
-				// from previous proximity loot requests.
-				/*auto buddyInvChanges = glob.lootBuddy->GetInventoryChanges(false);
-				if (buddyInvChanges)
-				{
-					buddyInvChanges->RemoveAllItems
-					(
-						glob.lootBuddy.get(), nullptr, false, false, false
-					);
-				}*/
-			
 				// Clear out the inventory in preparation for populating it with the cached items.
 				glob.lootBuddyChest->SetDisplayName("Nearby Items", true);
 				glob.lootBuddyChest->ResetInventory(false);
@@ -9340,61 +9313,11 @@ namespace ALYSLC
 				{
 					if (ALYSLC::QuickLootCompat::g_installed)
 					{	
-						// RIP to my boy. QuickLoot only opens when he's dead.
-						//if (!glob.lootBuddy->IsDead())
-						//{
-						//	if (auto actorBase = glob.lootBuddy->GetActorBase(); actorBase)
-						//	{
-						//		auto& baseFlags = actorBase->actorData.actorBaseFlags;
-						//		baseFlags.reset
-						//		(
-						//			RE::ACTOR_BASE_DATA::Flag::kInvulnerable,
-						//			RE::ACTOR_BASE_DATA::Flag::kDoesntBleed, 
-						//			RE::ACTOR_BASE_DATA::Flag::kEssential
-						//		);
-						//		glob.lootBuddy->boolFlags.reset(RE::Actor::BOOL_FLAGS::kEssential);
-						//		Util::NativeFunctions::SetActorBaseFlag
-						//		(
-						//			actorBase, RE::ACTOR_BASE_DATA::Flag::kIsGhost, false, false
-						//		);
-						//	}
-						//
-						//	// Top 10 saddest anime moments: Number 1. ;(
-						//	glob.lootBuddy->KillImmediate();
-						//}
-
 						Util::SendCrosshairEvent(nullptr, -1);
 						Util::SendCrosshairEvent(glob.lootBuddyChest.get(), playerID);
 					}
 					else
 					{
-						// No gifts for you if Loot Buddy is 6 feet under.
-						/*if (glob.lootBuddy->IsDead())
-						{
-							glob.lootBuddy->formFlags &= ~RE::Actor::RecordFlags::kStartsDead;
-							glob.lootBuddy->Resurrect(true, false);
-						}
-
-						Util::Papyrus::ShowGiftMenu
-						(
-							glob.lootBuddy.get(),
-							false,
-							nullptr,
-							true,
-							false
-						);*/
-
-						/*Util::ActivateRefr
-						(
-							glob.lootBuddy.get(),
-							p1,
-							0,
-							glob.lootBuddy->GetBaseObject(), 
-							1,
-							false, 
-							false
-						);*/
-
 						glob.lootBuddyChest->OpenContainer
 						(
 							!RE::ContainerMenu::ContainerMode::kLoot
@@ -11392,7 +11315,11 @@ namespace ALYSLC
 				useRange && 
 				!RefrIsInRange
 				(
-					a_targetRefr->GetHandle(), p->mm->playerTorsoPosition, considerationRange
+					a_targetRefr->GetHandle(), 
+					coopActor->data.location + 
+					RE::NiPoint3(0.0f, 0.0f, 0.5f * coopActor->GetHeight()),
+					//p->mm->playerTorsoPosition,
+					considerationRange
 				)
 			)
 		);
@@ -11726,7 +11653,7 @@ namespace ALYSLC
 				Util::Get3DCenterPos(activationRefrHandle.get().get()) : 
 				p->mm->playerTorsoPosition
 			);
-			const auto& targetPos = Util::Get3DCenterPos(a_targetRefr);
+			const auto targetPos = Util::Get3DCenterPos(a_targetRefr);
 			auto sourceScreenPos = Util::WorldToScreenPoint3(sourcePos, false);
 			auto targetScreenPos = Util::WorldToScreenPoint3(targetPos, false);
 			sourceScreenPos.z =
@@ -11759,7 +11686,7 @@ namespace ALYSLC
 			{
 				DBG
 				(
-					"{}: {} is not in FOV: targeting angle: {}, angle to target: {}, "
+					"{}: {} is NOT in FOV: targeting angle: {}, angle to target: {}, "
 					"turn to target: {}, FOV: {}.",
 					coopActor->GetName(),
 					a_targetRefr->GetName(),
@@ -11770,7 +11697,18 @@ namespace ALYSLC
 				);
 				return;
 			}
-
+			
+			/*DBG
+			(
+				"{}: {} IS in FOV: targeting angle: {}, angle to target: {}, "
+				"turn to target: {}, FOV: {}.",
+				coopActor->GetName(),
+				a_targetRefr->GetName(),
+				targetingAngle * TO_DEGREES, 
+				angleToTarget * TO_DEGREES,
+				turnToFaceRefrAngMag * TO_DEGREES,
+				a_fovRads * TO_DEGREES
+			);*/
 			/*DebugAPI::QueuePoint3D
 			(
 				ToVec3(sourcePos),
@@ -11784,7 +11722,9 @@ namespace ALYSLC
 				Settings::vuCrosshairOuterOutlineRGBAValues[playerID],
 				2.0f,
 				2.0f
-			);
+			);*/
+			
+			/*
 			DebugAPI::QueueArrow3D
 			(
 				ToVec3(sourcePos),
@@ -13413,7 +13353,16 @@ namespace ALYSLC
 			// where the center position might be very far from the refr's reported location,
 			// and we only need one or the other to be in range for activation.
 
-			return RefrIsInRange(a_refrHandle, p->mm->playerTorsoPosition, maxCheckDist);
+			// Torso position moves too much and causes rapid selection/deselection of an object
+			// that is just in/out of range when rotating while trying to select an object.
+			// The player's center based on their refr position is much more consistent here.
+			return RefrIsInRange
+			(
+				a_refrHandle, 
+				coopActor->data.location + RE::NiPoint3(0.0f, 0.0f, 0.5f * coopActor->GetHeight()),
+				//p->mm->playerTorsoPosition, 
+				maxCheckDist
+			);
 		}
 
 		return false;
@@ -13442,7 +13391,14 @@ namespace ALYSLC
 		auto checkPos = refrPtr->data.location;
 		if (a_originPos.GetDistance(checkPos) <= a_range)
 		{
+			DBG("{}'s refr pos IN range ({} / {}).", 
+				refrPtr->GetName(), a_originPos.GetDistance(checkPos), a_range);
 			return true;
+		}
+		else
+		{
+			DBG("{}'s refr pos NOT in range ({} / {}).", 
+				refrPtr->GetName(), a_originPos.GetDistance(checkPos), a_range);
 		}
 
 		if (auto refr3DPtr = Util::GetRefr3D(refrPtr.get()); refr3DPtr)
@@ -13450,13 +13406,27 @@ namespace ALYSLC
 			checkPos = refr3DPtr->worldBound.center;
 			if (a_originPos.GetDistance(checkPos) <= a_range)
 			{
+				DBG("{}'s worldbound center IN range ({} / {}).", 
+					refrPtr->GetName(), a_originPos.GetDistance(checkPos), a_range);
 				return true;
+			}
+			else
+			{
+				DBG("{}'s worldbound center NOT in range ({} / {}).", 
+					refrPtr->GetName(), a_originPos.GetDistance(checkPos), a_range);
 			}
 
 			checkPos = refr3DPtr->world.translate;
 			if (a_originPos.GetDistance(checkPos) <= a_range)
 			{
+				DBG("{}'s worldbound pos IN range ({} / {}).", 
+					refrPtr->GetName(), a_originPos.GetDistance(checkPos), a_range);
 				return true;
+			}
+			else
+			{
+				DBG("{}'s worldbound pos NOT in range ({} / {}).", 
+					refrPtr->GetName(), a_originPos.GetDistance(checkPos), a_range);
 			}
 
 			auto hkpRigidBodyPtr = Util::GethkpRigidBody(refr3DPtr.get()); 
@@ -13468,11 +13438,20 @@ namespace ALYSLC
 				) * HAVOK_TO_GAME;
 				if (a_originPos.GetDistance(checkPos) <= a_range)
 				{
+					DBG("{}'s rigidbody IN range ({} / {}).", 
+						refrPtr->GetName(), a_originPos.GetDistance(checkPos), a_range);
 					return true;
+				}
+				else
+				{
+					DBG("{}'s rigidbody NOT in range ({} / {}).", 
+						refrPtr->GetName(), a_originPos.GetDistance(checkPos), a_range);
 				}
 			}
 		}
-
+		
+		DBG("{}'s NOT in range ({}).", 
+			refrPtr->GetName(), a_range);
 		return false;
 	}
 
@@ -16559,14 +16538,6 @@ namespace ALYSLC
 			// Clear if now in 'Free Aim' mode, if the refr is too far away from the player.
 			if (!RefrIsInActivationRange(activationRefrHandle))
 			{
-				auto refr = activationRefrHandle.get().get();
-				float maxCheckDist = 
-				(
-					refr->As<RE::Actor>() && !refr->IsDead() ? 
-					GetMaxActivationDist() * Settings::fLivingActorActivationDistMult : 
-					GetMaxActivationDist()
-				);
-				const auto refr3DPtr = RE::NiPointer<RE::NiAVObject>(refr->GetCurrent3D());
 				DBG
 				(
 					"{}: Activation refr {} is no longer selected as the activation target.",
@@ -16986,6 +16957,7 @@ namespace ALYSLC
 			bool fullscreenMenuOpen = 
 			(
 				ui->IsMenuOpen(RE::BookMenu::MENU_NAME) || 
+				ui->IsMenuOpen(RE::FaderMenu::MENU_NAME) || 
 				ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) || 
 				ui->IsMenuOpen(RE::MapMenu::MENU_NAME) || 
 				ui->IsMenuOpen(RE::StatsMenu::MENU_NAME) || 

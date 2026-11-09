@@ -1919,6 +1919,36 @@ namespace ALYSLC
 				)
 			);
 		}
+		
+		// Deep copy the tintlayers from one actor base to another.
+		// Full credits to Nightfallstorm for the deep copy method, 
+		// which allows tints to persist even after re-loading a save from the main menu.
+		// https://github.com/Nightfallstorm/RaceSwapper/blob/main/src/Utils.cpp#L58
+		inline void CopyTintLayers(RE::TESNPC* a_fromActorBase, RE::TESNPC* a_toActorBase)
+		{
+			if (!a_fromActorBase || !a_toActorBase)
+			{
+				return;
+			}
+			
+			if (a_fromActorBase->tintLayers->empty())
+			{
+				return;
+			}
+
+			auto copiedTintLayers = RE::calloc<RE::BSTArray<RE::TESNPC::Layer*>>(1);
+			for (const auto tint : *a_fromActorBase->tintLayers)
+			{
+				auto newLayer = RE::calloc<RE::TESNPC::Layer>(1);
+				newLayer->tintColor = tint->tintColor;
+				newLayer->tintIndex = tint->tintIndex;
+				newLayer->preset = tint->preset;
+				newLayer->interpolationValue = tint->interpolationValue;
+				copiedTintLayers->emplace_back(newLayer);
+			}
+						
+			a_toActorBase->tintLayers = copiedTintLayers;
+		}
 
 		// Malloc, construct and return a new extra data list.
 		inline RE::ExtraDataList* CreateExtraDataList()
@@ -3177,8 +3207,9 @@ namespace ALYSLC
 						a_actorBase->faceData = baseToCopy->faceData;
 						a_actorBase->farSkin = baseToCopy->farSkin;
 						a_actorBase->skin = baseToCopy->skin;
-						a_actorBase->tintLayers = baseToCopy->tintLayers;
 						a_actorBase->bodyTintColor = baseToCopy->bodyTintColor;
+						//a_actorBase->tintLayers = baseToCopy->tintLayers;
+						Util::CopyTintLayers(baseToCopy, a_actorBase);
 					}
 				}
 
@@ -3235,8 +3266,8 @@ namespace ALYSLC
 			);
 			if (a_fromBase->headParts)
 			{
-				uint32_t numHeadPartsImported = 0;
-				DBG("{} headparts.", a_fromBase->numHeadParts);
+				DBG("{} headparts, {} base overlays.", 
+					a_fromBase->numHeadParts, a_fromBase->GetNumBaseOverlays());
 				for (auto i = 0; i < a_fromBase->numHeadParts; ++i)
 				{
 					auto headPart = a_fromBase->headParts[i];
@@ -3283,7 +3314,8 @@ namespace ALYSLC
 			);
 			a_toBase->farSkin = a_fromBase->farSkin;
 			a_toBase->skin = a_fromBase->skin;
-			a_toBase->tintLayers = a_fromBase->tintLayers;
+			//a_toBase->tintLayers = a_fromBase->tintLayers;
+			Util::CopyTintLayers(a_fromBase, a_toBase);
 
 			// Face data.
 			for (auto i = 0; i < RE::TESNPC::FaceData::Morphs::kTotal; ++i)
@@ -5102,6 +5134,13 @@ namespace ALYSLC
 		// calculate the pixel distance as if the refr were orientated such that
 		// their 'up' and 'right' axes were aligned with the camera's.
 		float GetBoundPixelDist(RE::TESObjectREFR* a_refr, bool&& a_vertAxis);
+
+		// Get the character ID for this player's character.
+		// For P1, this is always 0.
+		// For non-player characters, return -1.
+		// Otherwise: ID # = NPC with '__CoopCharacter#' as its actor base editor ID.
+		// Kinda gross.
+		int8_t GetCharacterID(RE::TESNPC* a_actorBase);
 
 		// First, get a pair of capsule rigid body endpoints (vertices + radii) 
 		// for the given refr that is closest to the given position.

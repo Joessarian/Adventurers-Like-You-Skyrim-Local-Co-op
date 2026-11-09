@@ -195,11 +195,11 @@ namespace ALYSLC
 		prevCamState = camState;
 
 		// REMOVE when done debugging.
-		/*if (camTargetPos == RE::NiPoint3() || 
+		if (camTargetPos == RE::NiPoint3() || 
 			isnan(camTargetPos.x) ||
 			isnan(camTargetPos.x) ||
-			isnan(camTargetPos.z))*/
-		/*{
+			isnan(camTargetPos.z))
+		{
 			DBG
 			(
 				"Target pos: {}, focus: {}, centroid: {}, "
@@ -216,7 +216,7 @@ namespace ALYSLC
 				camSavedRadialDistanceOffset,
 				camRadialDistanceOffset
 			);
-		}*/
+		}
 		
 		// REMOVE when done debugging.
 		/*DebugAPI::QueuePoint3D(ToVec3(camOriginPoint), 0xFFFF00FF, 5.0f);
@@ -1180,6 +1180,49 @@ namespace ALYSLC
 		return true;
 	}
 
+	void CameraManager::CalcBasePoint()
+	{
+		// Calculate the base point equidistant to all players and the average player height.
+		// No collisions accounted for or smoothing applied.	
+		
+		const auto prevCentroidPoint = camCentroidPoint;
+		camCentroidPoint = RE::NiPoint3();
+		// Set average player height to offset the base origin point.
+		avgPlayerHeight = 0.0f;
+		for (const auto& p : glob.coopPlayers)
+		{
+			if (!p->isActive)
+			{
+				continue;
+			}
+			
+			if (focalPID != -1 && p->playerID != focalPID)
+			{
+				continue;
+			}
+
+			auto mountPtr = p->GetCurrentMount();
+			camCentroidPoint += 
+			(
+				mountPtr ?
+				mountPtr->data.location :
+				p->coopActor->data.location
+			);
+			avgPlayerHeight += p->coopActor->GetHeight();
+		}
+		
+		if (focalPID == -1)
+		{
+			avgPlayerHeight /= glob.livingPlayers;
+			camCentroidPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
+		}
+
+		if (camCentroidPoint.Length() == 0.0f)
+		{
+			DBG("ERR: Cam centroid point not set. Prev: {}.", prevCentroidPoint);
+		}
+	}
+
 	void CameraManager::CalcNextFocusPoint()
 	{
 		// Calculate the next focus point (origin point offset along the Z axis).
@@ -1257,24 +1300,8 @@ namespace ALYSLC
 		camCentroidPoint =
 		camOriginPoint = RE::NiPoint3();
 
-		// Calculate the point equidistant to all players first (no collisions accounted for).		
-		for (const auto& p : glob.coopPlayers)
-		{
-			if (!p->isActive)
-			{
-				continue;
-			}
-			
-			auto mountPtr = p->GetCurrentMount();
-			camCentroidPoint += 
-			(
-				mountPtr ?
-				mountPtr->data.location :
-				p->coopActor->data.location
-			);
-		}
-
-		camCentroidPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
+		// Calculate the point equidistant to all players first (no collisions accounted for).
+		CalcBasePoint();
 		camCentroidPoint.x = Util::InterpolateSmootherStep
 		(
 			oldCentroidPoint.x, camCentroidPoint.x, 0.5f * camInterpFactor
@@ -1726,8 +1753,7 @@ namespace ALYSLC
 					(
 						dialogueTargetPtr->As<RE::Actor>() ? 
 						Util::GetHeadPosition(dialogueTargetPtr->As<RE::Actor>()) : 
-						//Util::GetTorsoPosition(dialogueTargetPtr->As<RE::Actor>()) : 
-						Util::GetRefrPosition(dialogueTargetPtr.get())
+						Util::Get3DCenterPos(dialogueTargetPtr.get())
 					);
 					listenerToSpeakerDir = Util::RotationToDirectionVect
 					(
@@ -1743,8 +1769,6 @@ namespace ALYSLC
 				else
 				{
 					speakerPos = Util::GetHeadPosition(dialogueP->coopActor.get());
-					//dialogueP->mm->playerTorsoPosition;
-					//Util::GetTorsoPosition(dialogueP->coopActor.get());
 					listenerToSpeakerDir = Util::RotationToDirectionVect
 					(
 						0.0f, Util::ConvertAngle
@@ -1772,7 +1796,11 @@ namespace ALYSLC
 					!isnan(player3DPtr->worldBound.center.Length()) &&
 					!isinf(player3DPtr->worldBound.center.Length()))
 				{
-					radius = player3DPtr->worldBound.radius * 4.0f;
+					radius = min
+					(
+						player3DPtr->worldBound.radius * 4.0f,
+						Settings::fAutoEndDialogueRadius
+					);
 				}
 				else
 				{
@@ -1930,20 +1958,15 @@ namespace ALYSLC
 					// when not switching speakers.
 					tRatio = 
 					(
-						Util::InterpolateEaseOut
+						movingToDialogueStartPos ? 
+						min
 						(
-							0.0f, 1.0f, min(1.0f, xyDistToTarget / max(0.01f, radius)), 9.0f
-						) *
-						(
-							movingToDialogueStartPos ? 
-							min
-							(
-								1.0f,
-								Util::GetElapsedSeconds(dialogueCameraTP) / 
-								secsCamDialogueStartTransition
-							) :
-							0.8f * camInterpFactor
-						)
+							1.0f,
+							Util::GetElapsedSeconds(dialogueCameraTP) / 
+							secsCamDialogueStartTransition
+						) :
+						//0.8f * 
+						camInterpFactor
 					);
 				}
 				
@@ -2419,7 +2442,7 @@ namespace ALYSLC
 				
 				const bool isAdjustingCam = IsAdjustingCamera();
 				if ((!baseTargetPosVisible && !movementResult.hit) && 
-					(isAdjustingCam || Util::GetElapsedSeconds(playerInViewTP) <= 0.5f))
+					(isAdjustingCam || Util::GetElapsedSeconds(playerInViewTP) <= 1.0f))
 				{
 					// Even if the base target position is not visible from the focus point.
 					// stay back instead of jumping forward if less than half a second
@@ -3412,7 +3435,7 @@ namespace ALYSLC
 		float signAdjustment = 1.0f;
 		// Use camera origin position's path direction 
 		// as the camera movement direction. 
-		if (camCentroidPointDelta.Length() > 1E-2f) 
+		if (camCentroidPointDelta.Length() > 0.1f) 
 		{
 			float originMovYaw = Util::DirectionToGameAngYaw
 			(
@@ -3445,8 +3468,31 @@ namespace ALYSLC
 
 		if (a_computePitch && !turnTowardsTarget)
 		{
+			bool shouldPitch = camCentroidPointDelta.Length() > 0.1f;
+			/*if (shouldPitch)
+			{
+				for (const auto& p : glob.coopPlayers)
+				{
+					if (!p->isActive)
+					{
+						continue;
+					}
+
+					if (focalPID != -1 && p->playerID != focalPID)
+					{
+						continue;
+					}
+
+					if (p->lsMoved || Util::IsAirborne(p->coopActor.get()))
+					{
+						shouldPitch = true;
+						break;
+					}
+				}
+			}*/
+			
 			float sign = signAdjustment < 0.0f ? -1.0f : 1.0f;
-			if (camCentroidPointDelta.Length() > 0.1f)
+			if (shouldPitch)
 			{
 				avgAutoRotateAngle = Util::InterpolateSmootherStep
 				(
@@ -3476,7 +3522,7 @@ namespace ALYSLC
 				"PITCH: Pitch delta: {} ({} - {}), sign adjustment: {}. "
 				"Delta length: {} ({},{},{}). Interp factor: {}.",
 				avgAutoRotateAngle * TO_DEGREES,
-				camCentroidPointDelta.Length() > 0.1f ? 
+				shouldPitch ? 
 				0.8f * sign * Util::DirectionToGameAngPitch
 				(
 					camCentroidPointDelta
@@ -3496,8 +3542,7 @@ namespace ALYSLC
 				ToVec3(focusPoint), 
 				ToVec3(focusPoint + camCentroidPointDelta * 50.0f),
 				0xFF0000FF, 5.0f, 2.0f
-			);
-			*/
+			);*/
 		}
 		else
 		{
@@ -4223,30 +4268,12 @@ namespace ALYSLC
 		}
 
 		// Positions.
-		// Set focus point to the origin point.
-		camCentroidPoint = RE::NiPoint3();
-		// Set average player height to offset the base origin point.
-		avgPlayerHeight = 0.0f;
-		for (const auto& p : glob.coopPlayers)
-		{
-			if (!p->isActive)
-			{
-				continue;
-			}
-			
-			avgPlayerHeight += p->coopActor->GetHeight();
-			camCentroidPoint += p->coopActor->data.location;
-		}
-		
-		avgPlayerHeight /= glob.livingPlayers;
-		DBG("Average player height: {}.", avgPlayerHeight);
-		camCentroidPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
-		camCentroidPoint.z += avgPlayerHeight;
-
+		// Set origin/focus point to the centroid point elevated by the average player height.
+		CalcBasePoint();
 		camFocusPoint =
 		camLockOnFocusPoint = 
 		camCollisionOriginPoint = 
-		camOriginPoint = camCentroidPoint;
+		camOriginPoint = camCentroidPoint + RE::NiPoint3(0.0f, 0.0f, avgPlayerHeight);
 
 		camCentroidPointDelta = RE::NiPoint3();
 		auto bounds = Util::GetVertCollPoints(camOriginPoint, 0.0f);
@@ -5243,7 +5270,7 @@ namespace ALYSLC
 				(
 					dialogueTargetPtr->As<RE::Actor>() ? 
 					Util::GetHeadPosition(dialogueTargetPtr->As<RE::Actor>()) : 
-					Util::GetRefrPosition(dialogueTargetPtr.get())
+					Util::Get3DCenterPos(dialogueTargetPtr.get())
 				);
 			}
 			else
@@ -5266,7 +5293,11 @@ namespace ALYSLC
 				!isnan(player3DPtr->worldBound.center.Length()) &&
 				!isinf(player3DPtr->worldBound.center.Length()))
 			{
-				radius = player3DPtr->worldBound.radius * 4.0f;
+				radius = min
+				(
+					player3DPtr->worldBound.radius * 4.0f,
+					Settings::fAutoEndDialogueRadius
+				);
 			}
 			else
 			{
@@ -5275,16 +5306,18 @@ namespace ALYSLC
 
 			const float startingTargetPitch = Util::GetPitchBetweenPositions
 			(
-				camRefrFocusPoint, speakerPos
+				camTargetPos, speakerPos
 			);
 			const float startingTargetYaw = Util::GetYawBetweenPositions
 			(
-				camRefrFocusPoint, speakerPos
+				camTargetPos, speakerPos
 			);
 			float pitchDelta = Util::NormalizeAngToPi(startingTargetPitch - camPitch);
 			float yawDelta = Util::NormalizeAngToPi(startingTargetYaw - camYaw);
 			float tRatio = camInterpFactor;
-			float rotMult = 1.0f;
+			// Multiplier applied to the target position pitches/yaws to lessen 
+			// the amount of orbiting around the NPC when the player approaches them.
+			float posRotMult = 1.0f;
 			// 15 frames to rotate quickly and face the target.
 			const bool turnQuicklyToFaceSpeaker = 
 			(
@@ -5294,7 +5327,7 @@ namespace ALYSLC
 			);
 			if (turnQuicklyToFaceSpeaker)
 			{
-				rotMult = 1.0f;
+				posRotMult = 1.0f;
 				tRatio = 
 				(
 					Settings::bDialogueCamFocusSwitchSmoothing ? 
@@ -5304,9 +5337,13 @@ namespace ALYSLC
 			}
 			else
 			{
-				rotMult = Util::InterpolateEaseOut
+				// Slow down when within half of the dialogue radius.
+				posRotMult = Util::InterpolateEaseOut
 				(
-					0.0f, 1.0f, min(1.0f, xyDistToTarget / max(0.01f, radius)), 5.0f
+					0.0f, 
+					1.0f, 
+					min(1.0f, (xyDistToTarget - 0.5f * radius) / max(0.01f, radius)), 
+					5.0f
 				);
 				tRatio = 
 				(
@@ -5314,22 +5351,31 @@ namespace ALYSLC
 					min
 					(
 						1.0f,
-						Util::GetElapsedSeconds(dialogueCameraTP) / secsCamDialogueStartTransition
+						Util::GetElapsedSeconds(dialogueCameraTP) / 
+						secsCamDialogueStartTransition
 					) :
-					camInterpFactor
+					2.0f * camInterpFactor
 				);
 			}
 			
-			pitchDelta = Util::InterpolateSmootherStep(0.0f, rotMult * pitchDelta, tRatio);
-			yawDelta = Util::InterpolateSmootherStep(0.0f, rotMult * yawDelta, tRatio);
+			pitchDelta = Util::InterpolateSmootherStep(0.0f, pitchDelta, tRatio);
+			yawDelta = Util::InterpolateSmootherStep(0.0f, yawDelta, tRatio);
 
 			// Apply the deltas for this frame.
 			camPitch = Util::NormalizeAngToPi(camPitch + pitchDelta);
 			camYaw = Util::NormalizeAng0To2Pi(camYaw + yawDelta);
 			
-			// Set equal to cam yaw angle to set.
-			camTargetPosPitch = camBaseTargetPosPitch = camPitch;
-			camTargetPosYaw = camBaseTargetPosYaw = camYaw;
+			// Do not orbit the focus position if the player is too close to the speaker.
+			camTargetPosPitch = 
+			camBaseTargetPosPitch = Util::NormalizeAngToPi
+			(
+				camBaseTargetPosPitch + posRotMult * pitchDelta
+			);
+			camTargetPosYaw = 
+			camBaseTargetPosYaw = Util::NormalizeAng0To2Pi
+			(
+				camBaseTargetPosYaw + posRotMult * yawDelta
+			);
 
 			// Set all to P1's pitch/yaw if invalid.
 			if (isnan(camTargetPosYaw) || isinf(camTargetPosYaw))
@@ -5448,7 +5494,10 @@ namespace ALYSLC
 			else
 			{
 				UpdateAutoRotateAngleMult();
-				if (Settings::bAutoRotateCamPitch && !isAdjustingRotation && reqToAutoPitch)
+				if (Settings::bAutoRotateCamPitch &&
+					!inDialogueCamState &&
+					reqToAutoPitch &&
+					!isAdjustingRotation)
 				{
 					const float framesToReachFullDelta = 
 					(
@@ -5528,7 +5577,7 @@ namespace ALYSLC
 					movementPitchOffset = 0.0f;
 				}
 
-				if (Settings::bAutoRotateCamYaw && !isAdjustingRotation)
+				if (Settings::bAutoRotateCamYaw && !inDialogueCamState && !isAdjustingRotation)
 				{
 					const float framesToReachFullDelta = 
 					(
@@ -6145,10 +6194,16 @@ namespace ALYSLC
 		if (switchToDialogueState)
 		{
 			camState = CamState::kDialogue;
+			// Save rotation to restore later.
+			camCurrentPitchToFocus = camPitch;
+			camCurrentYawToFocus = camYaw;
 		}
 		else if (switchBackToAutoTrail)
 		{
 			camState = CamState::kAutoTrail;
+			// Restore rotation cached before transitioning to dialogue state.
+			camPitch = camTargetPosPitch = camBaseTargetPosPitch = camCurrentPitchToFocus;
+			camYaw = camTargetPosYaw = camBaseTargetPosYaw = camCurrentYawToFocus;
 		}
 
 		// Also switch back to auto trail if the lock on target becomes invalid.
@@ -6335,18 +6390,6 @@ namespace ALYSLC
 			camRadialDistanceOffset = 0.0f;
 		}
 
-		// Use the given clip distance for interior cells, as long as it's not 0 (why?).
-		// Use pre-defined max zoom distance otherwise.
-		camMaxZoomOutDist = 
-		(
-			currentCell && 
-			!exteriorCell && 
-			currentCell->cellData.interior && 
-			currentCell->cellData.interior->clipDist > 0.0f ?
-			currentCell->cellData.interior->clipDist :
-			Settings::fMaxRaycastAndZoomOutDistance
-		);
-
 		// If not using auto-zoom, we can set the target radial distance directly here 
 		// and return early.
 		if (!Settings::bAutoAdjustCamZoom)
@@ -6368,10 +6411,12 @@ namespace ALYSLC
 
 		// IMPORTANT:
 		// Raycast hits and on-screen checks seem inconsistent 
-		// when zoomed out beyond a variable distance (likely the cell's clip distance).
+		// when zoomed out beyond a variable distance:
+		// likely the cell's clip distance, 
+		// but not always given as a member of the cell's interior data.
 		// Zooming out beyond this distance will result in the game 
 		// considering all players offscreen (and no raycast hits),
-		// even though their positions are in front of the camera and visually in view.
+		// even though their positions are in front of the camera and visually on screen.
 		// Get approximation for the max settable radial distance by binary searching a range.
 
 		const uint32_t maxIterations = 
@@ -6415,58 +6460,75 @@ namespace ALYSLC
 			Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kZoom
 		);
 		uint32_t i = 0;
-
-		// NOTE:
-		// Guaranteed to find the current clip distance, but is performance intensive (18 loops).
-		// Commented out for now unless using the interior cell data's reported clip distance 
-		// proves inconsistent.
-		// To be safe, we'll cap it to prevent an infinite loop.
-		/*
-		while (!minDiffReached && i <= maxIterations)
+		
+		// Use the given clip distance for interior cells, as long as it's not 0 (why?).
+		// Use pre-defined max zoom distance otherwise.
+		camMaxZoomOutDist = Settings::fMaxRaycastAndZoomOutDistance;
+		if (currentCell && 
+			!exteriorCell && 
+			currentCell->cellData.interior)
 		{
-			currentCheckOnScreen = AllPlayersOnScreenAtCamOrientation
-			(
-				onScreenTestPos, rotationToCheck, usePlayerPositions
-			);
-			if (currentCheckOnScreen)
+			if (currentCell->cellData.interior->clipDist == 0.0f)
 			{
-				// On screen at the checked position, so attempt to zoom out more.
-				radialDistanceRangeMin = 
-				lastOnScreenRadialDist = radialDistanceRangeMid;
+				// NOTE:
+				// Can find the current clip distance even if the cell data reported value is 0,
+				// but is performance intensive (18 loops).
+				// Only use if the interior cell data's reported clip distance is 0.
+				// To be safe, we'll cap it to prevent an infinite loop.
+				while (!minDiffReached && i <= maxIterations)
+				{
+					currentCheckOnScreen = AllPlayersOnScreenAtCamOrientation
+					(
+						onScreenTestPos, rotationToCheck, usePlayerPositions
+					);
+					if (currentCheckOnScreen)
+					{
+						// On screen at the checked position, so attempt to zoom out more.
+						radialDistanceRangeMin = 
+						lastOnScreenRadialDist = radialDistanceRangeMid;
+					}
+					else
+					{
+						// Not on screen at the checked position, so zoom in.
+						radialDistanceRangeMax = radialDistanceRangeMid;
+					}
+
+					radialDistanceRangeMid = 
+					(
+						(radialDistanceRangeMax + radialDistanceRangeMin) / 2.0f
+					);
+					onScreenTestPos = focusPoint + dirFromFocus * (radialDistanceRangeMid);
+					minDiffReached = 
+					(
+						radialDistanceRangeMax - radialDistanceRangeMin < 
+						Settings::fMinAutoZoomDelta
+					);
+					++i;
+				}
+
+				// Converged on a max zoom out distance.
+				if (currentCheckOnScreen)
+				{
+					camMaxZoomOutDist = radialDistanceRangeMid;
+				}
+				else if (lastOnScreenRadialDist < Settings::fMaxRaycastAndZoomOutDistance)
+				{
+					camMaxZoomOutDist = lastOnScreenRadialDist;
+				}
+				else
+				{
+					// If the check failed to find a distance 
+					// at which all players are on screen (range min is 0),
+					// set to the previous radial distance to prevent jarring changes in zoom.
+					camMaxZoomOutDist = max(prevRadialDistance, radialDistanceRangeMin);
+				}
 			}
 			else
 			{
-				// Not on screen at the checked position, so zoom in.
-				radialDistanceRangeMax = radialDistanceRangeMid;
+				camMaxZoomOutDist = currentCell->cellData.interior->clipDist;
 			}
-
-			radialDistanceRangeMid = (radialDistanceRangeMax + radialDistanceRangeMin) / 2.0f;
-			onScreenTestPos = focusPoint + dirFromFocus * (radialDistanceRangeMid);
-			minDiffReached = 
-			(
-				radialDistanceRangeMax - radialDistanceRangeMin < Settings::fMinAutoZoomDelta
-			);
-			++i;
 		}
-
-		// Converged on a max zoom out distance.
-		if (currentCheckOnScreen)
-		{
-			camMaxZoomOutDist = radialDistanceRangeMid;
-		}
-		else if (lastOnScreenRadialDist < Settings::fMaxRaycastAndZoomOutDistance)
-		{
-			camMaxZoomOutDist = lastOnScreenRadialDist;
-		}
-		else
-		{
-			// If the check failed to find a distance 
-			// at which all players are on screen (range min is 0),
-			// set to the previous radial distance to prevent jarring changes in zoom.
-			camMaxZoomOutDist = max(prevRadialDistance, radialDistanceRangeMin);
-		}
-		*/
-
+		
 		// When outside, zoom in when all players are under a roof
 		// or any protruding surface above their heads.
 		auto tes = RE::TES::GetSingleton();
@@ -6960,12 +7022,15 @@ namespace ALYSLC
 				// Checking if 'currentTopicInfo' is available is not enough 
 				// for switching back to a position behind the player 
 				// because it sometimes gets cleared and repopulated after one frame.
-				// UnkB8 is set not set to true when this one frame change happens.
+				// UnkB8 is not set to true when this one frame change happens,
+				// but also isn't set after the NPC finishes their opening lines.
+				// UnkB6 is true during this one frame where the dialogue info is cleared,
+				// but is false 
 				if (menuTopicManager->currentTopicInfo)
 				{
 					camDialogueSpeakerHandle = camDialogueTargetHandle;
 				}
-				else if (menuTopicManager->unkB8)
+				else if (!menuTopicManager->unkB6)
 				{
 					camDialogueSpeakerHandle = 
 					(
@@ -6976,6 +7041,13 @@ namespace ALYSLC
 				if (Util::HandleIsValid(camDialogueSpeakerHandle) && 
 					camDialogueSpeakerHandle != prevSpeakerHandle)
 				{
+					DBG("Speaker change to {} ({}).", 
+						camDialogueSpeakerHandle.get()->GetName(),
+						menuTopicManager->currentTopicInfo ? 
+						"NPC" : 
+						!menuTopicManager->unkB6 ? 
+						"Player" : 
+						"WUH");
 					dialogueSpeakerChangedTP = SteadyClock::now();
 				}
 			}

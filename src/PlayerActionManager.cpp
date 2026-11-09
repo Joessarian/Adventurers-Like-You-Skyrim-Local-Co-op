@@ -110,25 +110,29 @@ namespace ALYSLC
 			!packageStackMap.contains(PackageIndex::kDefault) || 
 			!packageStackMap.contains(PackageIndex::kCombatOverride))
 		{
-			packageStackMap.insert_or_assign
-			(
-				PackageIndex::kDefault, glob.coopPackageFormlists[2 * playerID]
-			);
-			packageStackMap.insert_or_assign
-			(
-				PackageIndex::kCombatOverride, 
-				glob.coopPackageFormlists[2 * playerID + 1]
-			);
-			if (!glob.coopPackageFormlists[2 * playerID] || 
-				!glob.coopPackageFormlists[2 * playerID + 1]) 
+			const auto characterID = Util::GetCharacterID(coopActor->GetActorBase());
+			if (characterID > -1)
 			{
-				DBG
+				packageStackMap.insert_or_assign
 				(
-					"Default/combat override co-op package formlist for {} is invalid: {}, {}.", 
-					coopActor->GetName(),
-					(bool)!glob.coopPackageFormlists[2 * playerID],
-					(bool)!glob.coopPackageFormlists[2 * playerID + 1]
+					PackageIndex::kDefault, glob.coopPackageFormlists[2 * characterID]
 				);
+				packageStackMap.insert_or_assign
+				(
+					PackageIndex::kCombatOverride, 
+					glob.coopPackageFormlists[2 * characterID + 1]
+				);
+				if (!glob.coopPackageFormlists[2 * characterID] || 
+					!glob.coopPackageFormlists[2 * characterID + 1]) 
+				{
+					DBG
+					(
+						"Default/combat override co-op package formlist for {} is invalid: {}, {}.", 
+						coopActor->GetName(),
+						(bool)!glob.coopPackageFormlists[2 * characterID],
+						(bool)!glob.coopPackageFormlists[2 * characterID + 1]
+					);
+				}
 			}
 		}
 
@@ -1605,18 +1609,20 @@ namespace ALYSLC
 				// Fallback:
 				// Get associated formlists based on the player character's index,
 				// which is the number at the end of their editor ID.
-				const auto editorID = RE::BSFixedString(coopActor->GetFormEditorID());
-				const auto characterIndex = editorID.back() - '0';
-				packageStackMap.insert_or_assign
-				(
-					PackageIndex::kDefault, 
-					glob.coopPackageFormlists[2 * characterIndex]
-				);
-				packageStackMap.insert_or_assign
-				(
-					PackageIndex::kCombatOverride, 
-					glob.coopPackageFormlists[2 * characterIndex + 1]
-				);
+				const auto characterID = Util::GetCharacterID(coopActor->GetActorBase());
+				if (characterID > -1)
+				{
+					packageStackMap.insert_or_assign
+					(
+						PackageIndex::kDefault, 
+						glob.coopPackageFormlists[2 * characterID]
+					);
+					packageStackMap.insert_or_assign
+					(
+						PackageIndex::kCombatOverride, 
+						glob.coopPackageFormlists[2 * characterID + 1]
+					);
+				}
 			}
 		}
 		

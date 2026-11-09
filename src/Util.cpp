@@ -1995,7 +1995,11 @@ namespace ALYSLC
 			ImportHeadPartsFromBase(a_baseToCopy, actorBase);
 			DBG
 			(
-				"Imported {}'s appearance to {}", a_baseToCopy->GetName(), a_toActor->GetName()
+				"Imported {}'s appearance to {}. Has overlays: {}, {}.",
+				a_baseToCopy->GetName(), 
+				a_toActor->GetName(),
+				a_baseToCopy->HasOverlays(),
+				actorBase->HasOverlays()
 			);
 		}
 
@@ -2026,11 +2030,11 @@ namespace ALYSLC
 				a_toActor->race->GetName()
 			);
 			auto actorBase = a_toActor->GetActorBase();
+			// Switch gender before applying new head parts.
+			SetActorGender(a_toActor, a_setFemale, a_setOppositeGenderAnims);
 			// Remove all headparts from the player.
 			// The game will then supply the defaults.
 			RemoveAllHeadParts(a_toActor);
-			// Switch gender before applying new head parts.
-			SetActorGender(a_toActor, a_setFemale, a_setOppositeGenderAnims);
 			// Import the default race-given headparts after.
 			ImportDefaultRacialHeadParts(a_toActor->race, a_setFemale, actorBase);
 		}
@@ -3840,6 +3844,29 @@ namespace ALYSLC
 				)
 			);
 		}
+
+		int8_t GetCharacterID(RE::TESNPC* a_actorBase)
+		{
+			// Get the character ID for this player's character.
+			// For P1, this is always 0.
+			// For non-player characters, return -1.
+			// Otherwise: ID # = NPC with '__CoopCharacter#' as its actor base editor ID.
+			// Kinda gross.
+
+			if (!a_actorBase)
+			{
+				return -1;
+			}
+
+			if (a_actorBase->IsPlayer())
+			{
+				return 0;
+			}
+			else
+			{
+				return (Util::GetEditorID(a_actorBase).back() - '0');
+			}
+		};
 
 		RE::NiPoint3 GetClosestRefrCapsuleAxisPointToPos
 		(
@@ -8916,6 +8943,12 @@ namespace ALYSLC
 			// Can choose to only reset follower faction state if the player character 
 			// is not currently a follower (bugged state).
 
+			// Enderal does not have vanilla Skyrim's follower factions or follower count.
+			if (ALYSLC::EnderalCompat::g_installed)
+			{
+				return;
+			}
+
 			if (!a_actor || 
 				!glob.globalDataInit ||
 				!glob.currentFollowerFaction || 
@@ -9755,7 +9788,7 @@ namespace ALYSLC
 					PlayIdle("ResetRoot", a_actor);
 				}
 				
-				int32_t characterID = GetEditorID(actorBase).back() - '0';
+				auto characterID = GetCharacterID(actorBase);
 				if (characterID <= 0 || 2 * characterID + 1 >= glob.coopPackageFormlists.size())
 				{
 					ERR

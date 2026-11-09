@@ -16,49 +16,24 @@ namespace ALYSLC
 
 		// Import defaults.
 		SI_Error err = SI_OK;
-		if (ALYSLC::EnderalCompat::g_installed) 
+		if (err = ini.LoadFile(defaultFilePathSSE.c_str()); err != SI_OK)
 		{
-			if (err = ini.LoadFile(defaultFilePathEnderal.c_str()); err != SI_OK) 
-			{
-				ERR
-				(
-					"ERR ({}): ImportAllSettings: "
-					"Could not load default Enderal settings file '{}'. "
-					"Ensure the file exists at that location. "
-					"About to import the user's modifiable settings.", 
-					err, defaultFilePathEnderal.string()
-				);
-			}
-			else
-			{
-				INF
-				(
-					"Successfully opened default Enderal settings configuration file '{}'.",
-					defaultFilePathEnderal.string()
-				);
-			}
+			ERR
+			(
+				"ERR ({}): ImportAllSettings: "
+				"Could not load default Skyrim SE settings file '{}'. "
+				"Ensure the file exists at that location. "
+				"About to import the user's modifiable settings.", 
+				err, defaultFilePathSSE.string()
+			);
 		}
 		else
 		{
-			if (err = ini.LoadFile(defaultFilePathSSE.c_str()); err != SI_OK)
-			{
-				ERR
-				(
-					"ERR ({}): ImportAllSettings: "
-					"Could not load default Skyrim SE settings file '{}'. "
-					"Ensure the file exists at that location. "
-					"About to import the user's modifiable settings.", 
-					err, defaultFilePathEnderal.string()
-				);
-			}
-			else
-			{
-				INF
-				(
-					"Successfully opened default Skyrim settings configuration file '{}'.", 
-					defaultFilePathSSE.string()
-				);
-			}
+			INF
+			(
+				"Successfully opened default Skyrim settings configuration file '{}'.", 
+				defaultFilePathSSE.string()
+			);
 		}
 
 		// Are the default binds error-free?
@@ -76,49 +51,25 @@ namespace ALYSLC
 		// Import player-modified settings.
 		CSimpleIniA ini2{ };
 		ini2.SetUnicode();
-		if (ALYSLC::EnderalCompat::g_installed)
+
+		if (err = ini2.LoadFile(userSettingsFilePathSSE.c_str()); err != SI_OK)
 		{
-			if (err = ini2.LoadFile(userSettingsFilePathEnderal.c_str()); err != SI_OK)
-			{
-				ERR
-				(
-					"({}): Could not load Enderal player settings config file '{}'. "
-					"If you've made changes to the default settings, "
-					"ensure the file exists at that location. "
-					"Now using the plugin's hardcoded default settings.", 
-					err, userSettingsFilePathEnderal.string()
-				);
-			}
-			else
-			{
-				INF
-				(
-					"Successfully opened user-modified Enderal settings configuration file '{}'.",
-					userSettingsFilePathEnderal.string()
-				);
-			}
+			INF
+			(
+				"({}): Could not load Skyrim SE player settings config file '{}'. "
+				"If you've made changes to the default settings, "
+				"ensure the file exists at that location. "
+				"Now using the plugin's hardcoded default settings.", 
+				err, userSettingsFilePathSSE.string()
+			);
 		}
 		else
 		{
-			if (err = ini2.LoadFile(userSettingsFilePathSSE.c_str()); err != SI_OK)
-			{
-				ERR
-				(
-					"({}): Could not load Skyrim SE player settings config file '{}'. "
-					"If you've made changes to the default settings, "
-					"ensure the file exists at that location. "
-					"Now using the plugin's hardcoded default settings.", 
-					err, userSettingsFilePathSSE.string()
-				);
-			}
-			else
-			{
-				INF
-				(
-					"Successfully opened user-modified Skyrim settings configuration file '{}'.",
-					userSettingsFilePathSSE.string()
-				);
-			}
+			INF
+			(
+				"Successfully opened user-modified Skyrim settings configuration file '{}'.",
+				userSettingsFilePathSSE.string()
+			);
 		}
 
 		// Are the player-customized binds error-free?
@@ -140,13 +91,14 @@ namespace ALYSLC
 			(
 				fmt::format
 				(
-					"[ALYSLC]\nERROR: Invalid binds found:\nDefault settings.ini: "
-					"{}\n{}: {}\nTroubleshooting info messages are in the 'ALYSLC.log' file "
-					"and have the [BINDS] tag.\nAll invalid binds were disabled.", 
-					!defBindsSucc ? "[Invalid]" : "[Valid]", 
-					ALYSLC::EnderalCompat::g_installed ? 
-					"ALYSLC Enderal.ini" : 
-					"ALYSLC.ini",
+					"[ALYSLC]\n"
+					"ERROR: Invalid binds found:\n"
+					"Default settings.ini: {}\n"
+					"ALYSLC.ini: {}\n"
+					"Troubleshooting info messages are in the 'ALYSLC.log' file "
+					"and have the [BINDS] tag.\n"
+					"All invalid binds were disabled.", 
+					!defBindsSucc ? "[Invalid]" : "[Valid]",
 					!customBindsSucc ? "[Invalid]" : "[Valid]"
 				).c_str()
 			);
