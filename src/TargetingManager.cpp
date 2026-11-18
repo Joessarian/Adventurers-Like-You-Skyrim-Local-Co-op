@@ -5994,7 +5994,7 @@ namespace ALYSLC
 		// Get damage to apply from a flop attack.
 
 		auto asActor = a_releasedRefr->As<RE::Actor>();
-		float actorWeight = 0.0f;
+		float actorWeight = asActor ? asActor->GetWeight() : 0.0f;
 		float releasedRefrWeight = max(0.1f, a_releasedRefr->GetWeight());
 		const auto releasedPIndex = GlobalCoopData::GetCoopPlayerIndex(a_releasedRefr);
 		float inventoryWeight = 
@@ -6051,13 +6051,13 @@ namespace ALYSLC
 
 			// 1x damage at 0 equip weight,
 			// 2x/3x damage at 0/100 actor weight, 100 equip weight, 
-			// approaching 3x at infinite weight.
+			// approaching 5x at infinite weight.
 			// Multiplying the inventory and equipped weight factors together 
 			// gives 4x/6x at full encumbrance and 100 equip weight.
 			equipmentWeightFactor *= 
 			(
 				1.0f + 
-				((actorWeight + 100.0f) / 50.0f) / 
+				((actorWeight + 100.0f) / 10.0f) / 
 				(1 + expf((100.0f - equippedWeight) / 10.0f))
 			);
 		}
@@ -8694,7 +8694,7 @@ namespace ALYSLC
 				);
 				RE::NiPoint3 vertexA{ };
 				RE::NiPoint3 vertexB{ };
-				RE::NiPoint3 zAxisDir{ };
+				//RE::NiPoint3 zAxisDir{ };
 				const float& capsuleRadius = hkpCapsuleShape->radius;
 				const auto& hkTransform = rigidBodyPtr->motion.motionState.transform;
 				RE::NiPoint3 vertAOffset = 
@@ -8726,34 +8726,21 @@ namespace ALYSLC
 
 				vertexA = niTransform * vertAOffset;
 				vertexB = niTransform * vertBOffset;
-				RE::NiPoint3 temp = 
+				/*RE::NiPoint3 temp = 
 				(
 					vertexA.z > vertexB.z ? 
 					vertexA - vertexB : 
 					vertexB - vertexA
 				);
 				temp.Unitize();
-				zAxisDir = { temp.x, temp.y, temp.z };
-
-				const glm::vec4 zAxisDirVec = ToVec4(zAxisDir);
+				zAxisDir = { temp.x, temp.y, temp.z };*/
+				
+				// Node position to offset casts from.
+				const glm::vec4 originPos = ToVec4(a_nodePtr->world.translate);
 				float capsuleLength = 
 				(
 					(vertexB - vertexA).Length() + 
 					2.0f * hkpCapsuleShape->radius * HAVOK_TO_GAME
-				);
-				// Node position to offset casts from.
-				// At one end of the capsule.
-				glm::vec4 originPos =
-				(
-					vertexA.z > vertexB.z ?
-					ToVec4
-					(
-						vertexB - zAxisDir * hkpCapsuleShape->radius * HAVOK_TO_GAME
-					) :
-					ToVec4
-					(
-						vertexA - zAxisDir * hkpCapsuleShape->radius * HAVOK_TO_GAME
-					)
 				);
 				auto velDir = glm::normalize(ToVec4(charController->outVelocity * HAVOK_TO_GAME));
 				float havokSpeed = glm::length(velDir);
@@ -8776,7 +8763,7 @@ namespace ALYSLC
 					glm::vec4(0.0f, 0.0f, 0.0f, 0.0f) : 
 					glm::normalize(velDir)
 				);
-
+				
 				return
 				(
 					Raycast::ClusterCast
@@ -8871,14 +8858,7 @@ namespace ALYSLC
 						ToNiPoint3(a_result.hitPos),
 						shouldKnockDown
 					);
-					DBG
-					(
-						"{}: Bumped {}. Should stagger: {}, should knock down: {}.",
-						coopActor->GetName(),
-						bumpedActor->GetName(), 
-						shouldStagger, 
-						shouldKnockDown
-					);
+
 					if (shouldStagger && !shouldKnockDown)
 					{
 						// Update stagger 'owner'.
@@ -8888,7 +8868,30 @@ namespace ALYSLC
 						}
 
 						// Apply stagger and damage.
-						bumpedActor->NotifyAnimationGraph("staggerStart");
+						// For now, play stagger animation for players, as the hit data stagger 
+						// causes ragdoll glitches if applied before a knockdown.
+						if (isPlayer)
+						{
+							bumpedActor->NotifyAnimationGraph("staggerStart");
+						}
+
+						// Value doesn't seem to make any difference for stagger or pushback.
+						/*float stagger = Util::InterpolateEaseIn
+						(
+							0.0f,
+							1.0f,
+							min
+							(
+								1.0f,
+								havokImpactSpeed * 
+								(
+									1.0f + 
+									((coopActor->GetWeight() + 100.0f) / 10.0f) / 
+									(1 + expf((100.0f - coopActor->GetEquippedWeight()) / 10.0f))
+								) / 20.0f
+							),
+							5.0f
+						);*/
 						Util::ApplyHit
 						(
 							coopActor.get(), 
@@ -8896,20 +8899,38 @@ namespace ALYSLC
 							0.0f,
 							!isPlayer, 
 							!isPlayer,
-							isPlayer ? 0.0f : havokImpactSpeed * 300.0f,
-							isPlayer ? 0.0f : havokImpactSpeed * 300.0f,
+							0.0f,
+							0.0f,
 							coopActor->GetHandle()
 						);
 					}
+
+					DBG
+					(
+						"{}: Bumped {}. Should stagger: {}, should knock down: {}. "
+						"Impact speed: {}. Equipped weight: {}, stagger: {}.",
+						coopActor->GetName(),
+						bumpedActor->GetName(), 
+						shouldStagger, 
+						shouldKnockDown,
+						havokImpactSpeed,
+						coopActor->GetEquippedWeight(),
+						havokImpactSpeed * 
+						(
+							1.0f + 
+							((coopActor->GetWeight() + 100.0f) / 10.0f) / 
+							(1 + expf((100.0f - coopActor->GetEquippedWeight()) / 10.0f))
+						)
+					);
 				
 					// Expend additional stamina on collision if charging.
 					// Large chunk to prevent knockdown-lock cheese.
-					// Can knockdown/stagger 2/4 times max from full stamina.
+					// Can knockdown/stagger 1/2 times max from full stamina.
 					p->pam->ExpendStamina
 					(
 						shouldKnockDown ? 
-						0.5f * Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kStamina) :
-						0.25f * Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kStamina)
+						Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kStamina) :
+						0.5f * Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kStamina)
 					);
 				}
 				else
@@ -8946,21 +8967,20 @@ namespace ALYSLC
 				);
 				if (shouldRedirectWithBump) 
 				{
-					rmm->InstantlyAddReleasedRefr
+					// Heavier characters release the bumped refr at a higher speed,
+					// as does fully committing to the bump by displacing the LS 
+					// completely from center.
+					const float releaseAngleFactor =
 					(
-						p, 
-						a_result.hitRefrHandle, 
-						std::lerp
+						0.5f * 
+						glob.cdh->GetAnalogStickState(deviceID, true).normMag * 
 						(
-							0.5f,
-							1.0f,
-							min
-							(
-								1.0f,
-								linVel.Length() * GAME_TO_HAVOK / 15.0f
-							)
+							1.0f + 
+							1.0f / 
+							(1 + expf((50.0f - coopActor->GetEquippedWeight()) / 10.0f))
 						)
 					);
+					rmm->InstantlyAddReleasedRefr(p, a_result.hitRefrHandle, releaseAngleFactor);
 				}
 
 				return true;
@@ -9051,6 +9071,30 @@ namespace ALYSLC
 				if (spineLowerPtr)
 				{
 					for (const auto& result : getHitResults(spineLowerPtr))
+					{
+						if (!result.hit || result.hitRefrHandle == playerHandle)
+						{
+							continue;
+						}
+
+						bumpApplied |= applyBumpHit
+						(
+							result, 
+							charController->outVelocity,
+							p->pam->isSliding, 
+							p->mm->isLungingRecklessly,
+							bumpApplied
+						);
+					}
+				}
+
+				const auto rootPtr = Util::GetActorNodeByName
+				(
+					coopActor.get(), strings->npc
+				);
+				if (rootPtr)
+				{
+					for (const auto& result : getHitResults(rootPtr))
 					{
 						if (!result.hit || result.hitRefrHandle == playerHandle)
 						{
@@ -10273,7 +10317,7 @@ namespace ALYSLC
 								return RE::BSVisit::BSVisitControl::kContinue;
 							}
 							
-							// Redundant nodes which usually match with a skeleton node,
+							// Nodes which usually match positions with a skeleton node,
 							// so we won't cast from them.
 							if (nodePtr->name.contains("CME"))
 							{
@@ -10548,20 +10592,20 @@ namespace ALYSLC
 					);
 					if (shouldRedirectWithFlop) 
 					{
-						flopRedirectedRefrs.emplace_back
+						// Heavier characters release the bumped refr at a higher speed,
+						// as does fully committing to the bump by displacing the LS 
+						// completely from center.
+						const float releaseAngleFactor =
 						(
-							hitRefrHandle,
-							std::lerp
+							0.5f * 
+							glob.cdh->GetAnalogStickState(deviceID, true).normMag * 
 							(
-								0.5f,
-								1.0f,
-								min
-								(
-									1.0f,
-									linVel.Length() * GAME_TO_HAVOK / 15.0f
-								)
+								1.0f + 
+								1.0f / 
+								(1 + expf((50.0f - coopActor->GetEquippedWeight()) / 10.0f))
 							)
 						);
+						flopRedirectedRefrs.emplace_back(hitRefrHandle, releaseAngleFactor);
 					}
 
 					// Released actor hit a new refr that isn't itself. Splat.
@@ -11651,7 +11695,7 @@ namespace ALYSLC
 			(
 				hasSource ? 
 				Util::Get3DCenterPos(activationRefrHandle.get().get()) : 
-				p->mm->playerTorsoPosition
+				coopActor->data.location
 			);
 			const auto targetPos = Util::Get3DCenterPos(a_targetRefr);
 			auto sourceScreenPos = Util::WorldToScreenPoint3(sourcePos, false);
@@ -11749,7 +11793,7 @@ namespace ALYSLC
 			);*/
 
 			// [0, 1]
-			if (hasSource)
+			//if (hasSource)
 			{
 				/*a_angDistWeightOut = sourcePos.GetDistance(targetPos) / considerationRange;*/
 				const float distanceFromSource = sourceScreenPos.GetDistance(targetScreenPos);
@@ -11758,10 +11802,10 @@ namespace ALYSLC
 					1.0f, distanceFromSource / max(DebugAPI::screenResX, DebugAPI::screenResY)
 				);
 			}
-			else
+			/*else
 			{
 				a_angDistWeightOut = turnToFaceRefrAngMag / (a_fovRads / 2.0f);
-			}
+			}*/
 		}
 		
 		
@@ -16354,6 +16398,7 @@ namespace ALYSLC
 		);
 		if (canSelect)
 		{
+			// Swap lock on 'directions' -- either facing the lock on target or the party.
 			if (glob.cam->IsRunning() && 
 				glob.cam->isLockedOn && 
 				Util::HandleIsValid(glob.cam->camLockOnTargetHandle))
@@ -16394,6 +16439,8 @@ namespace ALYSLC
 				}
 				else
 				{
+					// Point the camera at the centroid position 
+					// and then move it behind the requesting player.
 					auto playerFocusPoint = 
 					(
 						coopActor->data.location +
@@ -16496,7 +16543,7 @@ namespace ALYSLC
 		//==========================================================================================
 		
 		// TEMPORARY
-		// Select a new aim target when aiming while in the 'LockOn' crosshair targeting mode.
+		// Snap the crosshair to an NPC.
 		if (aimMode == AimMode::kCrosshair)
 		{
 			const auto inputMask = (1 << !InputAction::kRShoulder) | (1 << !InputAction::kRS);
@@ -20571,19 +20618,22 @@ namespace ALYSLC
 				);
 				if (shouldRedirectWithFlop) 
 				{
+					// Heavier characters release the bumped refr at a higher speed,
+					// as does fully committing to the bump by displacing the LS 
+					// completely from center.
+					const float releaseAngleFactor =
+					(
+						0.5f * 
+						glob.cdh->GetAnalogStickState(a_p->deviceID, true).normMag * 
+						(
+							1.0f + 
+							1.0f / 
+							(1 + expf((50.0f - a_p->coopActor->GetEquippedWeight()) / 10.0f))
+						)
+					);
 					flopRedirectedRefrs.emplace_back
 					(
-						collidedWithRefrPtr->GetHandle(),
-						std::lerp
-						(
-							0.5f,
-							0.85f,
-							min
-							(
-								1.0f, 
-								linVel.Length() * GAME_TO_HAVOK / 15.0f
-							)
-						)
+						collidedWithRefrPtr->GetHandle(), releaseAngleFactor
 					);
 				}
 

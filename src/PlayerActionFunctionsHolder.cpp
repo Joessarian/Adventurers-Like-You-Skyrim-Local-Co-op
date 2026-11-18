@@ -3670,27 +3670,6 @@ namespace ALYSLC
 			{
 			case InputAction::kDodge:
 			{
-				// Takes encumbrance into account. 
-				// Dodging/rolling in heavy armor will consume more stamina.
-				// The player will be able to dodge/roll at most once
-				// with full stamina and worn weight equal to carryweight
-				// and at most 10 times with full stamina and no worn weight.
-				float carryWeightRatioMult = 
-				(
-					0.1f +
-					min
-					(
-						0.9f, 
-						sqrtf
-						(
-							a_p->coopActor->GetEquippedWeight() / 
-							Util::GetFullAVAmount
-							(
-								a_p->coopActor.get(), RE::ActorValue::kCarryWeight
-							)
-						)
-					)
-				);
 				// Dash dodging costs more when the LS is displaced further from center 
 				// (longer dodge).
 				// Minimum dodge cost is half the max cost to prevent spamming of short dodges.
@@ -3710,8 +3689,7 @@ namespace ALYSLC
 				);
 				cost = 
 				(
-					a_p->pam->baseStamina * 
-					carryWeightRatioMult * 
+					a_p->pam->GetEquippedWeightStaminaCost() * 
 					dashDodgeCommitmentMult *
 					Settings::vfDashDodgeStaminaCostMult[a_p->playerID]
 				);

@@ -1931,7 +1931,7 @@ namespace ALYSLC
 				return;
 			}
 			
-			if (a_fromActorBase->tintLayers->empty())
+			if (!a_fromActorBase->tintLayers || a_fromActorBase->tintLayers->empty())
 			{
 				return;
 			}

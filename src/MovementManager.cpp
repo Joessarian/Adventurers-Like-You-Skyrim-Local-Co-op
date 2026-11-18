@@ -984,6 +984,12 @@ namespace ALYSLC
 					);
 				}
 
+				// 25% speed boost when lunging recklessly.
+				if (isLungingRecklessly)
+				{
+					maxXYSpeed *= 1.25f;
+				}
+
 				// Scale down max dodge speed based on equipped weight.
 				maxXYSpeed *= Util::InterpolateSmootherStep
 				(
@@ -1041,7 +1047,9 @@ namespace ALYSLC
 					havokVel.quad.m128_f32[2] = max
 					(
 						-52.0f,
-						havokInitialDashDodgeZVelocity - (Settings::fG * secsSinceStartingDodge)
+						havokInitialDashDodgeZVelocity - 
+						(Settings::fG * secsSinceStartingDodge) * 
+						(isDashDodging ? 1.5f : 1.0f)
 					);
 				}
 				
@@ -1292,28 +1300,12 @@ namespace ALYSLC
 		// Violently scooting in your general direction.
 		if (isDashDodging && !isLungingRecklessly)
 		{
-			isLungingRecklessly = 
-			(
-				(isParagliding) ||
-				(
-					(aimPitchManuallyAdjusted || isAirborneWhileJumping) &&
-					(
-						p->mm->aimPitch > PI / 4.0f &&
-						p->lsMoved &&
-						fabsf
-						(
-							Util::NormalizeAngToPi
-							(
-								p->analogStickParams[!AnalogStickParams::kLSWorldAng] - 
-								coopActor->GetHeading(false)
-							)
-						) < PI / 4.0f
-					)
-				)
-			);
-
+			isLungingRecklessly = p->pam->PassesConsecTapsCheck(InputAction::kDodge);
 			if (isLungingRecklessly && glob.recklessLungeShader)
 			{
+				// Extra stamina cost.
+				p->pam->ExpendStamina(p->pam->GetEquippedWeightStaminaCost());
+
 				Util::StartEffectShader
 				(
 					coopActor.get(), 
@@ -6317,6 +6309,14 @@ namespace ALYSLC
 			return;
 		}
 
+		auto rigidBodyPtr = Util::GethkpRigidBody(a_nodePtr.get()); 
+		if (!rigidBodyPtr ||
+			!rigidBodyPtr->GetShape() || 
+			rigidBodyPtr->GetShape()->type != RE::hkpShapeType::kCapsule)
+		{
+			return;
+		}
+		
 		const RE::NiPoint3 up = RE::NiPoint3(0.0f, 0.0f, 1.0f);
 		const RE::NiPoint3 forward = RE::NiPoint3(0.0f, 1.0f, 0.0f);
 		const RE::NiPoint3 right = RE::NiPoint3(1.0f, 0.0f, 0.0f);
@@ -9854,7 +9854,7 @@ namespace ALYSLC
 				a_p->IsAwaitingRefresh()
 			};
 			// Rotation was modified if the player has adjusted their aim pitch
-			// or if they are dash dodging on the ground.
+			// or if they are dash dodging.
 			torsoData->rotationModified = a_p->mm->aimPitchAdjusted || a_p->mm->isDashDodging;
 
 			// Update blend state after modifying the rotation flags
